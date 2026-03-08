@@ -7,80 +7,58 @@ export default {
 };
 
 export async function handleRequest(request, env, _ctx, fetchImpl = fetch) {
-  try {
-    const url = new URL(request.url);
-    console.log("Incoming request", {
-      method: request.method,
-      path: url.pathname,
-      userAgent: request.headers.get("user-agent") || "",
-      contentType: request.headers.get("content-type") || "",
-    });
-
-    if (request.method === "GET" && url.pathname === "/health") {
-      return jsonResponse({ ok: true, service: "feishu-gh-dispatch" });
-    }
-
-    if (request.method !== "POST" || url.pathname !== "/feishu/events") {
-      return jsonResponse({ error: "Not found" }, 404);
-    }
-
-    const rawBody = await request.text();
-    console.log("Request body preview", rawBody.slice(0, 500));
-
-    const body = safeParseJson(rawBody);
-    if (!body) {
-      console.log("Invalid JSON body");
-      return jsonResponse({ error: "Invalid JSON" }, 400);
-    }
-
-    if (typeof body.challenge === "string") {
-      console.log("Challenge request matched");
-      return jsonResponse({ challenge: body.challenge });
-    }
-
-    if (!isAllowedToken(body, env)) {
-      console.log("Verification token mismatch");
-      return jsonResponse({ error: "Forbidden" }, 403);
-    }
-
-    const message = extractIncomingMessage(body);
-    if (!message) {
-      console.log("Ignored unsupported event");
-      return jsonResponse({ ok: true, ignored: "unsupported_event" });
-    }
-
-    if (message.messageType !== "text") {
-      console.log("Ignored non-text message", { messageType: message.messageType });
-      return jsonResponse({ ok: true, ignored: "non_text_message" });
-    }
-
-    if (message.text !== (env.COMMAND_TEXT || DEFAULT_COMMAND)) {
-      console.log("Ignored command mismatch", { text: message.text });
-      return jsonResponse({ ok: true, ignored: "command_mismatch" });
-    }
-
-    if (!isAllowedValue(parseCsvSet(env.ALLOWED_CHAT_IDS), message.chatId)) {
-      console.log("Ignored chat not allowed", { chatId: message.chatId });
-      return jsonResponse({ ok: true, ignored: "chat_not_allowed" });
-    }
-
-    if (!isAllowedValue(parseCsvSet(env.ALLOWED_OPEN_IDS), message.openId)) {
-      console.log("Ignored user not allowed", { openId: message.openId });
-      return jsonResponse({ ok: true, ignored: "user_not_allowed" });
-    }
-
-    await dispatchWorkflow(fetchImpl, env, {
-      triggerSource: "feishu_chat_command",
-      triggerActor: message.openId || message.userId || "feishu-user",
-    });
-
-    await sendAck(fetchImpl, env, message.chatId);
-
-    return jsonResponse({ ok: true, dispatched: true });
-  } catch (error) {
-    console.log("Unhandled worker error", String(error?.stack || error));
-    return jsonResponse({ error: "internal_error" }, 500);
+  const url = new URL(request.url);
+  if (request.method === "GET" && url.pathname === "/health") {
+    return jsonResponse({ ok: true, service: "feishu-gh-dispatch" });
   }
+
+  if (request.method !== "POST" || url.pathname !== "/feishu/events") {
+    return jsonResponse({ error: "Not found" }, 404);
+  }
+
+  const rawBody = await request.text();
+  const body = safeParseJson(rawBody);
+  if (!body) {
+    return jsonResponse({ error: "Invalid JSON" }, 400);
+  }
+
+  if (typeof body.challenge === "string") {
+    return jsonResponse({ challenge: body.challenge });
+  }
+
+  if (!isAllowedToken(body, env)) {
+    return jsonResponse({ error: "Forbidden" }, 403);
+  }
+
+  const message = extractIncomingMessage(body);
+  if (!message) {
+    return jsonResponse({ ok: true, ignored: "unsupported_event" });
+  }
+
+  if (message.messageType !== "text") {
+    return jsonResponse({ ok: true, ignored: "non_text_message" });
+  }
+
+  if (message.text !== (env.COMMAND_TEXT || DEFAULT_COMMAND)) {
+    return jsonResponse({ ok: true, ignored: "command_mismatch" });
+  }
+
+  if (!isAllowedValue(parseCsvSet(env.ALLOWED_CHAT_IDS), message.chatId)) {
+    return jsonResponse({ ok: true, ignored: "chat_not_allowed" });
+  }
+
+  if (!isAllowedValue(parseCsvSet(env.ALLOWED_OPEN_IDS), message.openId)) {
+    return jsonResponse({ ok: true, ignored: "user_not_allowed" });
+  }
+
+  await dispatchWorkflow(fetchImpl, env, {
+    triggerSource: "feishu_chat_command",
+    triggerActor: message.openId || message.userId || "feishu-user",
+  });
+
+  await sendAck(fetchImpl, env, message.chatId);
+
+  return jsonResponse({ ok: true, dispatched: true });
 }
 
 function safeParseJson(text) {
