@@ -1,4 +1,5 @@
 const DEFAULT_COMMAND = "/roblox-top100";
+const processedEvents = new Map();
 
 export default {
   async fetch(request, env, ctx) {
@@ -28,6 +29,10 @@ export async function handleRequest(request, env, _ctx, fetchImpl = fetch) {
 
   if (!isAllowedToken(body, env)) {
     return jsonResponse({ error: "Forbidden" }, 403);
+  }
+
+  if (isDuplicateEvent(body, env)) {
+    return jsonResponse({ ok: true, duplicate: true });
   }
 
   const message = extractIncomingMessage(body);
@@ -67,6 +72,47 @@ function safeParseJson(text) {
   } catch {
     return null;
   }
+}
+
+function isDuplicateEvent(body, env) {
+  const eventId = extractEventId(body);
+  if (!eventId) {
+    return false;
+  }
+
+  pruneProcessedEvents(env);
+
+  if (processedEvents.has(eventId)) {
+    return true;
+  }
+
+  processedEvents.set(eventId, Date.now());
+  return false;
+}
+
+function extractEventId(body) {
+  return (
+    body.header?.event_id ||
+    body.event_id ||
+    body.event?.message?.message_id ||
+    ""
+  );
+}
+
+function pruneProcessedEvents(env) {
+  const ttlMs = getDedupTtlMs(env);
+  const cutoff = Date.now() - ttlMs;
+  for (const [eventId, seenAt] of processedEvents.entries()) {
+    if (seenAt < cutoff) {
+      processedEvents.delete(eventId);
+    }
+  }
+}
+
+function getDedupTtlMs(env) {
+  const raw = Number.parseInt(String(env.EVENT_DEDUP_TTL_SECONDS || "600"), 10);
+  const ttlSeconds = Number.isFinite(raw) && raw > 0 ? raw : 600;
+  return ttlSeconds * 1000;
 }
 
 function isAllowedToken(body, env) {
