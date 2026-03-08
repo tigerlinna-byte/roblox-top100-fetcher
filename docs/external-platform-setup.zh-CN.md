@@ -164,7 +164,7 @@ npx wrangler deploy
 ## 第 3 步：配置飞书开放平台
 
 ### 3.1 创建自建应用
-
+ 
 打开：
 
 https://open.feishu.cn/
