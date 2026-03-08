@@ -1,0 +1,234 @@
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+import requests
+
+from .config import Config
+from .models import GameRecord, now_iso
+from .retry import with_retry
+
+
+GET_SORTS_URL = "https://apis.roblox.com/explore-api/v1/get-sorts"
+GET_SORT_CONTENT_URL = "https://apis.roblox.com/explore-api/v1/get-sort-content"
+GAMES_DETAIL_URL = "https://games.roblox.com/v1/games"
+
+
+class RobloxClientError(RuntimeError):
+    pass
+
+
+@dataclass
+class RobloxClient:
+    config: Config
+    session: requests.Session | None = None
+
+    def __post_init__(self) -> None:
+        if self.session is None:
+            self.session = requests.Session()
+
+    def fetch_top_games(self) -> list[GameRecord]:
+        sort_id = self._resolve_sort_id()
+        payload = self._fetch_sort_content(sort_id)
+        games = self._extract_games(payload)
+        if not games:
+            raise RobloxClientError("No game entries found in Roblox response.")
+
+        games = games[: self.config.api_limit]
+        universe_ids = [str(_as_int(_pick(item, "universeId", "universe_id"))) for item in games]
+        details_map = self._fetch_game_details(universe_ids)
+
+        fetched_at = now_iso()
+        records: list[GameRecord] = []
+        for index, raw in enumerate(games, start=1):
+            universe_id = _as_int(_pick(raw, "universeId", "universe_id"))
+            details = details_map.get(universe_id, {})
+            creator_obj = details.get("creator") if isinstance(details, dict) else {}
+            creator_name = ""
+            if isinstance(creator_obj, dict):
+                creator_name = str(creator_obj.get("name", ""))
+
+            records.append(
+                GameRecord(
+                    rank=index,
+                    place_id=_as_int(
+                        _pick(raw, "placeId", "rootPlaceId", "place_id", "id", default=0)
+                    ),
+                    name=str(_pick(raw, "name", "title", default=_pick(details, "name", default=""))),
+                    creator=creator_name,
+                    playing=_as_int(
+                        _pick(
+                            raw,
+                            "playing",
+                            "playerCount",
+                            "concurrentPlayers",
+                            default=_pick(details, "playing", default=0),
+                        )
+                    ),
+                    visits=_as_int(
+                        _pick(raw, "visits", "visitCount", default=_pick(details, "visits", default=0))
+                    ),
+                    up_votes=_as_int(
+                        _pick(
+                            raw,
+                            "totalUpVotes",
+                            "upVotes",
+                            "up_votes",
+                            "upVoteCount",
+                            default=_pick(details, "upVotes", default=0),
+                        )
+                    ),
+                    down_votes=_as_int(
+                        _pick(
+                            raw,
+                            "totalDownVotes",
+                            "downVotes",
+                            "down_votes",
+                            "downVoteCount",
+                            default=_pick(details, "downVotes", default=0),
+                        )
+                    ),
+                    fetched_at=fetched_at,
+                )
+            )
+        return records
+
+    def _resolve_sort_id(self) -> str:
+        if self.config.roblox_sort_id:
+            return self.config.roblox_sort_id
+
+        response = self._request_json("POST", GET_SORTS_URL, json_payload={})
+        for item in _extract_list(response, "sorts", "data", "items"):
+            sort_id = str(_pick(item, "id", "sortId", default=""))
+            if sort_id == "top-playing-now":
+                return sort_id
+        raise RobloxClientError("Unable to discover sort id.")
+
+    def _fetch_sort_content(self, sort_id: str) -> dict[str, Any]:
+        params = {
+            "sessionId": str(uuid.uuid4()),
+            "sortId": sort_id,
+            "device": "computer",
+            "country": "all",
+        }
+        return self._request_json("GET", GET_SORT_CONTENT_URL, params=params)
+
+    def _fetch_game_details(self, universe_ids: list[str]) -> dict[int, dict[str, Any]]:
+        universe_ids = [uid for uid in universe_ids if uid and uid != "0"]
+        if not universe_ids:
+            return {}
+
+        details_map: dict[int, dict[str, Any]] = {}
+        for chunk in _chunked(universe_ids, size=40):
+            response = self._request_json(
+                "GET",
+                GAMES_DETAIL_URL,
+                params={"universeIds": ",".join(chunk)},
+            )
+            for item in _extract_list(response, "data"):
+                uid = _as_int(_pick(item, "id", default=0))
+                if uid:
+                    details_map[uid] = item
+        return details_map
+
+    def _request_json(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        def _call() -> dict[str, Any]:
+            assert self.session is not None
+            response = self.session.request(
+                method=method,
+                url=url,
+                params=params,
+                json=json_payload,
+                timeout=self.config.request_timeout_seconds,
+            )
+            if response.status_code >= 400:
+                raise requests.HTTPError(
+                    f"HTTP {response.status_code}: {response.text[:300]}", response=response
+                )
+            return response.json()
+
+        try:
+            return with_retry(
+                _call,
+                attempts=self.config.retry_max_attempts,
+                base_backoff_seconds=self.config.retry_backoff_seconds,
+                is_retryable=_is_retryable_exception,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise RobloxClientError(f"Request failed: {url}") from exc
+
+    @staticmethod
+    def _extract_games(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        candidates = [
+            _extract_list(payload, "games"),
+            _extract_list(payload, "data"),
+            _extract_list(payload, "items"),
+        ]
+        for first in list(candidates):
+            if not first:
+                continue
+            if first and isinstance(first[0], dict):
+                nested = [
+                    _extract_list(first[0], "games"),
+                    _extract_list(first[0], "items"),
+                    _extract_list(first[0], "content"),
+                    _extract_list(first[0], "gameTiles"),
+                ]
+                candidates.extend(nested)
+
+        for items in candidates:
+            if items and isinstance(items[0], dict):
+                return items
+        return []
+
+
+def _is_retryable_exception(exc: Exception) -> bool:
+    if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
+        return True
+    if isinstance(exc, requests.HTTPError):
+        response = exc.response
+        if response is None:
+            return False
+        return response.status_code in {408, 409, 425, 429, 500, 502, 503, 504}
+    return False
+
+
+def _pick(data: dict[str, Any], *keys: str, default: Any = None) -> Any:
+    for key in keys:
+        if key in data and data[key] is not None:
+            return data[key]
+    return default
+
+
+def _as_int(value: Any) -> int:
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _extract_list(data: dict[str, Any], *keys: str) -> list[dict[str, Any]]:
+    current: Any = data
+    for key in keys:
+        if isinstance(current, dict) and key in current:
+            current = current[key]
+        else:
+            return []
+    if isinstance(current, list):
+        return [item for item in current if isinstance(item, dict)]
+    return []
+
+
+def _chunked(items: list[str], *, size: int) -> list[list[str]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]

@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+import json
+import unittest
+from pathlib import Path
+import shutil
+
+from app.models import GameRecord
+from app.storage import write_outputs
+
+
+class StorageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.base = Path(".test-output")
+        if self.base.exists():
+            shutil.rmtree(self.base, ignore_errors=True)
+        self.base.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def test_writes_json_and_csv(self) -> None:
+        sample = [
+            GameRecord(
+                rank=1,
+                place_id=123,
+                name="Game A",
+                creator="Creator A",
+                playing=1000,
+                visits=50000,
+                up_votes=100,
+                down_votes=10,
+                fetched_at="2026-03-07T00:00:00Z",
+            )
+        ]
+
+        json_path, csv_path = write_outputs(str(self.base), sample)
+        self.assertTrue(Path(json_path).exists())
+        self.assertTrue(Path(csv_path).exists())
+
+        payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
+        self.assertEqual(1, len(payload))
+        self.assertEqual("Game A", payload[0]["name"])
+
+
+if __name__ == "__main__":
+    unittest.main()
