@@ -112,8 +112,7 @@ class RobloxClient:
         if self.config.roblox_sort_id:
             return self.config.roblox_sort_id
 
-        response = self._request_json("POST", GET_SORTS_URL, json_payload={})
-        for item in _extract_sort_items(response):
+        for item in self._fetch_sorts():
             sort_id = str(_pick(item, "id", "sortId", default=""))
             if sort_id == "top-playing-now":
                 return sort_id
@@ -123,14 +122,21 @@ class RobloxClient:
         if self.config.roblox_top_trending_sort_id:
             return self.config.roblox_top_trending_sort_id
 
-        response = self._request_json("POST", GET_SORTS_URL, json_payload={})
-        for item in _extract_sort_items(response):
+        for item in self._fetch_sorts():
             sort_id = str(_pick(item, "id", "sortId", default=""))
             sort_name = str(_pick(item, "name", "title", "displayName", default=""))
             normalized_name = " ".join(sort_name.lower().split())
             if sort_id == "top-trending" or normalized_name == "top trending":
                 return sort_id
         raise RobloxClientError("Unable to discover Top Trending sort id.")
+
+    def _fetch_sorts(self) -> list[dict[str, Any]]:
+        response = self._request_json(
+            "GET",
+            GET_SORTS_URL,
+            params={"sessionId": str(uuid.uuid4())},
+        )
+        return _extract_sort_items(response)
 
     def _fetch_sort_content(self, sort_id: str) -> dict[str, Any]:
         params = {
