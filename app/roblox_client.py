@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,12 @@ from .retry import with_retry
 GET_SORTS_URL = "https://apis.roblox.com/explore-api/v1/get-sorts"
 GET_SORT_CONTENT_URL = "https://apis.roblox.com/explore-api/v1/get-sort-content"
 GAMES_DETAIL_URL = "https://games.roblox.com/v1/games"
+TOP_TRENDING_SORT_ID_CANDIDATES = (
+    "top-trending",
+    "trending",
+    "top-charts",
+    "charts",
+)
 
 
 class RobloxClientError(RuntimeError):
@@ -33,7 +40,23 @@ class RobloxClient:
         return self._fetch_games_for_sort(self._resolve_top_games_sort_id())
 
     def fetch_top_trending_games(self) -> list[GameRecord]:
-        return self._fetch_games_for_sort(self._resolve_top_trending_sort_id())
+        configured_sort_id = self._resolve_top_trending_sort_id()
+        candidate_sort_ids = [configured_sort_id]
+        candidate_sort_ids.extend(
+            sort_id
+            for sort_id in TOP_TRENDING_SORT_ID_CANDIDATES
+            if sort_id != configured_sort_id
+        )
+
+        last_error: Exception | None = None
+        for sort_id in candidate_sort_ids:
+            try:
+                return self._fetch_games_for_sort(sort_id)
+            except RobloxClientError as exc:
+                last_error = exc
+                continue
+
+        raise RobloxClientError("Unable to fetch Top Trending games.") from last_error
 
     def _fetch_games_for_sort(self, sort_id: str) -> list[GameRecord]:
         payload = self._fetch_sort_content(sort_id)
@@ -126,9 +149,14 @@ class RobloxClient:
             sort_id = str(_pick(item, "id", "sortId", default=""))
             sort_name = str(_pick(item, "name", "title", "displayName", default=""))
             normalized_name = " ".join(sort_name.lower().split())
-            if sort_id == "top-trending" or normalized_name == "top trending":
+            if sort_id in TOP_TRENDING_SORT_ID_CANDIDATES or normalized_name in {
+                "top trending",
+                "trending",
+                "top charts",
+                "charts",
+            }:
                 return sort_id
-        raise RobloxClientError("Unable to discover Top Trending sort id.")
+        return TOP_TRENDING_SORT_ID_CANDIDATES[0]
 
     def _fetch_sorts(self) -> list[dict[str, Any]]:
         response = self._request_json(
@@ -136,7 +164,24 @@ class RobloxClient:
             GET_SORTS_URL,
             params={"sessionId": str(uuid.uuid4())},
         )
-        return _extract_sort_items(response)
+        items = _extract_sort_items(response)
+        self._log_discovered_sorts(items)
+        return items
+
+    @staticmethod
+    def _log_discovered_sorts(items: list[dict[str, Any]]) -> None:
+        if not items:
+            logging.info("Roblox explore sorts: none returned")
+            return
+
+        summary = [
+            {
+                "id": str(_pick(item, "id", "sortId", default="")),
+                "name": str(_pick(item, "name", "title", "displayName", default="")),
+            }
+            for item in items
+        ]
+        logging.info("Roblox explore sorts discovered: %s", summary)
 
     def _fetch_sort_content(self, sort_id: str) -> dict[str, Any]:
         params = {
