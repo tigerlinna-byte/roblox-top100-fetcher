@@ -14,6 +14,7 @@ from .top_trending_sheet import (
     calculate_game_name_width,
     SheetTarget,
     SpreadsheetTarget,
+    build_rank_change_cells,
     build_default_sheet_specs,
     build_top_trending_values,
     get_saved_spreadsheet_target,
@@ -141,6 +142,7 @@ def _sync_top_trending_sheet(
 
     for sheet in target.sheets:
         sheet_records = records_by_sheet.get(sheet.title, [])
+        previous_sheet_ranks = previous_ranks.get(sheet.title, {})
         feishu_client.write_sheet_values(
             target.spreadsheet_token,
             sheet.sheet_id,
@@ -148,8 +150,13 @@ def _sync_top_trending_sheet(
                 cfg,
                 sheet.title,
                 sheet_records,
-                previous_ranks.get(sheet.title, {}),
+                previous_sheet_ranks,
             ),
+        )
+        feishu_client.apply_rank_change_colors(
+            target.spreadsheet_token,
+            sheet.sheet_id,
+            build_rank_change_cells(sheet_records, previous_sheet_ranks),
         )
         if not save_previous_ranks(github_client, sheet, sheet_records):
             logging.warning("Previous ranks were not persisted for %s.", sheet.title)
