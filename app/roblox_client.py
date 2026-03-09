@@ -30,7 +30,12 @@ class RobloxClient:
             self.session = requests.Session()
 
     def fetch_top_games(self) -> list[GameRecord]:
-        sort_id = self._resolve_sort_id()
+        return self._fetch_games_for_sort(self._resolve_top_games_sort_id())
+
+    def fetch_top_trending_games(self) -> list[GameRecord]:
+        return self._fetch_games_for_sort(self._resolve_top_trending_sort_id())
+
+    def _fetch_games_for_sort(self, sort_id: str) -> list[GameRecord]:
         payload = self._fetch_sort_content(sort_id)
         games = self._extract_games(payload)
         if not games:
@@ -91,20 +96,41 @@ class RobloxClient:
                         )
                     ),
                     fetched_at=fetched_at,
+                    updated_at=str(
+                        _pick(
+                            details,
+                            "updated",
+                            "updatedAt",
+                            default=_pick(raw, "updated", "updatedAt", default=""),
+                        )
+                    ),
                 )
             )
         return records
 
-    def _resolve_sort_id(self) -> str:
+    def _resolve_top_games_sort_id(self) -> str:
         if self.config.roblox_sort_id:
             return self.config.roblox_sort_id
 
         response = self._request_json("POST", GET_SORTS_URL, json_payload={})
-        for item in _extract_list(response, "sorts", "data", "items"):
+        for item in _extract_sort_items(response):
             sort_id = str(_pick(item, "id", "sortId", default=""))
             if sort_id == "top-playing-now":
                 return sort_id
         raise RobloxClientError("Unable to discover sort id.")
+
+    def _resolve_top_trending_sort_id(self) -> str:
+        if self.config.roblox_top_trending_sort_id:
+            return self.config.roblox_top_trending_sort_id
+
+        response = self._request_json("POST", GET_SORTS_URL, json_payload={})
+        for item in _extract_sort_items(response):
+            sort_id = str(_pick(item, "id", "sortId", default=""))
+            sort_name = str(_pick(item, "name", "title", "displayName", default=""))
+            normalized_name = " ".join(sort_name.lower().split())
+            if sort_id == "top-trending" or normalized_name == "top trending":
+                return sort_id
+        raise RobloxClientError("Unable to discover Top Trending sort id.")
 
     def _fetch_sort_content(self, sort_id: str) -> dict[str, Any]:
         params = {
@@ -232,3 +258,18 @@ def _extract_list(data: dict[str, Any], *keys: str) -> list[dict[str, Any]]:
 
 def _chunked(items: list[str], *, size: int) -> list[list[str]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _extract_sort_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates = [
+        _extract_list(payload, "sorts"),
+        _extract_list(payload, "data"),
+        _extract_list(payload, "items"),
+        _extract_list(payload, "sorts", "data"),
+        _extract_list(payload, "sorts", "items"),
+        _extract_list(payload, "data", "items"),
+    ]
+    for items in candidates:
+        if items:
+            return items
+    return []

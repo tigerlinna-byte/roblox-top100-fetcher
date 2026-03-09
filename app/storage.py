@@ -9,13 +9,18 @@ from pathlib import Path
 from .models import GameRecord
 
 
-def write_outputs(output_dir: str, records: list[GameRecord]) -> tuple[Path, Path]:
+def write_outputs(
+    output_dir: str,
+    records: list[GameRecord],
+    *,
+    prefix: str = "top100",
+) -> tuple[Path, Path]:
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
 
     date_str = datetime.now().strftime("%Y-%m-%d")
-    json_path = target / f"top100_{date_str}.json"
-    csv_path = target / f"top100_{date_str}.csv"
+    json_path = target / f"{prefix}_{date_str}.json"
+    csv_path = target / f"{prefix}_{date_str}.csv"
 
     payload = [asdict(record) for record in records]
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -33,6 +38,7 @@ def write_outputs(output_dir: str, records: list[GameRecord]) -> tuple[Path, Pat
                 "up_votes",
                 "down_votes",
                 "fetched_at",
+                "updated_at",
             ],
         )
         writer.writeheader()

@@ -3,7 +3,8 @@
 这份手册对应当前仓库的实现，目标是完成两件事：
 
 1. GitHub Actions 每天自动抓取 Roblox Top 100
-2. 飞书群内发送 `/roblox-top100` 可手动触发一次抓取
+2. 飞书群内发送 `/roblox-top100` 可手动触发一次 Top 100 抓取
+3. 飞书群内发送 `/roblox-top-day` 可手动生成 Top Trending 前 100 飞书普通表格
 
 整套链路如下：
 
@@ -45,6 +46,7 @@
 - `FEISHU_APP_ID`
 - `FEISHU_APP_SECRET`
 - `FEISHU_BOT_WEBHOOK`（可选兜底）
+- `GH_TOKEN`（如需让 `/roblox-top-day` 复用同一张飞书表格，必须配置到 GitHub Actions secrets）
 
 值填写：
 
@@ -209,8 +211,8 @@ https://open.feishu.cn/
 
 加入后，你的群里会有两类机器人：
 
-- 自定义机器人：负责接收最终排行榜结果
-- 自建应用机器人：负责响应 `/roblox-top100`
+- 自建应用机器人：负责响应 `/roblox-top100` 和 `/roblox-top-day`
+- `/roblox-top-day` 会把 Top Trending 前 100 写入飞书普通表格，并回传表格链接
 
 ## 第 4 步：拿到群 ID 和用户 open_id
 
@@ -223,6 +225,7 @@ https://open.feishu.cn/
 
 ```text
 /roblox-top100
+/roblox-top-day
 ```
 
 如果没有成功触发，去 Cloudflare Worker 日志里查看请求体，提取：

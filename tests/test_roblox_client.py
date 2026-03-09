@@ -78,6 +78,59 @@ class RobloxClientTests(unittest.TestCase):
         self.assertEqual(10, len(items))
         self.assertEqual(10, items[-1].rank)
 
+    def test_fetch_top_trending_discovers_sort_by_name(self) -> None:
+        session = Mock()
+
+        sorts_response = Mock()
+        sorts_response.status_code = 200
+        sorts_response.json.return_value = {
+            "sorts": [
+                {"id": "top-playing-now", "name": "Top Playing Now"},
+                {"id": "top-trending", "name": "Top Trending"},
+            ]
+        }
+
+        games_response = Mock()
+        games_response.status_code = 200
+        games_response.json.return_value = {
+            "games": [
+                {
+                    "universeId": 101,
+                    "rootPlaceId": 1,
+                    "name": "Trending A",
+                    "playerCount": 99,
+                }
+            ]
+        }
+
+        details_response = Mock()
+        details_response.status_code = 200
+        details_response.json.return_value = {
+            "data": [
+                {
+                    "id": 101,
+                    "name": "Trending A",
+                    "visits": 1234,
+                    "playing": 99,
+                    "creator": {"name": "Studio"},
+                    "updated": "2026-03-09T00:00:00Z",
+                }
+            ]
+        }
+
+        session.request.side_effect = [sorts_response, games_response, details_response]
+
+        client = RobloxClient(
+            config=Config(api_limit=100, roblox_sort_id=""),
+            session=session,
+        )
+
+        items = client.fetch_top_trending_games()
+
+        self.assertEqual(1, len(items))
+        self.assertEqual("Trending A", items[0].name)
+        self.assertEqual("2026-03-09T00:00:00Z", items[0].updated_at)
+
 
 if __name__ == "__main__":
     unittest.main()

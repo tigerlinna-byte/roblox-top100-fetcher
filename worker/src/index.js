@@ -1,4 +1,5 @@
-const DEFAULT_COMMAND = "/roblox-top100";
+const DEFAULT_TOP100_COMMAND = "/roblox-top100";
+const DEFAULT_TOP_DAY_COMMAND = "/roblox-top-day";
 const processedEvents = new Map();
 const DEFAULT_DEDUP_KV_BINDING = "EVENT_DEDUP_KV";
 
@@ -52,7 +53,8 @@ export async function handleRequest(request, env, ctx, fetchImpl = fetch) {
     return jsonResponse({ ok: true, ignored: "non_text_message" });
   }
 
-  if (message.text !== (env.COMMAND_TEXT || DEFAULT_COMMAND)) {
+  const command = resolveCommand(env, message.text);
+  if (!command) {
     return jsonResponse({ ok: true, ignored: "command_mismatch" });
   }
 
@@ -79,6 +81,7 @@ export async function handleRequest(request, env, ctx, fetchImpl = fetch) {
       eventId,
       chatId: message.chatId,
       triggerActor: message.openId || message.userId || "feishu-user",
+      reportMode: command.reportMode,
     }),
   );
 
@@ -260,6 +263,7 @@ async function processCommandEvent(fetchImpl, env, event) {
       triggerSource: "feishu_chat_command",
       triggerActor: event.triggerActor,
       chatId: event.chatId,
+      reportMode: event.reportMode,
     });
 
     console.log(JSON.stringify({
@@ -308,6 +312,7 @@ async function dispatchWorkflow(fetchImpl, env, trigger) {
         trigger_source: trigger.triggerSource,
         trigger_actor: trigger.triggerActor,
         chat_id: trigger.chatId,
+        report_mode: trigger.reportMode,
       },
     }),
   });
@@ -316,6 +321,21 @@ async function dispatchWorkflow(fetchImpl, env, trigger) {
     const text = await response.text();
     throw new Error(`GitHub dispatch failed: ${response.status} ${text.slice(0, 300)}`);
   }
+}
+
+function resolveCommand(env, text) {
+  const commands = [
+    {
+      text: env.COMMAND_TEXT || DEFAULT_TOP100_COMMAND,
+      reportMode: "top100_message",
+    },
+    {
+      text: env.TOP_DAY_COMMAND_TEXT || DEFAULT_TOP_DAY_COMMAND,
+      reportMode: "top_trending_sheet",
+    },
+  ];
+
+  return commands.find((command) => command.text === text) || null;
 }
 
 async function sendAck(fetchImpl, env, chatId) {

@@ -80,6 +80,53 @@ class FeishuClientTests(unittest.TestCase):
         content = json.loads(send_kwargs["json"]["content"])
         self.assertIn("Roblox", content["text"])
 
+    def test_create_spreadsheet_extracts_token_and_sheet_id(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        create_response = Mock()
+        create_response.status_code = 200
+        create_response.json.return_value = {
+            "code": 0,
+            "data": {
+                "spreadsheet": {
+                    "spreadsheet_token": "shtcn_sheet",
+                    "url": "https://feishu.cn/sheets/shtcn_sheet",
+                    "sheets": [
+                        {
+                            "properties": {
+                                "sheet_id": "sheet001",
+                            }
+                        }
+                    ],
+                }
+            },
+        }
+
+        session.request.side_effect = [auth_response, create_response]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        spreadsheet = client.create_spreadsheet("Roblox Top Trending")
+
+        self.assertEqual("shtcn_sheet", spreadsheet.spreadsheet_token)
+        self.assertEqual("sheet001", spreadsheet.sheet_id)
+        self.assertEqual("https://feishu.cn/sheets/shtcn_sheet", spreadsheet.url)
+
 
 if __name__ == "__main__":
     unittest.main()
