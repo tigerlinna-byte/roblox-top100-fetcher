@@ -17,7 +17,7 @@ class FeishuClientError(RuntimeError):
 @dataclass(frozen=True)
 class SpreadsheetInfo:
     spreadsheet_token: str
-    sheet_id: str
+    sheet_ids: tuple[str, ...]
     url: str
 
 
@@ -83,18 +83,67 @@ class FeishuClient:
         if not spreadsheet_token:
             raise FeishuClientError("Feishu spreadsheet response missing spreadsheet token")
 
-        sheet_id = _extract_sheet_id(spreadsheet)
-        if not sheet_id:
-            sheet_id = _extract_sheet_id(data.get("data", {}))
-        if not sheet_id:
+        sheet_ids = _extract_sheet_ids(spreadsheet)
+        if not sheet_ids:
+            sheet_ids = _extract_sheet_ids(data.get("data", {}))
+        if not sheet_ids:
             raise FeishuClientError("Feishu spreadsheet response missing sheet id")
 
         url = str(spreadsheet.get("url") or _build_spreadsheet_url(spreadsheet_token))
         return SpreadsheetInfo(
             spreadsheet_token=spreadsheet_token,
-            sheet_id=sheet_id,
+            sheet_ids=sheet_ids,
             url=url,
         )
+
+    def ensure_sheet_set(
+        self,
+        spreadsheet_token: str,
+        existing_sheet_id: str,
+        sheet_titles: list[str],
+    ) -> tuple[str, ...]:
+        access_token = self._fetch_tenant_access_token()
+        requests_payload = [
+            {
+                "updateSheet": {
+                    "properties": {
+                        "sheetId": existing_sheet_id,
+                        "title": sheet_titles[0],
+                        "index": 0,
+                    },
+                    "fields": "title,index",
+                }
+            }
+        ]
+        for index, title in enumerate(sheet_titles[1:], start=1):
+            requests_payload.append(
+                {
+                    "addSheet": {
+                        "properties": {
+                            "title": title,
+                            "index": index,
+                        }
+                    }
+                }
+            )
+
+        data = self._request_json(
+            "POST",
+            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/sheets_batch_update",
+            json_payload={"requests": requests_payload},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        created_ids = [existing_sheet_id]
+        for reply in data.get("data", {}).get("replies", []):
+            add_sheet = reply.get("addSheet", {}) if isinstance(reply, dict) else {}
+            sheet_id = _extract_sheet_id(add_sheet)
+            if sheet_id:
+                created_ids.append(sheet_id)
+
+        if len(created_ids) != len(sheet_titles):
+            raise FeishuClientError("Feishu sheet setup response missing created sheet ids")
+        return tuple(created_ids)
 
     def write_sheet_values(
         self,
@@ -197,19 +246,31 @@ def _stringify_feishu_content(payload: dict | None) -> dict | None:
 
 
 def _extract_sheet_id(payload: dict) -> str:
+    sheet_ids = _extract_sheet_ids(payload)
+    if sheet_ids:
+        return sheet_ids[0]
+    return ""
+
+
+def _extract_sheet_ids(payload: dict) -> tuple[str, ...]:
     sheets = payload.get("sheets")
+    result: list[str] = []
     if isinstance(sheets, list) and sheets:
         first = sheets[0]
-        if isinstance(first, dict):
-            properties = first.get("properties")
-            if isinstance(properties, dict):
-                value = properties.get("sheet_id") or properties.get("sheetId")
-                if value:
-                    return str(value)
-            value = first.get("sheet_id") or first.get("sheetId")
+        for item in sheets:
+            value = _extract_single_sheet_id(item)
             if value:
-                return str(value)
+                result.append(value)
+        if result:
+            return tuple(result)
 
+    value = _extract_single_sheet_id(payload)
+    if value:
+        return (value,)
+    return ()
+
+
+def _extract_single_sheet_id(payload: dict) -> str:
     properties = payload.get("properties")
     if isinstance(properties, dict):
         value = properties.get("sheet_id") or properties.get("sheetId")

@@ -11,7 +11,9 @@ from .roblox_client import RobloxClient, RobloxClientError
 from .storage import write_outputs
 from .summary import build_failure_markdown, build_success_markdown
 from .top_trending_sheet import (
+    SheetTarget,
     SpreadsheetTarget,
+    build_default_sheet_specs,
     build_top_trending_summary,
     build_top_trending_values,
     get_saved_spreadsheet_target,
@@ -34,12 +36,8 @@ def run_once() -> int:
 
     try:
         client = RobloxClient(cfg)
-        records = _fetch_records(cfg, client)
-        json_path, csv_path = write_outputs(
-            cfg.output_dir,
-            records,
-            prefix=_output_prefix(cfg),
-        )
+        report_payload = _fetch_report_payload(cfg, client)
+        json_path, csv_path = _write_report_outputs(cfg, report_payload)
     except RobloxClientError:
         logging.exception("Fetch failed.")
         _notify_failure(cfg, "抓取Roblox排行榜失败")
@@ -50,11 +48,11 @@ def run_once() -> int:
         return 1
 
     elapsed = time.time() - start
-    logging.info("Fetched %s games in %.2fs", len(records), elapsed)
+    logging.info("Fetched report payload in %.2fs", elapsed)
     logging.info("JSON saved: %s", json_path)
     logging.info("CSV saved:  %s", csv_path)
     try:
-        _notify_success(cfg, records)
+        _notify_success(cfg, report_payload)
     except FeishuClientError:
         logging.exception("Feishu notify failed.")
         _notify_failure(cfg, "飞书机器人通知失败")
@@ -78,46 +76,70 @@ def _notify_failure(cfg: Config, reason: str) -> None:
         logging.exception("Failed to send failure notification.")
 
 
-def _fetch_records(cfg: Config, client: RobloxClient):
+def _fetch_report_payload(cfg: Config, client: RobloxClient):
     if cfg.run_report_mode == "top_trending_sheet":
-        return client.fetch_top_trending_games()
+        return {
+            "top_trending_v4": client.fetch_games_by_sort_id("Top_Trending_V4"),
+            "up_and_coming_v4": client.fetch_games_by_sort_id("Up_And_Coming_V4"),
+            "ccu_based_v1": client.fetch_games_by_sort_id("CCU_Based_V1"),
+        }
     return client.fetch_top_games()
 
 
-def _notify_success(cfg: Config, records) -> None:
+def _notify_success(cfg: Config, report_payload) -> None:
     feishu_client = FeishuClient(cfg)
     if cfg.run_report_mode == "top_trending_sheet":
-        target = _sync_top_trending_sheet(cfg, records, feishu_client)
+        target = _sync_top_trending_sheet(cfg, report_payload, feishu_client)
         feishu_client.send_group_markdown(
-            build_top_trending_summary(cfg, records, target.url)
+            build_top_trending_summary(cfg, report_payload, target.url)
         )
         return
 
-    feishu_client.send_group_markdown(build_success_markdown(cfg, records))
+    feishu_client.send_group_markdown(build_success_markdown(cfg, report_payload))
 
 
 def _sync_top_trending_sheet(
     cfg: Config,
-    records,
+    records_by_sheet,
     feishu_client: FeishuClient,
 ) -> SpreadsheetTarget:
     target = get_saved_spreadsheet_target(cfg)
     if target is None:
         spreadsheet = feishu_client.create_spreadsheet(cfg.feishu_top_trending_spreadsheet_title)
+        sheet_specs = build_default_sheet_specs()
+        sheet_titles = [sheet_spec["title"] for sheet_spec in sheet_specs]
+        sheet_ids = feishu_client.ensure_sheet_set(
+            spreadsheet.spreadsheet_token,
+            spreadsheet.sheet_ids[0],
+            sheet_titles,
+        )
         target = SpreadsheetTarget(
             spreadsheet_token=spreadsheet.spreadsheet_token,
-            sheet_id=spreadsheet.sheet_id,
+            sheets=tuple(
+                SheetTarget(
+                    sort_id=sheet_spec["sort_id"],
+                    title=sheet_spec["title"],
+                    variable_name=sheet_spec["variable_name"],
+                    sheet_id=sheet_id,
+                )
+                for sheet_spec, sheet_id in zip(sheet_specs, sheet_ids, strict=True)
+            ),
             url=spreadsheet.url,
         )
         github_client = GitHubClient(cfg)
         if not save_spreadsheet_target(github_client, target):
             logging.warning("Top Trending spreadsheet identifiers were not persisted.")
 
-    feishu_client.write_sheet_values(
-        target.spreadsheet_token,
-        target.sheet_id,
-        build_top_trending_values(cfg, records),
-    )
+    for sheet in target.sheets:
+        feishu_client.write_sheet_values(
+            target.spreadsheet_token,
+            sheet.sheet_id,
+            build_top_trending_values(
+                cfg,
+                sheet.title,
+                records_by_sheet.get(sheet.title, []),
+            ),
+        )
     return target
 
 
@@ -125,6 +147,20 @@ def _output_prefix(cfg: Config) -> str:
     if cfg.run_report_mode == "top_trending_sheet":
         return "top_trending"
     return "top100"
+
+
+def _write_report_outputs(cfg: Config, report_payload):
+    if cfg.run_report_mode == "top_trending_sheet":
+        return write_outputs(
+            cfg.output_dir,
+            report_payload["top_trending_v4"],
+            prefix=_output_prefix(cfg),
+        )
+    return write_outputs(
+        cfg.output_dir,
+        report_payload,
+        prefix=_output_prefix(cfg),
+    )
 
 
 if __name__ == "__main__":

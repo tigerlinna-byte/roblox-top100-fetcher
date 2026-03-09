@@ -9,20 +9,40 @@ from .summary import _format_now
 
 
 SPREADSHEET_TOKEN_VAR = "FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN"
-SHEET_ID_VAR = "FEISHU_TOP_TRENDING_SHEET_ID"
+TOP_TRENDING_SHEET_ID_VAR = "FEISHU_TOP_TRENDING_SHEET_ID"
+UP_AND_COMING_SHEET_ID_VAR = "FEISHU_UP_AND_COMING_SHEET_ID"
+CCU_BASED_SHEET_ID_VAR = "FEISHU_CCU_BASED_SHEET_ID"
+
+SORT_SHEETS = (
+    ("Top_Trending_V4", "top_trending_v4", TOP_TRENDING_SHEET_ID_VAR),
+    ("Up_And_Coming_V4", "up_and_coming_v4", UP_AND_COMING_SHEET_ID_VAR),
+    ("CCU_Based_V1", "ccu_based_v1", CCU_BASED_SHEET_ID_VAR),
+)
+
+
+@dataclass(frozen=True)
+class SheetTarget:
+    sort_id: str
+    title: str
+    variable_name: str
+    sheet_id: str
 
 
 @dataclass(frozen=True)
 class SpreadsheetTarget:
     spreadsheet_token: str
-    sheet_id: str
+    sheets: tuple[SheetTarget, ...]
     url: str
 
 
-def build_top_trending_values(cfg: Config, records: list[GameRecord]) -> list[list[str]]:
+def build_top_trending_values(
+    cfg: Config,
+    sheet_title: str,
+    records: list[GameRecord],
+) -> list[list[str]]:
     now = _format_now(cfg.feishu_timezone)
     rows: list[list[str]] = [
-        ["Roblox Top Trending 前100", "", "", "", "", "", ""],
+        [sheet_title, "", "", "", "", "", ""],
         ["生成时间", now, "触发", _format_trigger(cfg), "条数", str(len(records)), ""],
         ["榜首", records[0].name if records else "-", "在线人数", _format_playing(records), "数据源", "Roblox Explore API", ""],
         ["", "", "", "", "", "", ""],
@@ -51,50 +71,79 @@ def format_like_rate(up_votes: int, down_votes: int) -> str:
     return f"{(up_votes / total) * 100:.1f}%"
 
 
-def build_top_trending_summary(cfg: Config, records: list[GameRecord], spreadsheet_url: str) -> str:
-    top_line = "榜首: -"
-    if records:
-        top_line = f"榜首: {records[0].name} / 在线 {records[0].playing}"
-
-    return "\n".join(
-        [
-            "Top Trending 前100 已写入飞书表格。",
-            f"时间: {_format_now(cfg.feishu_timezone)} ({cfg.feishu_timezone})",
-            f"触发: {_format_trigger(cfg)}",
-            f"条数: {len(records)}",
-            top_line,
-            f"表格: {spreadsheet_url}",
-        ]
-    )
+def build_top_trending_summary(
+    cfg: Config,
+    records_by_sheet: dict[str, list[GameRecord]],
+    spreadsheet_url: str,
+) -> str:
+    lines = [
+        "Top Trending 系列表已写入飞书表格。",
+        f"时间: {_format_now(cfg.feishu_timezone)} ({cfg.feishu_timezone})",
+        f"触发: {_format_trigger(cfg)}",
+    ]
+    for _, title, _ in SORT_SHEETS:
+        records = records_by_sheet.get(title, [])
+        if records:
+            lines.append(f"{title}: {len(records)} 条，榜首 {records[0].name} / 在线 {records[0].playing}")
+        else:
+            lines.append(f"{title}: 0 条")
+    lines.append(f"表格: {spreadsheet_url}")
+    return "\n".join(lines)
 
 
 def save_spreadsheet_target(
     github_client: GitHubClient,
     target: SpreadsheetTarget,
 ) -> bool:
-    saved_token = github_client.upsert_repository_variable(
+    saved = github_client.upsert_repository_variable(
         SPREADSHEET_TOKEN_VAR,
         target.spreadsheet_token,
     )
-    saved_sheet = github_client.upsert_repository_variable(
-        SHEET_ID_VAR,
-        target.sheet_id,
-    )
-    return saved_token and saved_sheet
+    for sheet in target.sheets:
+        saved = github_client.upsert_repository_variable(sheet.variable_name, sheet.sheet_id) and saved
+    return saved
 
 
 def get_saved_spreadsheet_target(cfg: Config) -> SpreadsheetTarget | None:
-    if not cfg.feishu_top_trending_spreadsheet_token or not cfg.feishu_top_trending_sheet_id:
+    if not cfg.feishu_top_trending_spreadsheet_token:
         return None
+
+    sheet_ids = {
+        TOP_TRENDING_SHEET_ID_VAR: cfg.feishu_top_trending_sheet_id,
+        UP_AND_COMING_SHEET_ID_VAR: cfg.feishu_up_and_coming_sheet_id,
+        CCU_BASED_SHEET_ID_VAR: cfg.feishu_ccu_based_sheet_id,
+    }
+    if not all(sheet_ids.values()):
+        return None
+
     return SpreadsheetTarget(
         spreadsheet_token=cfg.feishu_top_trending_spreadsheet_token,
-        sheet_id=cfg.feishu_top_trending_sheet_id,
+        sheets=tuple(
+            SheetTarget(
+                sort_id=sort_id,
+                title=title,
+                variable_name=variable_name,
+                sheet_id=sheet_ids[variable_name],
+            )
+            for sort_id, title, variable_name in SORT_SHEETS
+        ),
         url=build_spreadsheet_url(cfg.feishu_top_trending_spreadsheet_token),
     )
 
 
 def build_spreadsheet_url(spreadsheet_token: str) -> str:
     return f"https://feishu.cn/sheets/{spreadsheet_token}"
+
+
+def build_default_sheet_specs() -> list[dict[str, str]]:
+    return [
+        {
+            "sort_id": sort_id,
+            "title": title,
+            "variable_name": variable_name,
+        }
+        for sort_id, title, variable_name in SORT_SHEETS
+    ]
 
 
 def _format_trigger(cfg: Config) -> str:
