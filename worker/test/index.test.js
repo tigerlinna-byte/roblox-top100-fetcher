@@ -3,6 +3,20 @@ import assert from "node:assert/strict";
 
 import { handleRequest } from "../src/index.js";
 
+class MemoryKvStore {
+  constructor() {
+    this.store = new Map();
+  }
+
+  async get(key) {
+    return this.store.has(key) ? this.store.get(key) : null;
+  }
+
+  async put(key, value) {
+    this.store.set(key, value);
+  }
+}
+
 function buildEnv(overrides = {}) {
   return {
     GH_TOKEN: "gh-test",
@@ -15,6 +29,7 @@ function buildEnv(overrides = {}) {
     FEISHU_VERIFICATION_TOKEN: "verify-me",
     ALLOWED_CHAT_IDS: "oc_test_chat",
     ALLOWED_OPEN_IDS: "ou_test_user",
+    EVENT_DEDUP_KV: new MemoryKvStore(),
     ...overrides,
   };
 }
@@ -27,6 +42,16 @@ function buildRequest(payload) {
     },
     body: JSON.stringify(payload),
   });
+}
+
+function buildCtx() {
+  const tasks = [];
+  return {
+    tasks,
+    waitUntil(promise) {
+      tasks.push(promise);
+    },
+  };
 }
 
 test("responds to Feishu challenge", async () => {
@@ -45,6 +70,7 @@ test("responds to Feishu challenge", async () => {
 
 test("dispatches workflow and sends ack for allowed command", async () => {
   const calls = [];
+  const ctx = buildCtx();
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url, init });
 
@@ -65,7 +91,7 @@ test("dispatches workflow and sends ack for allowed command", async () => {
 
   const response = await handleRequest(
     buildRequest({
-      header: { token: "verify-me" },
+      header: { token: "verify-me", event_id: "evt_1" },
       event: {
         sender: {
           sender_id: {
@@ -73,6 +99,7 @@ test("dispatches workflow and sends ack for allowed command", async () => {
           },
         },
         message: {
+          message_id: "om_message_1",
           chat_id: "oc_test_chat",
           message_type: "text",
           content: JSON.stringify({ text: "/roblox-top100" }),
@@ -80,12 +107,15 @@ test("dispatches workflow and sends ack for allowed command", async () => {
       },
     }),
     buildEnv(),
-    null,
+    ctx,
     fetchImpl,
   );
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true, dispatched: true });
+  assert.equal(ctx.tasks.length, 1);
+
+  await Promise.all(ctx.tasks);
   assert.equal(calls.length, 3);
 
   const dispatchCall = calls[0];
@@ -104,7 +134,7 @@ test("ignores command from unauthorized chat", async () => {
   let called = false;
   const response = await handleRequest(
     buildRequest({
-      header: { token: "verify-me" },
+      header: { token: "verify-me", event_id: "evt_2" },
       event: {
         sender: {
           sender_id: {
@@ -129,4 +159,58 @@ test("ignores command from unauthorized chat", async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true, ignored: "chat_not_allowed" });
   assert.equal(called, false);
+});
+
+test("deduplicates repeated event ids with persistent store", async () => {
+  const calls = [];
+  const ctx1 = buildCtx();
+  const ctx2 = buildCtx();
+  const env = buildEnv();
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, init });
+
+    if (String(url).includes("/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+
+    if (String(url).includes("/tenant_access_token/internal")) {
+      return Response.json({ code: 0, tenant_access_token: "tenant-token" });
+    }
+
+    if (String(url).includes("/im/v1/messages")) {
+      return Response.json({ code: 0, data: { message_id: "om_test" } });
+    }
+
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+
+  const payload = {
+    header: { token: "verify-me", event_id: "evt_duplicate" },
+    event: {
+      sender: {
+        sender_id: {
+          open_id: "ou_test_user",
+        },
+      },
+      message: {
+        message_id: "om_message_same",
+        chat_id: "oc_test_chat",
+        message_type: "text",
+        content: JSON.stringify({ text: "/roblox-top100" }),
+      },
+    },
+  };
+
+  const firstResponse = await handleRequest(buildRequest(payload), env, ctx1, fetchImpl);
+  assert.equal(firstResponse.status, 200);
+  assert.deepEqual(await firstResponse.json(), { ok: true, dispatched: true });
+  assert.equal(ctx1.tasks.length, 1);
+  await Promise.all(ctx1.tasks);
+  assert.equal(calls.length, 3);
+
+  const secondResponse = await handleRequest(buildRequest(payload), env, ctx2, fetchImpl);
+  assert.equal(secondResponse.status, 200);
+  assert.deepEqual(await secondResponse.json(), { ok: true, duplicate: true });
+  assert.equal(ctx2.tasks.length, 0);
+  assert.equal(calls.length, 3);
 });
