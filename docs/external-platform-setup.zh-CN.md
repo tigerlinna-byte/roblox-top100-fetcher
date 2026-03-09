@@ -2,7 +2,7 @@
 
 这份手册对应当前仓库的实现，目标是完成两件事：
 
-1. GitHub Actions 每天自动抓取 Roblox Top 100
+1. GitHub Actions 每天自动生成 Roblox 榜单飞书表格并回传到群里
 2. 飞书群内发送 `/roblox-top100` 可手动触发一次 Top 100 抓取
 3. 飞书群内发送 `/roblox-top-day` 可手动生成 Top Trending 前 100 飞书普通表格
 
@@ -48,6 +48,14 @@
 - `FEISHU_BOT_WEBHOOK`（可选兜底）
 - `GH_TOKEN`（如需让 `/roblox-top-day` 复用同一张飞书表格，必须配置到 GitHub Actions secrets）
 
+进入：
+
+`Settings -> Secrets and variables -> Actions -> Variables`
+
+新增：
+
+- `FEISHU_SCHEDULE_CHAT_ID`（定时任务每天回发表格链接的目标群 chat_id）
+
 值填写：
 
 - `FEISHU_APP_ID`：飞书自建应用 App ID
@@ -66,6 +74,12 @@
 - 飞书群收到排行榜成功消息
 
 如果这一步不通，先不要继续配置 Worker 和飞书事件。
+
+当前默认定时任务行为：
+
+- 每天北京时间 `09:00`
+- 自动运行 `/roblox-top-day` 对应链路
+- 将飞书普通表格链接发送到 `FEISHU_SCHEDULE_CHAT_ID` 对应的群
 
 ### 1.4 创建给 Worker 使用的 GitHub Token
 
