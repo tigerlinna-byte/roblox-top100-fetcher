@@ -110,7 +110,7 @@ def _sync_top_trending_sheet(
         sheet_titles = [sheet_spec["title"] for sheet_spec in sheet_specs]
         sheet_ids = feishu_client.ensure_sheet_set(
             spreadsheet.spreadsheet_token,
-            spreadsheet.sheet_ids[0],
+            spreadsheet.sheet_ids[0] if spreadsheet.sheet_ids else None,
             sheet_titles,
         )
         target = SpreadsheetTarget(

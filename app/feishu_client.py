@@ -86,9 +86,6 @@ class FeishuClient:
         sheet_ids = _extract_sheet_ids(spreadsheet)
         if not sheet_ids:
             sheet_ids = _extract_sheet_ids(data.get("data", {}))
-        if not sheet_ids:
-            raise FeishuClientError("Feishu spreadsheet response missing sheet id")
-
         url = str(spreadsheet.get("url") or _build_spreadsheet_url(spreadsheet_token))
         return SpreadsheetInfo(
             spreadsheet_token=spreadsheet_token,
@@ -99,23 +96,31 @@ class FeishuClient:
     def ensure_sheet_set(
         self,
         spreadsheet_token: str,
-        existing_sheet_id: str,
+        existing_sheet_id: str | None,
         sheet_titles: list[str],
     ) -> tuple[str, ...]:
         access_token = self._fetch_tenant_access_token()
-        requests_payload = [
-            {
-                "updateSheet": {
-                    "properties": {
-                        "sheetId": existing_sheet_id,
-                        "title": sheet_titles[0],
-                        "index": 0,
-                    },
-                    "fields": "title,index",
+        requests_payload: list[dict] = []
+        start_index = 0
+        created_ids: list[str] = []
+
+        if existing_sheet_id:
+            requests_payload.append(
+                {
+                    "updateSheet": {
+                        "properties": {
+                            "sheetId": existing_sheet_id,
+                            "title": sheet_titles[0],
+                            "index": 0,
+                        },
+                        "fields": "title,index",
+                    }
                 }
-            }
-        ]
-        for index, title in enumerate(sheet_titles[1:], start=1):
+            )
+            created_ids.append(existing_sheet_id)
+            start_index = 1
+
+        for index, title in enumerate(sheet_titles[start_index:], start=start_index):
             requests_payload.append(
                 {
                     "addSheet": {
@@ -134,7 +139,6 @@ class FeishuClient:
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
-        created_ids = [existing_sheet_id]
         for reply in data.get("data", {}).get("replies", []):
             add_sheet = reply.get("addSheet", {}) if isinstance(reply, dict) else {}
             sheet_id = _extract_sheet_id(add_sheet)
