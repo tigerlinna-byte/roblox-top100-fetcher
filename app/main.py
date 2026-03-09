@@ -131,6 +131,11 @@ def _sync_top_trending_sheet(
         if not save_spreadsheet_target(github_client, target):
             logging.warning("Top Trending spreadsheet identifiers were not persisted.")
 
+    feishu_client.delete_extra_sheets(
+        target.spreadsheet_token,
+        keep_sheet_ids={sheet.sheet_id for sheet in target.sheets},
+    )
+
     for sheet in target.sheets:
         sheet_records = records_by_sheet.get(sheet.title, [])
         feishu_client.write_sheet_values(
