@@ -83,7 +83,7 @@ def _fetch_report_payload(cfg: Config, client: RobloxClient):
         return {
             "top_trending_v4": client.fetch_games_by_sort_id("Top_Trending_V4"),
             "up_and_coming_v4": client.fetch_games_by_sort_id("Up_And_Coming_V4"),
-            "ccu_based_v1": client.fetch_games_by_sort_id("CCU_Based_V1"),
+            "top_playing_now": client.fetch_games_by_sort_id("top-playing-now"),
         }
     return client.fetch_top_games()
 
