@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from .config import Config
 from .github_client import GitHubClient
@@ -22,6 +23,7 @@ SORT_SHEETS = (
     ("Up_And_Coming_V4", "up_and_coming_v4", UP_AND_COMING_SHEET_ID_VAR, UP_AND_COMING_PREV_RANKS_VAR),
     ("CCU_Based_V1", "ccu_based_v1", CCU_BASED_SHEET_ID_VAR, CCU_BASED_PREV_RANKS_VAR),
 )
+MIN_RENDER_ROWS = 140
 
 
 @dataclass(frozen=True)
@@ -60,7 +62,7 @@ def build_top_trending_values(
 
     for record in records:
         rows.append(build_data_row(record, previous_ranks))
-    return rows
+    return pad_rows(rows, min_rows=MIN_RENDER_ROWS, column_count=7)
 
 
 def build_rank_change_cells(
@@ -101,6 +103,13 @@ def build_data_row(record: GameRecord, previous_ranks: dict[int, int]) -> list[o
     ]
 
 
+def pad_rows(rows: list[list[object]], *, min_rows: int, column_count: int) -> list[list[object]]:
+    padded = [list(row) + [""] * (column_count - len(row)) for row in rows]
+    while len(padded) < min_rows:
+        padded.append([""] * column_count)
+    return padded
+
+
 def format_compact_number(value: int) -> str:
     amount = abs(value)
     if amount >= 1_000_000_000:
@@ -113,8 +122,9 @@ def format_compact_number(value: int) -> str:
 
 
 def calculate_game_name_width(records: list[GameRecord]) -> int:
-    longest = max((len(record.name) for record in records), default=12)
-    return max(220, min(680, longest * 14))
+    visual_units = max((_measure_text_units(record.name) for record in records), default=12)
+    # Approximate Feishu sheet column width from visible glyph width with padding.
+    return max(240, min(960, int(visual_units * 12 + 48)))
 
 
 def save_spreadsheet_target(github_client: GitHubClient, target: SpreadsheetTarget) -> bool:
@@ -199,12 +209,12 @@ def build_default_sheet_specs() -> list[dict[str, str]]:
     ]
 
 
-def _format_updated_at(record: GameRecord) -> str:
+def _format_updated_at(record: GameRecord) -> date | str:
     raw = record.updated_at or record.fetched_at
     return _short_datetime(raw)
 
 
-def _short_datetime(raw: str) -> str:
+def _short_datetime(raw: str) -> date | str:
     if not raw:
         return "-"
     try:
@@ -213,7 +223,7 @@ def _short_datetime(raw: str) -> str:
         return raw[:10]
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC).strftime("%Y-%m-%d")
+    return parsed.astimezone(UTC).date()
 
 
 def _parse_previous_ranks(raw: str) -> dict[int, int]:
@@ -232,3 +242,18 @@ def _parse_previous_ranks(raw: str) -> dict[int, int]:
         except (TypeError, ValueError):
             continue
     return result
+
+
+def _measure_text_units(text: str) -> float:
+    total = 0.0
+    for char in text:
+        east_asian_width = unicodedata.east_asian_width(char)
+        if east_asian_width in {"F", "W"}:
+            total += 2.0
+        elif east_asian_width == "A":
+            total += 1.5
+        elif char in {" ", "-", "_", ".", "'", ","}:
+            total += 0.7
+        else:
+            total += 1.0
+    return total

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import date
 import unittest
 
 from app.config import Config
 from app.models import GameRecord
 from app.top_trending_sheet import (
+    MIN_RENDER_ROWS,
+    calculate_game_name_width,
     calculate_rank_change,
     build_default_sheet_specs,
     build_top_trending_values,
@@ -47,7 +50,7 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertEqual("123.5K", rows[1][2])
         self.assertEqual(3, rows[1][3])
         self.assertEqual("987.7M", rows[1][4])
-        self.assertEqual("2026-03-08", rows[1][6])
+        self.assertEqual(date(2026, 3, 8), rows[1][6])
 
     def test_calculate_rank_change_handles_first_entry(self) -> None:
         record = GameRecord(
@@ -130,8 +133,54 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertIsInstance(rows[2][2], str)
         self.assertIsInstance(rows[1][4], str)
         self.assertIsInstance(rows[2][4], str)
-        self.assertIsInstance(rows[1][6], str)
-        self.assertIsInstance(rows[2][6], str)
+        self.assertIsInstance(rows[1][6], date)
+        self.assertIsInstance(rows[2][6], date)
+
+    def test_values_are_padded_to_clear_old_tail_rows(self) -> None:
+        rows = build_top_trending_values(
+            Config(),
+            "top_trending_v4",
+            [],
+            {},
+        )
+
+        self.assertEqual(MIN_RENDER_ROWS, len(rows))
+        self.assertEqual(["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "更新"], rows[0])
+        self.assertEqual(["", "", "", "", "", "", ""], rows[-1])
+
+    def test_game_name_width_tracks_visual_length(self) -> None:
+        narrow = calculate_game_name_width(
+            [
+                GameRecord(
+                    rank=1,
+                    place_id=1,
+                    name="Game",
+                    creator="Studio",
+                    playing=1,
+                    visits=1,
+                    up_votes=0,
+                    down_votes=0,
+                    fetched_at="2026-03-09T00:00:00Z",
+                )
+            ]
+        )
+        wide = calculate_game_name_width(
+            [
+                GameRecord(
+                    rank=1,
+                    place_id=1,
+                    name="超长中文游戏名 Roblox Ultimate Adventure Simulator",
+                    creator="Studio",
+                    playing=1,
+                    visits=1,
+                    up_votes=0,
+                    down_votes=0,
+                    fetched_at="2026-03-09T00:00:00Z",
+                )
+            ]
+        )
+
+        self.assertGreater(wide, narrow)
 
 
 if __name__ == "__main__":
