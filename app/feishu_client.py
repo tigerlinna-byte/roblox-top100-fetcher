@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from dataclasses import dataclass
 from typing import Callable
 
@@ -174,7 +175,7 @@ class FeishuClient:
         self,
         spreadsheet_token: str,
         sheet_id: str,
-        values: list[list[str]],
+        values: list[list[object]],
     ) -> None:
         access_token = self._fetch_tenant_access_token()
         column_letter = _column_letter(max((len(row) for row in values), default=1))
@@ -185,7 +186,7 @@ class FeishuClient:
             json_payload={
                 "valueRange": {
                     "range": range_ref,
-                    "values": values,
+                    "values": _serialize_sheet_values(values),
                 }
             },
             headers={"Authorization": f"Bearer {access_token}"},
@@ -217,13 +218,7 @@ class FeishuClient:
         )
 
     def update_spreadsheet_title(self, spreadsheet_token: str, title: str) -> None:
-        access_token = self._fetch_tenant_access_token()
-        self._request_json(
-            "PUT",
-            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/properties",
-            json_payload={"title": title},
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
+        del spreadsheet_token, title
 
     def apply_sheet_layout(
         self,
@@ -233,39 +228,7 @@ class FeishuClient:
         rank_width: int,
         game_name_width: int,
     ) -> None:
-        access_token = self._fetch_tenant_access_token()
-        requests_payload = [
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": sheet_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 0,
-                        "endIndex": 1,
-                    },
-                    "properties": {"pixelSize": rank_width},
-                    "fields": "pixelSize",
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": sheet_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 1,
-                        "endIndex": 2,
-                    },
-                    "properties": {"pixelSize": game_name_width},
-                    "fields": "pixelSize",
-                }
-            },
-        ]
-        self._request_json(
-            "POST",
-            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/sheets_batch_update",
-            json_payload={"requests": requests_payload},
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
+        del spreadsheet_token, sheet_id, rank_width, game_name_width
 
     def _fetch_tenant_access_token(self) -> str:
         data = self._request_json(
@@ -416,3 +379,15 @@ def _column_letter(index: int) -> str:
         value, remainder = divmod(value - 1, 26)
         letters.append(chr(65 + remainder))
     return "".join(reversed(letters))
+
+
+def _serialize_sheet_values(values: list[list[object]]) -> list[list[object]]:
+    return [[_serialize_sheet_cell(cell) for cell in row] for row in values]
+
+
+def _serialize_sheet_cell(cell: object) -> object:
+    if isinstance(cell, datetime):
+        return cell.date().isoformat()
+    if isinstance(cell, date):
+        return cell.isoformat()
+    return cell
