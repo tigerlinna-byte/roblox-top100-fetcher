@@ -182,6 +182,29 @@ class TopTrendingSheetTests(unittest.TestCase):
 
         self.assertGreater(wide, narrow)
 
+    def test_compact_number_uses_sub_thousand_k_suffix(self) -> None:
+        rows = build_top_trending_values(
+            Config(),
+            "top_trending_v4",
+            [
+                GameRecord(
+                    rank=1,
+                    place_id=1,
+                    name="Game",
+                    creator="Studio",
+                    playing=900,
+                    visits=950,
+                    up_votes=0,
+                    down_votes=0,
+                    fetched_at="2026-03-09T00:00:00Z",
+                )
+            ],
+            {},
+        )
+
+        self.assertEqual("0.9K", rows[1][2])
+        self.assertEqual("0.9K", rows[1][4])
+
 
 if __name__ == "__main__":
     unittest.main()
