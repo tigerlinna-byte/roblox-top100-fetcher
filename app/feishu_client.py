@@ -228,7 +228,27 @@ class FeishuClient:
         rank_width: int,
         game_name_width: int,
     ) -> None:
-        del spreadsheet_token, sheet_id, rank_width, game_name_width
+        access_token = self._fetch_tenant_access_token()
+        for start_index, end_index, width in (
+            (0, 1, rank_width),
+            (1, 2, game_name_width),
+        ):
+            self._request_json(
+                "PUT",
+                f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/dimension_range",
+                json_payload={
+                    "dimension": {
+                        "sheetId": sheet_id,
+                        "majorDimension": "COLUMNS",
+                        "startIndex": start_index,
+                        "endIndex": end_index,
+                    },
+                    "dimensionProperties": {
+                        "fixedSize": width,
+                    },
+                },
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
 
     def _fetch_tenant_access_token(self) -> str:
         data = self._request_json(
