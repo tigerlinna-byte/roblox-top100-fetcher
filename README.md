@@ -96,6 +96,7 @@ Workflow file:
 - `.github/workflows/roblox_rank_sync.yml`
 
 Default schedule is daily `09:00` Beijing time (`cron: 0 1 * * *` in UTC).
+The scheduled run now uses `top_trending_sheet` mode and sends the spreadsheet link to a fixed Feishu group.
 
 Set these repository secrets before enabling workflow:
 
@@ -106,6 +107,7 @@ Set these repository secrets before enabling workflow:
 
 Optional repository variables for spreadsheet reuse:
 
+- `FEISHU_SCHEDULE_CHAT_ID` (required if the scheduled run should send the sheet link into a Feishu group)
 - `FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN`
 - `FEISHU_TOP_TRENDING_SHEET_ID`
 
@@ -115,7 +117,7 @@ Manual runs also support workflow inputs:
 - `trigger_actor`
 - `chat_id`
 
-They are shown in the Feishu summary so you can distinguish schedule runs from Feishu-triggered runs.
+`chat_id` is still optional for manual runs. Scheduled runs read `FEISHU_SCHEDULE_CHAT_ID` instead.
 
 ## Feishu manual trigger in group chat
 
