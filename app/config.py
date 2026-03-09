@@ -31,7 +31,7 @@ class Config:
     feishu_top_trending_prev_ranks: str = ""
     feishu_up_and_coming_prev_ranks: str = ""
     feishu_ccu_based_prev_ranks: str = ""
-    feishu_top_trending_spreadsheet_title: str = "Roblox Top Trending"
+    feishu_top_trending_spreadsheet_title: str = "Roblox Top 100"
 
 
 def _get_int(name: str, default: int) -> int:
@@ -94,6 +94,6 @@ def load_config() -> Config:
         feishu_ccu_based_prev_ranks=os.getenv("FEISHU_CCU_BASED_PREV_RANKS", ""),
         feishu_top_trending_spreadsheet_title=os.getenv(
             "FEISHU_TOP_TRENDING_SPREADSHEET_TITLE",
-            "Roblox Top Trending",
+            "Roblox Top 100",
         ),
     )

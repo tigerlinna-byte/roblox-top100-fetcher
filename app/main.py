@@ -11,6 +11,7 @@ from .roblox_client import RobloxClient, RobloxClientError
 from .storage import write_outputs
 from .summary import build_failure_markdown, build_success_markdown
 from .top_trending_sheet import (
+    calculate_game_name_width,
     SheetTarget,
     SpreadsheetTarget,
     build_default_sheet_specs,
@@ -135,6 +136,7 @@ def _sync_top_trending_sheet(
         target.spreadsheet_token,
         keep_sheet_ids={sheet.sheet_id for sheet in target.sheets},
     )
+    _apply_trending_sheet_presentation(cfg, feishu_client, target, records_by_sheet)
 
     for sheet in target.sheets:
         sheet_records = records_by_sheet.get(sheet.title, [])
@@ -151,6 +153,27 @@ def _sync_top_trending_sheet(
         if not save_previous_ranks(github_client, sheet, sheet_records):
             logging.warning("Previous ranks were not persisted for %s.", sheet.title)
     return target
+
+
+def _apply_trending_sheet_presentation(cfg, feishu_client, target, records_by_sheet) -> None:
+    try:
+        feishu_client.update_spreadsheet_title(
+            target.spreadsheet_token,
+            cfg.feishu_top_trending_spreadsheet_title,
+        )
+    except FeishuClientError:
+        logging.warning("Failed to update spreadsheet title.", exc_info=True)
+
+    for sheet in target.sheets:
+        try:
+            feishu_client.apply_sheet_layout(
+                target.spreadsheet_token,
+                sheet.sheet_id,
+                rank_width=56,
+                game_name_width=calculate_game_name_width(records_by_sheet.get(sheet.title, [])),
+            )
+        except FeishuClientError:
+            logging.warning("Failed to apply sheet layout for %s.", sheet.title, exc_info=True)
 
 
 def _output_prefix(cfg: Config) -> str:

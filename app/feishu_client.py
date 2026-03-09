@@ -216,6 +216,57 @@ class FeishuClient:
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
+    def update_spreadsheet_title(self, spreadsheet_token: str, title: str) -> None:
+        access_token = self._fetch_tenant_access_token()
+        self._request_json(
+            "PUT",
+            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/properties",
+            json_payload={"title": title},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    def apply_sheet_layout(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        *,
+        rank_width: int,
+        game_name_width: int,
+    ) -> None:
+        access_token = self._fetch_tenant_access_token()
+        requests_payload = [
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 0,
+                        "endIndex": 1,
+                    },
+                    "properties": {"pixelSize": rank_width},
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 1,
+                        "endIndex": 2,
+                    },
+                    "properties": {"pixelSize": game_name_width},
+                    "fields": "pixelSize",
+                }
+            },
+        ]
+        self._request_json(
+            "POST",
+            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/sheets_batch_update",
+            json_payload={"requests": requests_payload},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
     def _fetch_tenant_access_token(self) -> str:
         data = self._request_json(
             "POST",
