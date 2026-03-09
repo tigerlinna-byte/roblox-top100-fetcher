@@ -26,6 +26,8 @@ class Config:
     github_variables_token: str = ""
     feishu_top_trending_spreadsheet_token: str = ""
     feishu_top_trending_sheet_id: str = ""
+    feishu_up_and_coming_sheet_id: str = ""
+    feishu_ccu_based_sheet_id: str = ""
     feishu_top_trending_spreadsheet_title: str = "Roblox Top Trending"
 
 
@@ -82,6 +84,8 @@ def load_config() -> Config:
             "",
         ),
         feishu_top_trending_sheet_id=os.getenv("FEISHU_TOP_TRENDING_SHEET_ID", ""),
+        feishu_up_and_coming_sheet_id=os.getenv("FEISHU_UP_AND_COMING_SHEET_ID", ""),
+        feishu_ccu_based_sheet_id=os.getenv("FEISHU_CCU_BASED_SHEET_ID", ""),
         feishu_top_trending_spreadsheet_title=os.getenv(
             "FEISHU_TOP_TRENDING_SPREADSHEET_TITLE",
             "Roblox Top Trending",

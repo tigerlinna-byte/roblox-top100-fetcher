@@ -124,8 +124,51 @@ class FeishuClientTests(unittest.TestCase):
         spreadsheet = client.create_spreadsheet("Roblox Top Trending")
 
         self.assertEqual("shtcn_sheet", spreadsheet.spreadsheet_token)
-        self.assertEqual("sheet001", spreadsheet.sheet_id)
+        self.assertEqual(("sheet001",), spreadsheet.sheet_ids)
         self.assertEqual("https://feishu.cn/sheets/shtcn_sheet", spreadsheet.url)
+
+    def test_ensure_sheet_set_returns_three_sheet_ids(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        update_response = Mock()
+        update_response.status_code = 200
+        update_response.json.return_value = {
+            "code": 0,
+            "data": {
+                "replies": [
+                    {"updateSheet": {"properties": {"sheetId": "sheet001"}}},
+                    {"addSheet": {"properties": {"sheetId": "sheet002"}}},
+                    {"addSheet": {"properties": {"sheetId": "sheet003"}}},
+                ]
+            },
+        }
+
+        session.request.side_effect = [auth_response, update_response]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        sheet_ids = client.ensure_sheet_set(
+            "shtcn_sheet",
+            "sheet001",
+            ["top_trending_v4", "up_and_coming_v4", "ccu_based_v1"],
+        )
+
+        self.assertEqual(("sheet001", "sheet002", "sheet003"), sheet_ids)
 
 
 if __name__ == "__main__":

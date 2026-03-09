@@ -50,6 +50,7 @@ jobs:
           REQUEST_TIMEOUT_SECONDS: 15
           API_LIMIT: 100
           ROBLOX_SORT_ID: top-playing-now
+          ROBLOX_TOP_TRENDING_SORT_ID: Top_Trending_V4
           FEISHU_BOT_WEBHOOK: ${{ secrets.FEISHU_BOT_WEBHOOK }}
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}

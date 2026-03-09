@@ -41,22 +41,25 @@ class RobloxClient:
 
     def fetch_top_trending_games(self) -> list[GameRecord]:
         configured_sort_id = self._resolve_top_trending_sort_id()
-        candidate_sort_ids = [configured_sort_id]
+        return self.fetch_games_by_sort_id(configured_sort_id)
+
+    def fetch_games_by_sort_id(self, sort_id: str) -> list[GameRecord]:
+        candidate_sort_ids = [sort_id]
         candidate_sort_ids.extend(
             sort_id
             for sort_id in TOP_TRENDING_SORT_ID_CANDIDATES
-            if sort_id != configured_sort_id
+            if sort_id != candidate_sort_ids[0]
         )
 
         last_error: Exception | None = None
-        for sort_id in candidate_sort_ids:
+        for candidate_sort_id in candidate_sort_ids:
             try:
-                return self._fetch_games_for_sort(sort_id)
+                return self._fetch_games_for_sort(candidate_sort_id)
             except RobloxClientError as exc:
                 last_error = exc
                 continue
 
-        raise RobloxClientError("Unable to fetch Top Trending games.") from last_error
+        raise RobloxClientError(f"Unable to fetch games for sort {sort_id}.") from last_error
 
     def _fetch_games_for_sort(self, sort_id: str) -> list[GameRecord]:
         payload = self._fetch_sort_content(sort_id)
