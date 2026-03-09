@@ -259,6 +259,7 @@ async function processCommandEvent(fetchImpl, env, event) {
     await dispatchWorkflow(fetchImpl, env, {
       triggerSource: "feishu_chat_command",
       triggerActor: event.triggerActor,
+      chatId: event.chatId,
     });
 
     console.log(JSON.stringify({
@@ -306,6 +307,7 @@ async function dispatchWorkflow(fetchImpl, env, trigger) {
       inputs: {
         trigger_source: trigger.triggerSource,
         trigger_actor: trigger.triggerActor,
+        chat_id: trigger.chatId,
       },
     }),
   });

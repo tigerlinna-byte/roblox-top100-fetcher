@@ -72,16 +72,20 @@ Environment variables (defaults shown):
 - `API_LIMIT=100`
 - `ROBLOX_SORT_ID=top-playing-now`
 - `FEISHU_BOT_WEBHOOK=...`
+- `FEISHU_APP_ID=...`
+- `FEISHU_APP_SECRET=...`
 - `FEISHU_TIMEZONE=Asia/Shanghai`
 - `RUN_TRIGGER_SOURCE=manual`
 - `RUN_TRIGGER_ACTOR=`
+- `RUN_CHAT_ID=`
 
 ## Feishu bot setup
 
 1. Add a custom bot to your target Feishu group.
 2. Use keyword verification, for example `Roblox`.
 3. Copy the bot webhook URL.
-4. Put `FEISHU_BOT_WEBHOOK` into local environment variables or GitHub Secrets.
+4. Put `FEISHU_BOT_WEBHOOK` into local environment variables or GitHub Secrets if you want webhook fallback delivery.
+5. Put `FEISHU_APP_ID` and `FEISHU_APP_SECRET` into local environment variables or GitHub Secrets for app-bot delivery back to the triggering chat.
 
 ## GitHub Actions schedule (free)
 
@@ -93,12 +97,15 @@ Default schedule is daily `09:00` Beijing time (`cron: 0 1 * * *` in UTC).
 
 Set these repository secrets before enabling workflow:
 
-- `FEISHU_BOT_WEBHOOK`
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+- `FEISHU_BOT_WEBHOOK` (optional fallback)
 
 Manual runs also support workflow inputs:
 
 - `trigger_source`
 - `trigger_actor`
+- `chat_id`
 
 They are shown in the Feishu summary so you can distinguish schedule runs from Feishu-triggered runs.
 
@@ -115,17 +122,18 @@ Architecture:
 1. Feishu self-built app bot receives `/roblox-top100`
 2. Cloudflare Worker validates chat/user and dispatches GitHub Actions
 3. GitHub Actions runs `python -m app.main`
-4. Python job sends the final result back through `FEISHU_BOT_WEBHOOK`
+4. Python job sends the final result back to the triggering chat through the Feishu app bot API
 
 ### 1. Verify GitHub Actions first
 
 Before connecting Feishu, make sure the workflow can already run from GitHub:
 
 1. Push this repo to GitHub
-2. Add repository secret `FEISHU_BOT_WEBHOOK`
-3. Open `Actions -> Roblox Rank Sync`
-4. Click `Run workflow`
-5. Confirm the job succeeds and the Feishu group receives a success message
+2. Add repository secrets `FEISHU_APP_ID` and `FEISHU_APP_SECRET`
+3. Optional fallback: add repository secret `FEISHU_BOT_WEBHOOK`
+4. Open `Actions -> Roblox Rank Sync`
+5. Click `Run workflow`
+6. Confirm the job succeeds and the Feishu group receives a success message
 
 ### 2. Create GitHub token for the Worker
 

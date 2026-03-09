@@ -13,6 +13,10 @@ on:
         description: Trigger actor label shown in Feishu notification
         required: false
         default: ""
+      chat_id:
+        description: Feishu chat id to receive the final result
+        required: false
+        default: ""
 
 jobs:
   sync:
@@ -20,6 +24,7 @@ jobs:
     env:
       RUN_TRIGGER_SOURCE: ${{ github.event_name == 'schedule' && 'schedule' || github.event.inputs.trigger_source || github.event_name }}
       RUN_TRIGGER_ACTOR: ${{ github.event.inputs.trigger_actor || github.actor }}
+      RUN_CHAT_ID: ${{ github.event.inputs.chat_id || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,9 +46,12 @@ jobs:
           API_LIMIT: 100
           ROBLOX_SORT_ID: top-playing-now
           FEISHU_BOT_WEBHOOK: ${{ secrets.FEISHU_BOT_WEBHOOK }}
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_TIMEZONE: Asia/Shanghai
           RUN_TRIGGER_SOURCE: ${{ env.RUN_TRIGGER_SOURCE }}
           RUN_TRIGGER_ACTOR: ${{ env.RUN_TRIGGER_ACTOR }}
+          RUN_CHAT_ID: ${{ env.RUN_CHAT_ID }}
         run: python -m app.main
 
       - name: Upload data artifacts
