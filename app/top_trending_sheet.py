@@ -116,7 +116,7 @@ def format_compact_number(value: int) -> str:
         return f"{value / 1_000_000_000:.1f}B"
     if amount >= 1_000_000:
         return f"{value / 1_000_000:.1f}M"
-    if amount >= 1_000:
+    if amount >= 100:
         return f"{value / 1_000:.1f}K"
     return str(value)
 

@@ -169,8 +169,9 @@ def _apply_trending_sheet_presentation(cfg, feishu_client, target, records_by_sh
             feishu_client.apply_sheet_layout(
                 target.spreadsheet_token,
                 sheet.sheet_id,
-                rank_width=56,
-                game_name_width=calculate_game_name_width(records_by_sheet.get(sheet.title, [])),
+                rank_width=60,
+                game_name_width=350,
+                developer_width=150,
             )
         except FeishuClientError:
             logging.warning("Failed to apply sheet layout for %s.", sheet.title, exc_info=True)
