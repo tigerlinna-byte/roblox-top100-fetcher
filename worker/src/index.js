@@ -1,5 +1,6 @@
 const DEFAULT_COMMAND = "/roblox-top100";
 const processedEvents = new Map();
+const DEFAULT_DEDUP_KV_BINDING = "EVENT_DEDUP_KV";
 
 export default {
   async fetch(request, env, ctx) {
@@ -7,7 +8,7 @@ export default {
   },
 };
 
-export async function handleRequest(request, env, _ctx, fetchImpl = fetch) {
+export async function handleRequest(request, env, ctx, fetchImpl = fetch) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/health") {
     return jsonResponse({ ok: true, service: "feishu-gh-dispatch" });
@@ -31,7 +32,14 @@ export async function handleRequest(request, env, _ctx, fetchImpl = fetch) {
     return jsonResponse({ error: "Forbidden" }, 403);
   }
 
-  if (isDuplicateEvent(body, env)) {
+  const eventId = extractEventId(body);
+  if (await isDuplicateEvent(eventId, env)) {
+    console.log(JSON.stringify({
+      level: "info",
+      action: "dedup_hit",
+      eventId,
+      path: url.pathname,
+    }));
     return jsonResponse({ ok: true, duplicate: true });
   }
 
@@ -56,12 +64,23 @@ export async function handleRequest(request, env, _ctx, fetchImpl = fetch) {
     return jsonResponse({ ok: true, ignored: "user_not_allowed" });
   }
 
-  await dispatchWorkflow(fetchImpl, env, {
-    triggerSource: "feishu_chat_command",
-    triggerActor: message.openId || message.userId || "feishu-user",
-  });
+  console.log(JSON.stringify({
+    level: "info",
+    action: "event_accepted",
+    eventId,
+    messageId: extractMessageId(body),
+    chatId: message.chatId,
+    userId: message.openId || message.userId || "feishu-user",
+  }));
 
-  await sendAck(fetchImpl, env, message.chatId);
+  scheduleBackgroundTask(
+    ctx,
+    processCommandEvent(fetchImpl, env, {
+      eventId,
+      chatId: message.chatId,
+      triggerActor: message.openId || message.userId || "feishu-user",
+    }),
+  );
 
   return jsonResponse({ ok: true, dispatched: true });
 }
@@ -74,9 +93,21 @@ function safeParseJson(text) {
   }
 }
 
-function isDuplicateEvent(body, env) {
-  const eventId = extractEventId(body);
+async function isDuplicateEvent(eventId, env) {
   if (!eventId) {
+    return false;
+  }
+
+  const dedupStore = getDedupStore(env);
+  if (dedupStore) {
+    const existing = await dedupStore.get(eventId);
+    if (existing) {
+      return true;
+    }
+
+    await dedupStore.put(eventId, String(Date.now()), {
+      expirationTtl: getDedupTtlSeconds(env),
+    });
     return false;
   }
 
@@ -87,6 +118,11 @@ function isDuplicateEvent(body, env) {
   }
 
   processedEvents.set(eventId, Date.now());
+  console.warn(JSON.stringify({
+    level: "warn",
+    action: "dedup_store_missing",
+    binding: getDedupBindingName(env),
+  }));
   return false;
 }
 
@@ -99,8 +135,12 @@ function extractEventId(body) {
   );
 }
 
+function extractMessageId(body) {
+  return body.event?.message?.message_id || body.message_id || "";
+}
+
 function pruneProcessedEvents(env) {
-  const ttlMs = getDedupTtlMs(env);
+  const ttlMs = getDedupTtlSeconds(env) * 1000;
   const cutoff = Date.now() - ttlMs;
   for (const [eventId, seenAt] of processedEvents.entries()) {
     if (seenAt < cutoff) {
@@ -109,10 +149,36 @@ function pruneProcessedEvents(env) {
   }
 }
 
-function getDedupTtlMs(env) {
+function getDedupTtlSeconds(env) {
   const raw = Number.parseInt(String(env.EVENT_DEDUP_TTL_SECONDS || "600"), 10);
-  const ttlSeconds = Number.isFinite(raw) && raw > 0 ? raw : 600;
-  return ttlSeconds * 1000;
+  return Number.isFinite(raw) && raw > 0 ? raw : 600;
+}
+
+function getDedupBindingName(env) {
+  const raw = String(env.EVENT_DEDUP_KV_BINDING || DEFAULT_DEDUP_KV_BINDING).trim();
+  return raw || DEFAULT_DEDUP_KV_BINDING;
+}
+
+function getDedupStore(env) {
+  const bindingName = getDedupBindingName(env);
+  const candidate = env?.[bindingName];
+  if (
+    candidate &&
+    typeof candidate.get === "function" &&
+    typeof candidate.put === "function"
+  ) {
+    return candidate;
+  }
+  return null;
+}
+
+function scheduleBackgroundTask(ctx, task) {
+  if (ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(task);
+    return;
+  }
+
+  void task;
 }
 
 function isAllowedToken(body, env) {
@@ -178,6 +244,46 @@ function isAllowedValue(allowedSet, candidate) {
     return true;
   }
   return allowedSet.has(candidate);
+}
+
+async function processCommandEvent(fetchImpl, env, event) {
+  console.log(JSON.stringify({
+    level: "info",
+    action: "dispatch_start",
+    eventId: event.eventId,
+    chatId: event.chatId,
+    triggerActor: event.triggerActor,
+  }));
+
+  try {
+    await dispatchWorkflow(fetchImpl, env, {
+      triggerSource: "feishu_chat_command",
+      triggerActor: event.triggerActor,
+    });
+
+    console.log(JSON.stringify({
+      level: "info",
+      action: "dispatch_success",
+      eventId: event.eventId,
+    }));
+
+    await sendAck(fetchImpl, env, event.chatId);
+
+    console.log(JSON.stringify({
+      level: "info",
+      action: "ack_success",
+      eventId: event.eventId,
+      chatId: event.chatId,
+    }));
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: "error",
+      action: "command_event_failed",
+      eventId: event.eventId,
+      message: error instanceof Error ? error.message : String(error),
+    }));
+    throw error;
+  }
 }
 
 async function dispatchWorkflow(fetchImpl, env, trigger) {

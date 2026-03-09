@@ -1,3 +1,6 @@
 name = "roblox-top100-feishu-trigger"
 main = "src/index.js"
 compatibility_date = "2026-03-08"
+
+# 建议在 Cloudflare 后台绑定一个 KV 命名空间到 EVENT_DEDUP_KV，
+# 用于跨请求持久化飞书事件去重。未绑定时会降级为进程内存去重。
