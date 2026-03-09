@@ -124,6 +124,7 @@ test("dispatches workflow and sends ack for allowed command", async () => {
   assert.equal(dispatchBody.ref, "main");
   assert.equal(dispatchBody.inputs.trigger_source, "feishu_chat_command");
   assert.equal(dispatchBody.inputs.trigger_actor, "ou_test_user");
+  assert.equal(dispatchBody.inputs.chat_id, "oc_test_chat");
 
   const ackCall = calls[2];
   const ackBody = JSON.parse(ackCall.init.body);

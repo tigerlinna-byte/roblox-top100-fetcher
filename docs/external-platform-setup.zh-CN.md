@@ -10,7 +10,7 @@
 1. 飞书群消息进入自建应用机器人
 2. Cloudflare Worker 校验消息并调用 GitHub Actions
 3. GitHub Actions 执行 `python -m app.main`
-4. Python 程序通过飞书自定义机器人 webhook 回传结果
+4. Python 程序通过飞书自建应用机器人接口回传结果
 
 ## 准备信息
 
@@ -42,9 +42,15 @@
 
 新增：
 
-- `FEISHU_BOT_WEBHOOK`
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+- `FEISHU_BOT_WEBHOOK`（可选兜底）
 
-值填写飞书群自定义机器人的 webhook。
+值填写：
+
+- `FEISHU_APP_ID`：飞书自建应用 App ID
+- `FEISHU_APP_SECRET`：飞书自建应用 App Secret
+- `FEISHU_BOT_WEBHOOK`：如需保留自定义机器人兜底回传时再填写
 
 ### 1.3 先验证 GitHub 可以独立运行
 

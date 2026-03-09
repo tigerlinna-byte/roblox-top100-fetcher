@@ -13,9 +13,12 @@ class Config:
     api_limit: int = 100
     roblox_sort_id: str = "top-playing-now"
     feishu_bot_webhook: str = ""
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
     feishu_timezone: str = "Asia/Shanghai"
     run_trigger_source: str = "manual"
     run_trigger_actor: str = ""
+    run_chat_id: str = ""
 
 
 def _get_int(name: str, default: int) -> int:
@@ -41,7 +44,10 @@ def load_config() -> Config:
         api_limit=max(1, min(100, _get_int("API_LIMIT", 100))),
         roblox_sort_id=os.getenv("ROBLOX_SORT_ID", "top-playing-now"),
         feishu_bot_webhook=os.getenv("FEISHU_BOT_WEBHOOK", ""),
+        feishu_app_id=os.getenv("FEISHU_APP_ID", ""),
+        feishu_app_secret=os.getenv("FEISHU_APP_SECRET", ""),
         feishu_timezone=os.getenv("FEISHU_TIMEZONE", "Asia/Shanghai"),
         run_trigger_source=os.getenv("RUN_TRIGGER_SOURCE", "manual"),
         run_trigger_actor=os.getenv("RUN_TRIGGER_ACTOR", ""),
+        run_chat_id=os.getenv("RUN_CHAT_ID", ""),
     )
