@@ -190,7 +190,7 @@ class RobloxClient:
         params = {
             "sessionId": str(uuid.uuid4()),
             "sortId": sort_id,
-            "device": "computer",
+            "device": "all",
             "country": "all",
         }
         return self._request_json("GET", GET_SORT_CONTENT_URL, params=params)
