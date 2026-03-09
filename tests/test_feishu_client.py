@@ -170,6 +170,63 @@ class FeishuClientTests(unittest.TestCase):
 
         self.assertEqual(("sheet001", "sheet002", "sheet003"), sheet_ids)
 
+    def test_create_spreadsheet_allows_missing_default_sheet_id(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        create_response = Mock()
+        create_response.status_code = 200
+        create_response.json.return_value = {
+            "code": 0,
+            "data": {
+                "spreadsheet": {
+                    "spreadsheet_token": "shtcn_sheet",
+                    "url": "https://feishu.cn/sheets/shtcn_sheet",
+                }
+            },
+        }
+
+        update_response = Mock()
+        update_response.status_code = 200
+        update_response.json.return_value = {
+            "code": 0,
+            "data": {
+                "replies": [
+                    {"addSheet": {"properties": {"sheetId": "sheet001"}}},
+                    {"addSheet": {"properties": {"sheetId": "sheet002"}}},
+                    {"addSheet": {"properties": {"sheetId": "sheet003"}}},
+                ]
+            },
+        }
+
+        session.request.side_effect = [auth_response, create_response, auth_response, update_response]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        spreadsheet = client.create_spreadsheet("Roblox Top Trending")
+        sheet_ids = client.ensure_sheet_set(
+            spreadsheet.spreadsheet_token,
+            None,
+            ["top_trending_v4", "up_and_coming_v4", "ccu_based_v1"],
+        )
+
+        self.assertEqual((), spreadsheet.sheet_ids)
+        self.assertEqual(("sheet001", "sheet002", "sheet003"), sheet_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
