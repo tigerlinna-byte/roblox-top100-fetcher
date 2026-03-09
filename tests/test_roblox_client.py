@@ -131,6 +131,58 @@ class RobloxClientTests(unittest.TestCase):
         self.assertEqual("Trending A", items[0].name)
         self.assertEqual("2026-03-09T00:00:00Z", items[0].updated_at)
 
+    def test_fetch_top_trending_falls_back_to_candidate_sort_id(self) -> None:
+        session = Mock()
+
+        sorts_response = Mock()
+        sorts_response.status_code = 200
+        sorts_response.json.return_value = {
+            "sorts": [
+                {"id": "top-playing-now", "name": "Top Playing Now"},
+            ]
+        }
+
+        games_response = Mock()
+        games_response.status_code = 200
+        games_response.json.return_value = {
+            "games": [
+                {
+                    "universeId": 201,
+                    "rootPlaceId": 11,
+                    "name": "Trending B",
+                    "playerCount": 55,
+                }
+            ]
+        }
+
+        details_response = Mock()
+        details_response.status_code = 200
+        details_response.json.return_value = {
+            "data": [
+                {
+                    "id": 201,
+                    "name": "Trending B",
+                    "visits": 8888,
+                    "playing": 55,
+                    "creator": {"name": "Studio B"},
+                }
+            ]
+        }
+
+        session.request.side_effect = [sorts_response, games_response, details_response]
+
+        client = RobloxClient(
+            config=Config(api_limit=100, roblox_sort_id=""),
+            session=session,
+        )
+
+        items = client.fetch_top_trending_games()
+
+        self.assertEqual(1, len(items))
+        self.assertEqual("Trending B", items[0].name)
+        sort_request = session.request.call_args_list[1].kwargs
+        self.assertEqual("top-trending", sort_request["params"]["sortId"])
+
 
 if __name__ == "__main__":
     unittest.main()
