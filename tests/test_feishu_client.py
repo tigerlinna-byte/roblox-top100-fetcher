@@ -150,7 +150,20 @@ class FeishuClientTests(unittest.TestCase):
             },
         }
 
-        session.request.side_effect = [auth_response, update_response]
+        query_response = Mock()
+        query_response.status_code = 200
+        query_response.json.return_value = {
+            "code": 0,
+            "data": {
+                "sheets": [
+                    {"properties": {"sheetId": "sheet001", "title": "top_trending_v4"}},
+                    {"properties": {"sheetId": "sheet002", "title": "up_and_coming_v4"}},
+                    {"properties": {"sheetId": "sheet003", "title": "ccu_based_v1"}},
+                ]
+            },
+        }
+
+        session.request.side_effect = [auth_response, update_response, auth_response, query_response]
 
         client = FeishuClient(
             Config(
@@ -205,7 +218,31 @@ class FeishuClientTests(unittest.TestCase):
             },
         }
 
-        session.request.side_effect = [auth_response, create_response, auth_response, update_response]
+        query_response = Mock()
+        query_response.status_code = 200
+        query_response.json.return_value = {
+            "code": 0,
+            "data": {
+                "sheets": [
+                    {"properties": {"sheetId": "sheet001", "title": "top_trending_v4"}},
+                    {"properties": {"sheetId": "sheet002", "title": "up_and_coming_v4"}},
+                    {"properties": {"sheetId": "sheet003", "title": "ccu_based_v1"}},
+                ]
+            },
+        }
+
+        session.request.side_effect = [
+            auth_response,
+            create_response,
+            auth_response,
+            query_response,
+            auth_response,
+            update_response,
+            auth_response,
+            query_response,
+            auth_response,
+            query_response,
+        ]
 
         client = FeishuClient(
             Config(

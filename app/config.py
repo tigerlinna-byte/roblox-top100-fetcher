@@ -28,6 +28,9 @@ class Config:
     feishu_top_trending_sheet_id: str = ""
     feishu_up_and_coming_sheet_id: str = ""
     feishu_ccu_based_sheet_id: str = ""
+    feishu_top_trending_prev_ranks: str = ""
+    feishu_up_and_coming_prev_ranks: str = ""
+    feishu_ccu_based_prev_ranks: str = ""
     feishu_top_trending_spreadsheet_title: str = "Roblox Top Trending"
 
 
@@ -86,6 +89,9 @@ def load_config() -> Config:
         feishu_top_trending_sheet_id=os.getenv("FEISHU_TOP_TRENDING_SHEET_ID", ""),
         feishu_up_and_coming_sheet_id=os.getenv("FEISHU_UP_AND_COMING_SHEET_ID", ""),
         feishu_ccu_based_sheet_id=os.getenv("FEISHU_CCU_BASED_SHEET_ID", ""),
+        feishu_top_trending_prev_ranks=os.getenv("FEISHU_TOP_TRENDING_PREV_RANKS", ""),
+        feishu_up_and_coming_prev_ranks=os.getenv("FEISHU_UP_AND_COMING_PREV_RANKS", ""),
+        feishu_ccu_based_prev_ranks=os.getenv("FEISHU_CCU_BASED_PREV_RANKS", ""),
         feishu_top_trending_spreadsheet_title=os.getenv(
             "FEISHU_TOP_TRENDING_SPREADSHEET_TITLE",
             "Roblox Top Trending",
