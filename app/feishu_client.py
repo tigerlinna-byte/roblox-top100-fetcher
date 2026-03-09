@@ -227,12 +227,16 @@ class FeishuClient:
         *,
         rank_width: int,
         game_name_width: int,
+        online_width: int,
+        rank_change_width: int,
         developer_width: int,
     ) -> None:
         access_token = self._fetch_tenant_access_token()
         for start_index, end_index, width in (
             (1, 2, rank_width),
             (2, 3, game_name_width),
+            (3, 4, online_width),
+            (4, 5, rank_change_width),
             (6, 7, developer_width),
         ):
             self._request_json(
