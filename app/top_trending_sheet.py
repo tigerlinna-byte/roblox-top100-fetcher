@@ -14,14 +14,17 @@ SPREADSHEET_TOKEN_VAR = "FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN"
 TOP_TRENDING_SHEET_ID_VAR = "FEISHU_TOP_TRENDING_SHEET_ID"
 UP_AND_COMING_SHEET_ID_VAR = "FEISHU_UP_AND_COMING_SHEET_ID"
 CCU_BASED_SHEET_ID_VAR = "FEISHU_CCU_BASED_SHEET_ID"
+TOP_PLAYING_NOW_SHEET_ID_VAR = "FEISHU_TOP_PLAYING_NOW_SHEET_ID"
 TOP_TRENDING_PREV_RANKS_VAR = "FEISHU_TOP_TRENDING_PREV_RANKS"
 UP_AND_COMING_PREV_RANKS_VAR = "FEISHU_UP_AND_COMING_PREV_RANKS"
 CCU_BASED_PREV_RANKS_VAR = "FEISHU_CCU_BASED_PREV_RANKS"
+TOP_PLAYING_NOW_PREV_RANKS_VAR = "FEISHU_TOP_PLAYING_NOW_PREV_RANKS"
 
 SORT_SHEETS = (
     ("Top_Trending_V4", "top_trending_v4", TOP_TRENDING_SHEET_ID_VAR, TOP_TRENDING_PREV_RANKS_VAR),
     ("Up_And_Coming_V4", "up_and_coming_v4", UP_AND_COMING_SHEET_ID_VAR, UP_AND_COMING_PREV_RANKS_VAR),
-    ("top-playing-now", "top_playing_now", CCU_BASED_SHEET_ID_VAR, CCU_BASED_PREV_RANKS_VAR),
+    ("CCU_Based_V1", "ccu_based_v1", CCU_BASED_SHEET_ID_VAR, CCU_BASED_PREV_RANKS_VAR),
+    ("top-playing-now", "top_playing_now", TOP_PLAYING_NOW_SHEET_ID_VAR, TOP_PLAYING_NOW_PREV_RANKS_VAR),
 )
 MIN_RENDER_ROWS = 140
 
@@ -158,6 +161,7 @@ def get_previous_ranks(cfg: Config) -> dict[str, dict[int, int]]:
         TOP_TRENDING_PREV_RANKS_VAR: cfg.feishu_top_trending_prev_ranks,
         UP_AND_COMING_PREV_RANKS_VAR: cfg.feishu_up_and_coming_prev_ranks,
         CCU_BASED_PREV_RANKS_VAR: cfg.feishu_ccu_based_prev_ranks,
+        TOP_PLAYING_NOW_PREV_RANKS_VAR: cfg.feishu_top_playing_now_prev_ranks,
     }
     result: dict[str, dict[int, int]] = {}
     for _, title, _, variable_name in SORT_SHEETS:
@@ -173,6 +177,7 @@ def get_saved_spreadsheet_target(cfg: Config) -> SpreadsheetTarget | None:
         TOP_TRENDING_SHEET_ID_VAR: cfg.feishu_top_trending_sheet_id,
         UP_AND_COMING_SHEET_ID_VAR: cfg.feishu_up_and_coming_sheet_id,
         CCU_BASED_SHEET_ID_VAR: cfg.feishu_ccu_based_sheet_id,
+        TOP_PLAYING_NOW_SHEET_ID_VAR: cfg.feishu_top_playing_now_sheet_id,
     }
     if not all(sheet_ids.values()):
         return None

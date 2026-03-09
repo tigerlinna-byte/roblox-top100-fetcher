@@ -70,11 +70,11 @@ class TopTrendingSheetTests(unittest.TestCase):
         specs = build_default_sheet_specs()
 
         self.assertEqual(
-            ["top_trending_v4", "up_and_coming_v4", "top_playing_now"],
+            ["top_trending_v4", "up_and_coming_v4", "ccu_based_v1", "top_playing_now"],
             [item["title"] for item in specs],
         )
         self.assertEqual(
-            ["Top_Trending_V4", "Up_And_Coming_V4", "top-playing-now"],
+            ["Top_Trending_V4", "Up_And_Coming_V4", "CCU_Based_V1", "top-playing-now"],
             [item["sort_id"] for item in specs],
         )
 
@@ -89,6 +89,7 @@ class TopTrendingSheetTests(unittest.TestCase):
 
         self.assertEqual({101: 1, 102: 2}, previous_ranks["top_trending_v4"])
         self.assertEqual({201: 5}, previous_ranks["up_and_coming_v4"])
+        self.assertEqual({}, previous_ranks["ccu_based_v1"])
         self.assertEqual({}, previous_ranks["top_playing_now"])
 
     def test_data_rows_keep_same_column_representation(self) -> None:
