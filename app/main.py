@@ -171,6 +171,8 @@ def _apply_trending_sheet_presentation(cfg, feishu_client, target, records_by_sh
                 sheet.sheet_id,
                 rank_width=60,
                 game_name_width=350,
+                online_width=90,
+                rank_change_width=60,
                 developer_width=150,
             )
         except FeishuClientError:
