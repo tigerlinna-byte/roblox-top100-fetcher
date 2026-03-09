@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from unittest.mock import Mock
 
@@ -75,7 +76,9 @@ class FeishuClientTests(unittest.TestCase):
         )
         self.assertEqual("Bearer tenant-token", send_kwargs["headers"]["Authorization"])
         self.assertEqual("oc_test_chat", send_kwargs["json"]["receive_id"])
-        self.assertIn("Roblox", send_kwargs["json"]["content"]["text"])
+        self.assertIsInstance(send_kwargs["json"]["content"], str)
+        content = json.loads(send_kwargs["json"]["content"])
+        self.assertIn("Roblox", content["text"])
 
 
 if __name__ == "__main__":
