@@ -21,6 +21,12 @@ class SpreadsheetInfo:
     url: str
 
 
+@dataclass(frozen=True)
+class SheetInfo:
+    sheet_id: str
+    title: str
+
+
 @dataclass
 class FeishuClient:
     config: Config
@@ -99,6 +105,11 @@ class FeishuClient:
         existing_sheet_id: str | None,
         sheet_titles: list[str],
     ) -> tuple[str, ...]:
+        if not existing_sheet_id:
+            existing_sheets = self.query_sheets(spreadsheet_token)
+            if existing_sheets:
+                existing_sheet_id = existing_sheets[0].sheet_id
+
         access_token = self._fetch_tenant_access_token()
         requests_payload: list[dict] = []
         start_index = 0
@@ -146,7 +157,17 @@ class FeishuClient:
                 created_ids.append(sheet_id)
 
         if len(created_ids) != len(sheet_titles):
+            existing_by_title = {
+                sheet.title: sheet.sheet_id for sheet in self.query_sheets(spreadsheet_token)
+            }
+            created_ids = [existing_by_title[title] for title in sheet_titles if title in existing_by_title]
+        if len(created_ids) != len(sheet_titles):
             raise FeishuClientError("Feishu sheet setup response missing created sheet ids")
+
+        self.delete_extra_sheets(
+            spreadsheet_token,
+            keep_sheet_ids=set(created_ids),
+        )
         return tuple(created_ids)
 
     def write_sheet_values(
@@ -167,6 +188,31 @@ class FeishuClient:
                     "values": values,
                 }
             },
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    def query_sheets(self, spreadsheet_token: str) -> tuple[SheetInfo, ...]:
+        access_token = self._fetch_tenant_access_token()
+        data = self._request_json(
+            "GET",
+            f"https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/{spreadsheet_token}/sheets/query",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        sheets = _extract_sheet_infos(data.get("data", {}))
+        return tuple(sheets)
+
+    def delete_extra_sheets(self, spreadsheet_token: str, *, keep_sheet_ids: set[str]) -> None:
+        existing_sheets = self.query_sheets(spreadsheet_token)
+        redundant = [sheet.sheet_id for sheet in existing_sheets if sheet.sheet_id not in keep_sheet_ids]
+        if not redundant:
+            return
+
+        access_token = self._fetch_tenant_access_token()
+        requests_payload = [{"deleteSheet": {"sheetId": sheet_id}} for sheet_id in redundant]
+        self._request_json(
+            "POST",
+            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/sheets_batch_update",
+            json_payload={"requests": requests_payload},
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
@@ -272,6 +318,27 @@ def _extract_sheet_ids(payload: dict) -> tuple[str, ...]:
     if value:
         return (value,)
     return ()
+
+
+def _extract_sheet_infos(payload: dict) -> list[SheetInfo]:
+    sheets = payload.get("sheets")
+    if not isinstance(sheets, list):
+        return []
+
+    result: list[SheetInfo] = []
+    for item in sheets:
+        if not isinstance(item, dict):
+            continue
+        sheet_id = _extract_single_sheet_id(item)
+        properties = item.get("properties")
+        title = ""
+        if isinstance(properties, dict):
+            title = str(properties.get("title", ""))
+        if not title:
+            title = str(item.get("title", ""))
+        if sheet_id:
+            result.append(SheetInfo(sheet_id=sheet_id, title=title))
+    return result
 
 
 def _extract_single_sheet_id(payload: dict) -> str:

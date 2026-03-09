@@ -14,9 +14,10 @@ from .top_trending_sheet import (
     SheetTarget,
     SpreadsheetTarget,
     build_default_sheet_specs,
-    build_top_trending_summary,
     build_top_trending_values,
     get_saved_spreadsheet_target,
+    get_previous_ranks,
+    save_previous_ranks,
     save_spreadsheet_target,
 )
 
@@ -90,9 +91,7 @@ def _notify_success(cfg: Config, report_payload) -> None:
     feishu_client = FeishuClient(cfg)
     if cfg.run_report_mode == "top_trending_sheet":
         target = _sync_top_trending_sheet(cfg, report_payload, feishu_client)
-        feishu_client.send_group_markdown(
-            build_top_trending_summary(cfg, report_payload, target.url)
-        )
+        feishu_client.send_group_markdown(target.url)
         return
 
     feishu_client.send_group_markdown(build_success_markdown(cfg, report_payload))
@@ -103,6 +102,8 @@ def _sync_top_trending_sheet(
     records_by_sheet,
     feishu_client: FeishuClient,
 ) -> SpreadsheetTarget:
+    previous_ranks = get_previous_ranks(cfg)
+    github_client = GitHubClient(cfg)
     target = get_saved_spreadsheet_target(cfg)
     if target is None:
         spreadsheet = feishu_client.create_spreadsheet(cfg.feishu_top_trending_spreadsheet_title)
@@ -120,26 +121,30 @@ def _sync_top_trending_sheet(
                     sort_id=sheet_spec["sort_id"],
                     title=sheet_spec["title"],
                     variable_name=sheet_spec["variable_name"],
+                    previous_ranks_variable_name=sheet_spec["previous_ranks_variable_name"],
                     sheet_id=sheet_id,
                 )
                 for sheet_spec, sheet_id in zip(sheet_specs, sheet_ids, strict=True)
             ),
             url=spreadsheet.url,
         )
-        github_client = GitHubClient(cfg)
         if not save_spreadsheet_target(github_client, target):
             logging.warning("Top Trending spreadsheet identifiers were not persisted.")
 
     for sheet in target.sheets:
+        sheet_records = records_by_sheet.get(sheet.title, [])
         feishu_client.write_sheet_values(
             target.spreadsheet_token,
             sheet.sheet_id,
             build_top_trending_values(
                 cfg,
                 sheet.title,
-                records_by_sheet.get(sheet.title, []),
+                sheet_records,
+                previous_ranks.get(sheet.title, {}),
             ),
         )
+        if not save_previous_ranks(github_client, sheet, sheet_records):
+            logging.warning("Previous ranks were not persisted for %s.", sheet.title)
     return target
 
 
