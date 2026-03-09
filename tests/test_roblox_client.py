@@ -182,6 +182,8 @@ class RobloxClientTests(unittest.TestCase):
         self.assertEqual("Trending B", items[0].name)
         sort_request = session.request.call_args_list[1].kwargs
         self.assertEqual("top-trending", sort_request["params"]["sortId"])
+        self.assertEqual("all", sort_request["params"]["device"])
+        self.assertEqual("all", sort_request["params"]["country"])
 
 
 if __name__ == "__main__":
