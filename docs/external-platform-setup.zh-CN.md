@@ -54,7 +54,7 @@
 
 新增：
 
-- `FEISHU_SCHEDULE_CHAT_ID`（定时任务每天回发表格链接的目标群 chat_id）
+- `FEISHU_SCHEDULE_CHAT_ID`（定时任务每天回发表格链接的目标群 chat_id；多个群用英文逗号分隔）
 
 值填写：
 

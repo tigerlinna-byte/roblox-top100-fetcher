@@ -80,6 +80,43 @@ class FeishuClientTests(unittest.TestCase):
         content = json.loads(send_kwargs["json"]["content"])
         self.assertIn("Roblox", content["text"])
 
+    def test_send_group_markdown_supports_multiple_chat_ids(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        send_response_a = Mock()
+        send_response_a.status_code = 200
+        send_response_a.json.return_value = {"code": 0, "data": {"message_id": "om_test_a"}}
+
+        send_response_b = Mock()
+        send_response_b.status_code = 200
+        send_response_b.json.return_value = {"code": 0, "data": {"message_id": "om_test_b"}}
+
+        session.request.side_effect = [auth_response, send_response_a, send_response_b]
+
+        cfg = Config(
+            feishu_app_id="cli_xxx",
+            feishu_app_secret="secret",
+            run_chat_id="oc_test_chat_a, oc_test_chat_b",
+            request_timeout_seconds=3,
+            retry_max_attempts=1,
+        )
+        client = FeishuClient(cfg, session=session)
+
+        client.send_group_markdown("Roblox sheet link")
+
+        self.assertEqual(3, session.request.call_count)
+        send_kwargs_a = session.request.call_args_list[1].kwargs
+        send_kwargs_b = session.request.call_args_list[2].kwargs
+        self.assertEqual("oc_test_chat_a", send_kwargs_a["json"]["receive_id"])
+        self.assertEqual("oc_test_chat_b", send_kwargs_b["json"]["receive_id"])
+
     def test_create_spreadsheet_extracts_token_and_sheet_id(self) -> None:
         session = Mock()
 
