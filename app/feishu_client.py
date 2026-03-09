@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from typing import Callable
 
 import requests
 
@@ -53,6 +55,7 @@ class FeishuClient:
                 "content": {"text": markdown_text},
             },
             headers={"Authorization": f"Bearer {access_token}"},
+            json_transform=_stringify_feishu_content,
         )
 
     def _fetch_tenant_access_token(self) -> str:
@@ -76,14 +79,16 @@ class FeishuClient:
         *,
         json_payload: dict | None = None,
         headers: dict[str, str] | None = None,
+        json_transform: Callable[[dict | None], dict | None] | None = None,
         requires_feishu_code: bool = True,
     ) -> dict:
         def _call() -> dict:
             assert self.session is not None
+            payload = json_transform(json_payload) if json_transform else json_payload
             response = self.session.request(
                 method=method,
                 url=url,
-                json=json_payload,
+                json=payload,
                 headers=headers,
                 timeout=self.config.request_timeout_seconds,
             )
@@ -117,3 +122,16 @@ def _is_retryable_exception(exc: Exception) -> bool:
             return False
         return response.status_code in {408, 409, 425, 429, 500, 502, 503, 504}
     return False
+
+
+def _stringify_feishu_content(payload: dict | None) -> dict | None:
+    if not payload or "content" not in payload:
+        return payload
+
+    transformed = dict(payload)
+    transformed["content"] = json.dumps(
+        payload["content"],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return transformed
