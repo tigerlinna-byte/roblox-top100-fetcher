@@ -7,6 +7,7 @@ from app.config import Config
 from app.models import GameRecord
 from app.top_trending_sheet import (
     MIN_RENDER_ROWS,
+    build_rank_change_cells,
     calculate_game_name_width,
     calculate_rank_change,
     build_default_sheet_specs,
@@ -64,7 +65,57 @@ class TopTrendingSheetTests(unittest.TestCase):
             down_votes=0,
             fetched_at="2026-03-09T00:00:00Z",
         )
-        self.assertEqual("-", calculate_rank_change({}, record))
+        self.assertEqual("进榜", calculate_rank_change({}, record))
+
+    def test_build_rank_change_cells_maps_colors(self) -> None:
+        records = [
+            GameRecord(
+                rank=1,
+                place_id=101,
+                name="Game A",
+                creator="Studio A",
+                playing=10,
+                visits=10,
+                up_votes=0,
+                down_votes=0,
+                fetched_at="2026-03-09T00:00:00Z",
+            ),
+            GameRecord(
+                rank=5,
+                place_id=102,
+                name="Game B",
+                creator="Studio B",
+                playing=10,
+                visits=10,
+                up_votes=0,
+                down_votes=0,
+                fetched_at="2026-03-09T00:00:00Z",
+            ),
+            GameRecord(
+                rank=3,
+                place_id=103,
+                name="Game C",
+                creator="Studio C",
+                playing=10,
+                visits=10,
+                up_votes=0,
+                down_votes=0,
+                fetched_at="2026-03-09T00:00:00Z",
+            ),
+        ]
+
+        cells = build_rank_change_cells(
+            records,
+            {
+                101: 3,
+                102: 2,
+                103: 3,
+            },
+        )
+
+        self.assertEqual((2, 2, "red"), (cells[0].row_index, cells[0].value, cells[0].color))
+        self.assertEqual((3, -3, "green"), (cells[1].row_index, cells[1].value, cells[1].color))
+        self.assertEqual((4, 0, "black"), (cells[2].row_index, cells[2].value, cells[2].color))
 
     def test_default_sheet_specs_follow_requested_order(self) -> None:
         specs = build_default_sheet_specs()

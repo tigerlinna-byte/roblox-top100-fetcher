@@ -73,10 +73,10 @@ def build_rank_change_cells(
     previous_ranks: dict[int, int],
 ) -> list[RankChangeCell]:
     cells: list[RankChangeCell] = []
-    for offset, record in enumerate(records, start=4):
+    for offset, record in enumerate(records, start=2):
         value = calculate_rank_change(previous_ranks, record)
-        if value == "-":
-            color = "black"
+        if value == "进榜":
+            color = "red"
         elif isinstance(value, int) and value > 0:
             color = "red"
         elif isinstance(value, int) and value < 0:
@@ -89,7 +89,7 @@ def build_rank_change_cells(
 
 def calculate_rank_change(previous_ranks: dict[int, int], record: GameRecord) -> int | str:
     if not record.place_id or record.place_id not in previous_ranks:
-        return "-"
+        return "进榜"
     return previous_ranks[record.place_id] - record.rank
 
 

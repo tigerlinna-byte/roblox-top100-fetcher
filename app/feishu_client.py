@@ -9,6 +9,7 @@ import requests
 
 from .config import Config
 from .retry import with_retry
+from .top_trending_sheet import RankChangeCell
 
 
 class FeishuClientError(RuntimeError):
@@ -257,6 +258,53 @@ class FeishuClient:
                 },
                 headers={"Authorization": f"Bearer {access_token}"},
             )
+
+    def apply_rank_change_colors(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        cells: list[RankChangeCell],
+    ) -> None:
+        if not cells:
+            return
+
+        access_token = self._fetch_tenant_access_token()
+        grouped_ranges: dict[str, list[str]] = {
+            "red": [],
+            "green": [],
+            "black": [],
+        }
+        for cell in cells:
+            if cell.color not in grouped_ranges:
+                continue
+            grouped_ranges[cell.color].append(f"{sheet_id}!D{cell.row_index}:D{cell.row_index}")
+
+        color_map = {
+            "red": "#f54a45",
+            "green": "#00b578",
+            "black": "#000000",
+        }
+        payload = {
+            "data": [
+                {
+                    "ranges": ranges,
+                    "style": {
+                        "foreColor": color_map[color],
+                    },
+                }
+                for color, ranges in grouped_ranges.items()
+                if ranges
+            ]
+        }
+        if not payload["data"]:
+            return
+
+        self._request_json(
+            "PUT",
+            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/styles_batch_update",
+            json_payload=payload,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
 
     def _fetch_tenant_access_token(self) -> str:
         data = self._request_json(
