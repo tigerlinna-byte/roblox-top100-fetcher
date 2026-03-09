@@ -107,7 +107,7 @@ Set these repository secrets before enabling workflow:
 
 Optional repository variables for spreadsheet reuse:
 
-- `FEISHU_SCHEDULE_CHAT_ID` (required if the scheduled run should send the sheet link into a Feishu group)
+- `FEISHU_SCHEDULE_CHAT_ID` (required if the scheduled run should send the sheet link into a Feishu group; use comma-separated chat ids for multiple groups)
 - `FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN`
 - `FEISHU_TOP_TRENDING_SHEET_ID`
 
@@ -117,7 +117,7 @@ Manual runs also support workflow inputs:
 - `trigger_actor`
 - `chat_id`
 
-`chat_id` is still optional for manual runs. Scheduled runs read `FEISHU_SCHEDULE_CHAT_ID` instead.
+`chat_id` is still optional for manual runs. Scheduled runs read `FEISHU_SCHEDULE_CHAT_ID` instead; multiple scheduled groups can be configured with comma-separated chat ids.
 
 ## Feishu manual trigger in group chat
 

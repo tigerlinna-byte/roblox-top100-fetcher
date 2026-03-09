@@ -38,8 +38,9 @@ class FeishuClient:
             self.session = requests.Session()
 
     def send_group_markdown(self, markdown_text: str) -> None:
-        if self.config.run_chat_id and self._has_app_credentials():
-            self._send_group_text_via_app(markdown_text)
+        chat_ids = _split_chat_ids(self.config.run_chat_id)
+        if chat_ids and self._has_app_credentials():
+            self._send_group_text_via_app(markdown_text, chat_ids)
             return
 
         if not self.config.feishu_bot_webhook:
@@ -58,19 +59,20 @@ class FeishuClient:
     def _has_app_credentials(self) -> bool:
         return bool(self.config.feishu_app_id and self.config.feishu_app_secret)
 
-    def _send_group_text_via_app(self, markdown_text: str) -> None:
+    def _send_group_text_via_app(self, markdown_text: str, chat_ids: tuple[str, ...]) -> None:
         access_token = self._fetch_tenant_access_token()
-        self._request_json(
-            "POST",
-            "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
-            json_payload={
-                "receive_id": self.config.run_chat_id,
-                "msg_type": "text",
-                "content": {"text": markdown_text},
-            },
-            headers={"Authorization": f"Bearer {access_token}"},
-            json_transform=_stringify_feishu_content,
-        )
+        for chat_id in chat_ids:
+            self._request_json(
+                "POST",
+                "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+                json_payload={
+                    "receive_id": chat_id,
+                    "msg_type": "text",
+                    "content": {"text": markdown_text},
+                },
+                headers={"Authorization": f"Bearer {access_token}"},
+                json_transform=_stringify_feishu_content,
+            )
 
     def create_spreadsheet(self, title: str) -> SpreadsheetInfo:
         access_token = self._fetch_tenant_access_token()
@@ -333,6 +335,10 @@ def _stringify_feishu_content(payload: dict | None) -> dict | None:
         separators=(",", ":"),
     )
     return transformed
+
+
+def _split_chat_ids(value: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
 def _extract_sheet_id(payload: dict) -> str:
