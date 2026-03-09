@@ -41,13 +41,13 @@ class TopTrendingSheetTests(unittest.TestCase):
 
         self.assertEqual(
             ["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "更新"],
-            rows[2],
+            rows[0],
         )
-        self.assertEqual(1, rows[3][0])
-        self.assertEqual("123.5K", rows[3][2])
-        self.assertEqual(3, rows[3][3])
-        self.assertEqual("987.7M", rows[3][4])
-        self.assertEqual("03-08 12:00", rows[3][6])
+        self.assertEqual(1, rows[1][0])
+        self.assertEqual("123.5K", rows[1][2])
+        self.assertEqual(3, rows[1][3])
+        self.assertEqual("987.7M", rows[1][4])
+        self.assertEqual("2026-03-08", rows[1][6])
 
     def test_calculate_rank_change_handles_first_entry(self) -> None:
         record = GameRecord(
@@ -87,6 +87,51 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertEqual({101: 1, 102: 2}, previous_ranks["top_trending_v4"])
         self.assertEqual({201: 5}, previous_ranks["up_and_coming_v4"])
         self.assertEqual({}, previous_ranks["ccu_based_v1"])
+
+    def test_data_rows_keep_same_column_representation(self) -> None:
+        cfg = Config()
+        rows = build_top_trending_values(
+            cfg,
+            "top_trending_v4",
+            [
+                GameRecord(
+                    rank=1,
+                    place_id=101,
+                    name="Game A",
+                    creator="Studio A",
+                    playing=123456,
+                    visits=987654321,
+                    up_votes=0,
+                    down_votes=0,
+                    fetched_at="2026-03-09T00:00:00Z",
+                    updated_at="2026-03-08T12:00:00Z",
+                ),
+                GameRecord(
+                    rank=2,
+                    place_id=102,
+                    name="Game B",
+                    creator="Studio B",
+                    playing=4321,
+                    visits=654321,
+                    up_votes=0,
+                    down_votes=0,
+                    fetched_at="2026-03-09T00:00:00Z",
+                    updated_at="2026-03-07T12:00:00Z",
+                ),
+            ],
+            {101: 3, 102: 2},
+        )
+
+        self.assertIsInstance(rows[1][0], int)
+        self.assertIsInstance(rows[2][0], int)
+        self.assertIsInstance(rows[1][1], str)
+        self.assertIsInstance(rows[2][1], str)
+        self.assertIsInstance(rows[1][2], str)
+        self.assertIsInstance(rows[2][2], str)
+        self.assertIsInstance(rows[1][4], str)
+        self.assertIsInstance(rows[2][4], str)
+        self.assertIsInstance(rows[1][6], str)
+        self.assertIsInstance(rows[2][6], str)
 
 
 if __name__ == "__main__":

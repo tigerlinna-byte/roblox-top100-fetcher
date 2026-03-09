@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from .config import Config
 from .github_client import GitHubClient
 from .models import GameRecord
-from .summary import _format_now
 
 
 SPREADSHEET_TOKEN_VAR = "FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN"
@@ -54,25 +53,13 @@ def build_top_trending_values(
     records: list[GameRecord],
     previous_ranks: dict[int, int],
 ) -> list[list[object]]:
-    now = _format_now(cfg.feishu_timezone)
+    del cfg, sheet_title
     rows: list[list[object]] = [
-        [sheet_title, "", "", "", "", "", ""],
-        ["更新", now, "触发", "feishu_chat", "条数", len(records), ""],
         ["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "更新"],
     ]
 
     for record in records:
-        rows.append(
-            [
-                record.rank,
-                record.name,
-                format_compact_number(record.playing),
-                calculate_rank_change(previous_ranks, record),
-                format_compact_number(record.visits),
-                record.creator or "-",
-                _format_updated_at(record),
-            ]
-        )
+        rows.append(build_data_row(record, previous_ranks))
     return rows
 
 
@@ -101,6 +88,19 @@ def calculate_rank_change(previous_ranks: dict[int, int], record: GameRecord) ->
     return previous_ranks[record.place_id] - record.rank
 
 
+def build_data_row(record: GameRecord, previous_ranks: dict[int, int]) -> list[object]:
+    # Keep each column's data representation stable across all data rows.
+    return [
+        int(record.rank),
+        record.name,
+        format_compact_number(record.playing),
+        calculate_rank_change(previous_ranks, record),
+        format_compact_number(record.visits),
+        record.creator or "-",
+        _format_updated_at(record),
+    ]
+
+
 def format_compact_number(value: int) -> str:
     amount = abs(value)
     if amount >= 1_000_000_000:
@@ -110,6 +110,11 @@ def format_compact_number(value: int) -> str:
     if amount >= 1_000:
         return f"{value / 1_000:.1f}K"
     return str(value)
+
+
+def calculate_game_name_width(records: list[GameRecord]) -> int:
+    longest = max((len(record.name) for record in records), default=12)
+    return max(220, min(680, longest * 14))
 
 
 def save_spreadsheet_target(github_client: GitHubClient, target: SpreadsheetTarget) -> bool:
@@ -205,10 +210,10 @@ def _short_datetime(raw: str) -> str:
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
-        return raw[:16]
+        return raw[:10]
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC).strftime("%m-%d %H:%M")
+    return parsed.astimezone(UTC).strftime("%Y-%m-%d")
 
 
 def _parse_previous_ranks(raw: str) -> dict[int, int]:
