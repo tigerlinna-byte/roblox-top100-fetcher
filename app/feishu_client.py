@@ -231,9 +231,9 @@ class FeishuClient:
     ) -> None:
         access_token = self._fetch_tenant_access_token()
         for start_index, end_index, width in (
-            (0, 1, rank_width),
-            (1, 2, game_name_width),
-            (5, 6, developer_width),
+            (1, 2, rank_width),
+            (2, 3, game_name_width),
+            (6, 7, developer_width),
         ):
             self._request_json(
                 "PUT",
