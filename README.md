@@ -78,6 +78,8 @@ Environment variables (defaults shown):
 - `RUN_TRIGGER_SOURCE=manual`
 - `RUN_TRIGGER_ACTOR=`
 - `RUN_CHAT_ID=`
+- `RUN_REPORT_MODE=top100_message`
+- `ROBLOX_TOP_TRENDING_SORT_ID=` (optional override for `/roblox-top-day`)
 
 ## Feishu bot setup
 
@@ -100,6 +102,12 @@ Set these repository secrets before enabling workflow:
 - `FEISHU_APP_ID`
 - `FEISHU_APP_SECRET`
 - `FEISHU_BOT_WEBHOOK` (optional fallback)
+- `GH_TOKEN` (required if `/roblox-top-day` should persist the spreadsheet token/sheet id for reuse)
+
+Optional repository variables for spreadsheet reuse:
+
+- `FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN`
+- `FEISHU_TOP_TRENDING_SHEET_ID`
 
 Manual runs also support workflow inputs:
 
@@ -119,10 +127,11 @@ Chinese step-by-step external platform guide:
 
 Architecture:
 
-1. Feishu self-built app bot receives `/roblox-top100`
-2. Cloudflare Worker validates chat/user and dispatches GitHub Actions
+1. Feishu self-built app bot receives `/roblox-top100` or `/roblox-top-day`
+2. Cloudflare Worker validates chat/user and dispatches GitHub Actions with a report mode
 3. GitHub Actions runs `python -m app.main`
-4. Python job sends the final result back to the triggering chat through the Feishu app bot API
+4. `/roblox-top100` sends the final leaderboard back to the triggering chat
+5. `/roblox-top-day` writes Top Trending top 100 into a Feishu spreadsheet, reuses it on later runs, and sends the sheet link back to the triggering chat
 
 ### 1. Verify GitHub Actions first
 
@@ -219,6 +228,7 @@ Send this exact text in the allowed Feishu group:
 
 ```text
 /roblox-top100
+/roblox-top-day
 ```
 
 Expected behavior:
@@ -230,6 +240,7 @@ Expected behavior:
 ## Security defaults
 
 - The Worker only accepts the exact command `/roblox-top100`
+- The Worker also accepts the exact command `/roblox-top-day`
 - `ALLOWED_CHAT_IDS` can restrict which groups may trigger the workflow
 - `ALLOWED_OPEN_IDS` can restrict which users may trigger the workflow
 - `FEISHU_VERIFICATION_TOKEN` is checked on incoming Feishu events

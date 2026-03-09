@@ -14,6 +14,13 @@ class FeishuClientError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class SpreadsheetInfo:
+    spreadsheet_token: str
+    sheet_id: str
+    url: str
+
+
 @dataclass
 class FeishuClient:
     config: Config
@@ -56,6 +63,58 @@ class FeishuClient:
             },
             headers={"Authorization": f"Bearer {access_token}"},
             json_transform=_stringify_feishu_content,
+        )
+
+    def create_spreadsheet(self, title: str) -> SpreadsheetInfo:
+        access_token = self._fetch_tenant_access_token()
+        data = self._request_json(
+            "POST",
+            "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets",
+            json_payload={"title": title},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        spreadsheet = data.get("data", {}).get("spreadsheet", {})
+        spreadsheet_token = str(
+            spreadsheet.get("spreadsheet_token")
+            or spreadsheet.get("spreadsheetToken")
+            or data.get("data", {}).get("spreadsheet_token")
+            or ""
+        )
+        if not spreadsheet_token:
+            raise FeishuClientError("Feishu spreadsheet response missing spreadsheet token")
+
+        sheet_id = _extract_sheet_id(spreadsheet)
+        if not sheet_id:
+            sheet_id = _extract_sheet_id(data.get("data", {}))
+        if not sheet_id:
+            raise FeishuClientError("Feishu spreadsheet response missing sheet id")
+
+        url = str(spreadsheet.get("url") or _build_spreadsheet_url(spreadsheet_token))
+        return SpreadsheetInfo(
+            spreadsheet_token=spreadsheet_token,
+            sheet_id=sheet_id,
+            url=url,
+        )
+
+    def write_sheet_values(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        values: list[list[str]],
+    ) -> None:
+        access_token = self._fetch_tenant_access_token()
+        column_letter = _column_letter(max((len(row) for row in values), default=1))
+        range_ref = f"{sheet_id}!A1:{column_letter}{len(values)}"
+        self._request_json(
+            "PUT",
+            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values",
+            json_payload={
+                "valueRange": {
+                    "range": range_ref,
+                    "values": values,
+                }
+            },
+            headers={"Authorization": f"Bearer {access_token}"},
         )
 
     def _fetch_tenant_access_token(self) -> str:
@@ -135,3 +194,42 @@ def _stringify_feishu_content(payload: dict | None) -> dict | None:
         separators=(",", ":"),
     )
     return transformed
+
+
+def _extract_sheet_id(payload: dict) -> str:
+    sheets = payload.get("sheets")
+    if isinstance(sheets, list) and sheets:
+        first = sheets[0]
+        if isinstance(first, dict):
+            properties = first.get("properties")
+            if isinstance(properties, dict):
+                value = properties.get("sheet_id") or properties.get("sheetId")
+                if value:
+                    return str(value)
+            value = first.get("sheet_id") or first.get("sheetId")
+            if value:
+                return str(value)
+
+    properties = payload.get("properties")
+    if isinstance(properties, dict):
+        value = properties.get("sheet_id") or properties.get("sheetId")
+        if value:
+            return str(value)
+
+    value = payload.get("sheet_id") or payload.get("sheetId")
+    if value:
+        return str(value)
+    return ""
+
+
+def _build_spreadsheet_url(spreadsheet_token: str) -> str:
+    return f"https://feishu.cn/sheets/{spreadsheet_token}"
+
+
+def _column_letter(index: int) -> str:
+    value = max(1, index)
+    letters: list[str] = []
+    while value > 0:
+        value, remainder = divmod(value - 1, 26)
+        letters.append(chr(65 + remainder))
+    return "".join(reversed(letters))

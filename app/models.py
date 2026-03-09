@@ -16,6 +16,7 @@ class GameRecord:
     up_votes: int
     down_votes: int
     fetched_at: str
+    updated_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

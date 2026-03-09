@@ -5,6 +5,10 @@ on:
     - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
+      report_mode:
+        description: Runtime report mode
+        required: false
+        default: top100_message
       trigger_source:
         description: Trigger source label shown in Feishu notification
         required: false
@@ -22,6 +26,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     env:
+      RUN_REPORT_MODE: ${{ github.event.inputs.report_mode || 'top100_message' }}
       RUN_TRIGGER_SOURCE: ${{ github.event_name == 'schedule' && 'schedule' || github.event.inputs.trigger_source || github.event_name }}
       RUN_TRIGGER_ACTOR: ${{ github.event.inputs.trigger_actor || github.actor }}
       RUN_CHAT_ID: ${{ github.event.inputs.chat_id || '' }}
@@ -49,6 +54,12 @@ jobs:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_TIMEZONE: Asia/Shanghai
+          FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN: ${{ vars.FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN }}
+          FEISHU_TOP_TRENDING_SHEET_ID: ${{ vars.FEISHU_TOP_TRENDING_SHEET_ID }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
+          GITHUB_VARIABLES_TOKEN: ${{ secrets.GH_TOKEN }}
+          RUN_REPORT_MODE: ${{ env.RUN_REPORT_MODE }}
           RUN_TRIGGER_SOURCE: ${{ env.RUN_TRIGGER_SOURCE }}
           RUN_TRIGGER_ACTOR: ${{ env.RUN_TRIGGER_ACTOR }}
           RUN_CHAT_ID: ${{ env.RUN_CHAT_ID }}
