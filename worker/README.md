@@ -1,6 +1,7 @@
 # Feishu Trigger Worker
 
 This Cloudflare Worker receives a Feishu bot event, validates the sender, triggers the GitHub Actions workflow, and posts an acknowledgement back to the same group chat.
+It also supports Cloudflare Cron Triggers for scheduled Top Trending sheet dispatches.
 
 ## Routes
 
@@ -27,6 +28,14 @@ This Cloudflare Worker receives a Feishu bot event, validates the sender, trigge
 - `ALLOWED_CHAT_IDS`
 - `ALLOWED_OPEN_IDS`
 - `COMMAND_TEXT`
+- `TOP_DAY_COMMAND_TEXT`
+- `SCHEDULE_CHAT_IDS`
+
+## Scheduled trigger
+
+`worker/wrangler.toml` currently configures a daily cron trigger at Beijing `10:14` (`14 2 * * *` in UTC).
+
+Set `SCHEDULE_CHAT_IDS` to one or more comma-separated Feishu `chat_id` values if the cron trigger should dispatch the Top Trending sheet workflow automatically.
 
 ## Local test
 

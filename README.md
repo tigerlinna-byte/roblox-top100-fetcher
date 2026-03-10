@@ -8,7 +8,7 @@ A Python project that fetches Roblox top games once per run, writes JSON/CSV loc
 - Auto retry with exponential backoff for transient API failures
 - Output both JSON and CSV for each run
 - Send Feishu group message on success/failure
-- GitHub Actions daily schedule (free-first setup)
+- Cloudflare Worker cron trigger for daily sheet delivery
 - Feishu chat command trigger via Cloudflare Worker
 
 ## Requirements
@@ -89,14 +89,14 @@ Environment variables (defaults shown):
 4. Put `FEISHU_BOT_WEBHOOK` into local environment variables or GitHub Secrets if you want webhook fallback delivery.
 5. Put `FEISHU_APP_ID` and `FEISHU_APP_SECRET` into local environment variables or GitHub Secrets for app-bot delivery back to the triggering chat.
 
-## GitHub Actions schedule (free)
+## Cloudflare Scheduled Delivery
 
 Workflow file:
 
 - `.github/workflows/roblox_rank_sync.yml`
 
-Default schedule is daily `09:00` Beijing time (`cron: 0 1 * * *` in UTC).
-The scheduled run now uses `top_trending_sheet` mode and sends the spreadsheet link to a fixed Feishu group.
+Daily scheduling is handled by the Cloudflare Worker cron trigger.
+Current default schedule is daily `10:14` Beijing time (`cron: 14 2 * * *` in UTC).
 
 Set these repository secrets before enabling workflow:
 
@@ -107,7 +107,6 @@ Set these repository secrets before enabling workflow:
 
 Optional repository variables for spreadsheet reuse:
 
-- `FEISHU_SCHEDULE_CHAT_ID` (required if the scheduled run should send the sheet link into a Feishu group; use comma-separated chat ids for multiple groups)
 - `FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN`
 - `FEISHU_TOP_TRENDING_SHEET_ID`
 
@@ -117,7 +116,7 @@ Manual runs also support workflow inputs:
 - `trigger_actor`
 - `chat_id`
 
-`chat_id` is still optional for manual runs. Scheduled runs read `FEISHU_SCHEDULE_CHAT_ID` instead; multiple scheduled groups can be configured with comma-separated chat ids.
+`chat_id` is still optional for manual runs.
 
 ## Feishu manual trigger in group chat
 
@@ -194,6 +193,7 @@ npm install -D wrangler
 - `FEISHU_VERIFICATION_TOKEN`
 - `ALLOWED_CHAT_IDS`
 - `ALLOWED_OPEN_IDS`
+- `SCHEDULE_CHAT_IDS` (required for scheduled delivery; use comma-separated chat ids for multiple groups)
 
 3. Deploy:
 
@@ -206,6 +206,12 @@ Routes exposed by the Worker:
 
 - `GET /health`
 - `POST /feishu/events`
+
+Cloudflare cron behavior:
+
+- Cron dispatches `top_trending_sheet` through the existing workflow
+- Scheduled target groups come from `SCHEDULE_CHAT_IDS`
+- Multiple groups use comma-separated Feishu `chat_id` values
 
 ### 4. Configure Feishu self-built app
 

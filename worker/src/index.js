@@ -7,6 +7,10 @@ export default {
   async fetch(request, env, ctx) {
     return handleRequest(request, env, ctx, fetch);
   },
+
+  async scheduled(controller, env, ctx) {
+    return handleScheduled(controller, env, ctx, fetch);
+  },
 };
 
 export async function handleRequest(request, env, ctx, fetchImpl = fetch) {
@@ -86,6 +90,35 @@ export async function handleRequest(request, env, ctx, fetchImpl = fetch) {
   );
 
   return jsonResponse({ ok: true, dispatched: true });
+}
+
+export async function handleScheduled(controller, env, ctx, fetchImpl = fetch) {
+  const chatIds = parseCsvList(env.SCHEDULE_CHAT_IDS);
+  if (!chatIds.length) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      action: "schedule_skipped_missing_chat_ids",
+      cron: controller?.cron || "",
+    }));
+    return;
+  }
+
+  const task = dispatchWorkflow(fetchImpl, env, {
+    triggerSource: "cloudflare_cron",
+    triggerActor: "cloudflare-cron",
+    chatId: chatIds.join(","),
+    reportMode: "top_trending_sheet",
+  });
+
+  scheduleBackgroundTask(ctx, task);
+  await task;
+
+  console.log(JSON.stringify({
+    level: "info",
+    action: "schedule_dispatch_success",
+    cron: controller?.cron || "",
+    chatIds,
+  }));
 }
 
 function safeParseJson(text) {
@@ -233,13 +266,15 @@ function parseMessageContent(content) {
   return {};
 }
 
+function parseCsvList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function parseCsvSet(value) {
-  return new Set(
-    String(value || "")
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean),
-  );
+  return new Set(parseCsvList(value));
 }
 
 function isAllowedValue(allowedSet, candidate) {

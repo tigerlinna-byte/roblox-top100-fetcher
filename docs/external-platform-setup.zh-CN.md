@@ -2,7 +2,7 @@
 
 这份手册对应当前仓库的实现，目标是完成两件事：
 
-1. GitHub Actions 每天自动生成 Roblox 榜单飞书表格并回传到群里
+1. Cloudflare 定时触发 GitHub Actions，每天自动生成 Roblox 榜单飞书表格并回传到群里
 2. 飞书群内发送 `/roblox-top100` 可手动触发一次 Top 100 抓取
 3. 飞书群内发送 `/roblox-top-day` 可手动生成 Top Trending 前 100 飞书普通表格
 
@@ -48,14 +48,6 @@
 - `FEISHU_BOT_WEBHOOK`（可选兜底）
 - `GH_TOKEN`（如需让 `/roblox-top-day` 复用同一张飞书表格，必须配置到 GitHub Actions secrets）
 
-进入：
-
-`Settings -> Secrets and variables -> Actions -> Variables`
-
-新增：
-
-- `FEISHU_SCHEDULE_CHAT_ID`（定时任务每天回发表格链接的目标群 chat_id；多个群用英文逗号分隔）
-
 值填写：
 
 - `FEISHU_APP_ID`：飞书自建应用 App ID
@@ -74,12 +66,6 @@
 - 飞书群收到排行榜成功消息
 
 如果这一步不通，先不要继续配置 Worker 和飞书事件。
-
-当前默认定时任务行为：
-
-- 每天北京时间 `09:00`
-- 自动运行 `/roblox-top-day` 对应链路
-- 将飞书普通表格链接发送到 `FEISHU_SCHEDULE_CHAT_ID` 对应的群
 
 ### 1.4 创建给 Worker 使用的 GitHub Token
 
@@ -159,6 +145,7 @@ powershell -ExecutionPolicy Bypass -File .\set-secrets.ps1
 - `FEISHU_VERIFICATION_TOKEN`：飞书事件订阅 Verification Token
 - `ALLOWED_CHAT_IDS`：允许触发的群 ID，多个用英文逗号分隔
 - `ALLOWED_OPEN_IDS`：允许触发的用户 open_id，多个用英文逗号分隔；如暂不限制可留空
+- `SCHEDULE_CHAT_IDS`：Cloudflare 定时任务回发表格链接的目标群 chat_id，多个群用英文逗号分隔
 
 ### 2.4 部署 Worker
 
@@ -170,6 +157,13 @@ npx wrangler deploy
 部署成功后记下域名，例如：
 
 `https://roblox-top100-feishu-trigger.<subdomain>.workers.dev`
+
+当前默认定时任务行为：
+
+- 由 Cloudflare Cron Trigger 触发
+- 每天北京时间 `10:14`
+- 自动运行 `/roblox-top-day` 对应链路
+- 将飞书普通表格链接发送到 `SCHEDULE_CHAT_IDS` 对应的群
 
 ### 2.5 健康检查
 
