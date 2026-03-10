@@ -9,7 +9,7 @@ import requests
 
 from .config import Config
 from .retry import with_retry
-from .top_trending_sheet import RankChangeCell
+from .top_trending_sheet import LaunchDateCell, RankChangeCell
 
 
 class FeishuClientError(RuntimeError):
@@ -265,24 +265,55 @@ class FeishuClient:
         sheet_id: str,
         cells: list[RankChangeCell],
     ) -> None:
-        if not cells:
+        self._apply_font_colors(
+            spreadsheet_token,
+            [
+                (f"{sheet_id}!D{cell.row_index}:D{cell.row_index}", cell.color)
+                for cell in cells
+            ],
+        )
+
+    def apply_launch_date_colors(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        cells: list[LaunchDateCell],
+    ) -> None:
+        self._apply_font_colors(
+            spreadsheet_token,
+            [
+                (f"{sheet_id}!G{cell.row_index}:G{cell.row_index}", cell.color)
+                for cell in cells
+            ],
+        )
+
+    def _apply_font_colors(
+        self,
+        spreadsheet_token: str,
+        range_colors: list[tuple[str, str]],
+    ) -> None:
+        if not range_colors:
             return
 
         access_token = self._fetch_tenant_access_token()
         grouped_ranges: dict[str, list[str]] = {
             "red": [],
             "green": [],
+            "yellow": [],
             "black": [],
+            "gray": [],
         }
-        for cell in cells:
-            if cell.color not in grouped_ranges:
+        for range_ref, color in range_colors:
+            if color not in grouped_ranges:
                 continue
-            grouped_ranges[cell.color].append(f"{sheet_id}!D{cell.row_index}:D{cell.row_index}")
+            grouped_ranges[color].append(range_ref)
 
         color_map = {
             "red": "#f54a45",
             "green": "#00b578",
+            "yellow": "#faad14",
             "black": "#000000",
+            "gray": "#8c8c8c",
         }
         payload = {
             "data": [

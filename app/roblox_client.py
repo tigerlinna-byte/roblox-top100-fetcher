@@ -122,6 +122,14 @@ class RobloxClient:
                         )
                     ),
                     fetched_at=fetched_at,
+                    created_at=str(
+                        _pick(
+                            details,
+                            "created",
+                            "createdAt",
+                            default=_pick(raw, "created", "createdAt", default=""),
+                        )
+                    ),
                     updated_at=str(
                         _pick(
                             details,
