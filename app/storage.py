@@ -38,6 +38,7 @@ def write_outputs(
                 "up_votes",
                 "down_votes",
                 "fetched_at",
+                "created_at",
                 "updated_at",
             ],
         )
