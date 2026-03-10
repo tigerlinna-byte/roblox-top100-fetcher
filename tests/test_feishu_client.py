@@ -195,7 +195,7 @@ class FeishuClientTests(unittest.TestCase):
                 "sheets": [
                     {"properties": {"sheetId": "sheet001", "title": "top_trending_v4"}},
                     {"properties": {"sheetId": "sheet002", "title": "up_and_coming_v4"}},
-                    {"properties": {"sheetId": "sheet003", "title": "ccu_based_v1"}},
+                    {"properties": {"sheetId": "sheet003", "title": "top_playing_now"}},
                 ]
             },
         }
@@ -215,7 +215,7 @@ class FeishuClientTests(unittest.TestCase):
         sheet_ids = client.ensure_sheet_set(
             "shtcn_sheet",
             "sheet001",
-            ["top_trending_v4", "up_and_coming_v4", "ccu_based_v1"],
+            ["top_trending_v4", "up_and_coming_v4", "top_playing_now"],
         )
 
         self.assertEqual(("sheet001", "sheet002", "sheet003"), sheet_ids)
@@ -263,7 +263,7 @@ class FeishuClientTests(unittest.TestCase):
                 "sheets": [
                     {"properties": {"sheetId": "sheet001", "title": "top_trending_v4"}},
                     {"properties": {"sheetId": "sheet002", "title": "up_and_coming_v4"}},
-                    {"properties": {"sheetId": "sheet003", "title": "ccu_based_v1"}},
+                    {"properties": {"sheetId": "sheet003", "title": "top_playing_now"}},
                 ]
             },
         }
@@ -295,7 +295,7 @@ class FeishuClientTests(unittest.TestCase):
         sheet_ids = client.ensure_sheet_set(
             spreadsheet.spreadsheet_token,
             None,
-            ["top_trending_v4", "up_and_coming_v4", "ccu_based_v1"],
+            ["top_trending_v4", "up_and_coming_v4", "top_playing_now"],
         )
 
         self.assertEqual((), spreadsheet.sheet_ids)
@@ -349,6 +349,54 @@ class FeishuClientTests(unittest.TestCase):
             style_kwargs["json"]["data"][0]["ranges"],
         )
         self.assertEqual("#f54a45", style_kwargs["json"]["data"][0]["style"]["foreColor"])
+
+    def test_apply_launch_date_colors_batches_ranges_by_color(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        style_response = Mock()
+        style_response.status_code = 200
+        style_response.json.return_value = {"code": 0, "data": {}}
+
+        session.request.side_effect = [auth_response, style_response]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        from app.top_trending_sheet import LaunchDateCell
+
+        client.apply_launch_date_colors(
+            "shtcn_sheet",
+            "sheet001",
+            [
+                LaunchDateCell(row_index=2, color="green"),
+                LaunchDateCell(row_index=3, color="yellow"),
+                LaunchDateCell(row_index=4, color="gray"),
+            ],
+        )
+
+        style_kwargs = session.request.call_args_list[1].kwargs
+        self.assertEqual(
+            "https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/shtcn_sheet/styles_batch_update",
+            style_kwargs["url"],
+        )
+        self.assertEqual(
+            ["sheet001!G2:G2"],
+            style_kwargs["json"]["data"][0]["ranges"],
+        )
 
 
 if __name__ == "__main__":

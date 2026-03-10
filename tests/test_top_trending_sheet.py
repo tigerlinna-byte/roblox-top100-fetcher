@@ -7,6 +7,7 @@ from app.config import Config
 from app.models import GameRecord
 from app.top_trending_sheet import (
     MIN_RENDER_ROWS,
+    build_launch_date_cells,
     build_rank_change_cells,
     calculate_game_name_width,
     calculate_rank_change,
@@ -37,6 +38,7 @@ class TopTrendingSheetTests(unittest.TestCase):
                     up_votes=999,
                     down_votes=1,
                     fetched_at="2026-03-09T00:00:00Z",
+                    created_at="2026-03-01T12:00:00Z",
                     updated_at="2026-03-08T12:00:00Z",
                 )
             ],
@@ -44,14 +46,14 @@ class TopTrendingSheetTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            ["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "更新"],
+            ["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "首次上线"],
             rows[0],
         )
         self.assertEqual(1, rows[1][0])
         self.assertEqual("123.5K", rows[1][2])
         self.assertEqual(3, rows[1][3])
         self.assertEqual("987.7M", rows[1][4])
-        self.assertEqual(date(2026, 3, 8), rows[1][6])
+        self.assertEqual(date(2026, 3, 1), rows[1][6])
 
     def test_calculate_rank_change_handles_first_entry(self) -> None:
         record = GameRecord(
@@ -117,15 +119,74 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertEqual((3, -3, "green"), (cells[1].row_index, cells[1].value, cells[1].color))
         self.assertEqual((4, 0, "black"), (cells[2].row_index, cells[2].value, cells[2].color))
 
+    def test_build_launch_date_cells_maps_age_ranges(self) -> None:
+        cells = build_launch_date_cells(
+            [
+                GameRecord(
+                    rank=1,
+                    place_id=1,
+                    name="New Game",
+                    creator="Studio",
+                    playing=1,
+                    visits=1,
+                    up_votes=0,
+                    down_votes=0,
+                    fetched_at="2026-03-10T00:00:00Z",
+                    created_at="2026-02-10T00:00:00Z",
+                ),
+                GameRecord(
+                    rank=2,
+                    place_id=2,
+                    name="Quarter Game",
+                    creator="Studio",
+                    playing=1,
+                    visits=1,
+                    up_votes=0,
+                    down_votes=0,
+                    fetched_at="2026-03-10T00:00:00Z",
+                    created_at="2025-11-15T00:00:00Z",
+                ),
+                GameRecord(
+                    rank=3,
+                    place_id=3,
+                    name="Old Game",
+                    creator="Studio",
+                    playing=1,
+                    visits=1,
+                    up_votes=0,
+                    down_votes=0,
+                    fetched_at="2026-03-10T00:00:00Z",
+                    created_at="2025-08-01T00:00:00Z",
+                ),
+                GameRecord(
+                    rank=4,
+                    place_id=4,
+                    name="Very Old Game",
+                    creator="Studio",
+                    playing=1,
+                    visits=1,
+                    up_votes=0,
+                    down_votes=0,
+                    fetched_at="2026-03-10T00:00:00Z",
+                    created_at="2024-12-31T00:00:00Z",
+                ),
+            ]
+        )
+
+        self.assertEqual((2, "green"), (cells[0].row_index, cells[0].color))
+        self.assertEqual((3, "yellow"), (cells[1].row_index, cells[1].color))
+        self.assertEqual((4, "black"), (cells[2].row_index, cells[2].color))
+        self.assertEqual((5, "gray"), (cells[3].row_index, cells[3].color))
+
     def test_default_sheet_specs_follow_requested_order(self) -> None:
         specs = build_default_sheet_specs()
 
         self.assertEqual(
-            ["top_trending_v4", "up_and_coming_v4", "ccu_based_v1", "top_playing_now"],
+            ["top_trending_v4", "up_and_coming_v4", "top_playing_now"],
             [item["title"] for item in specs],
         )
         self.assertEqual(
-            ["Top_Trending_V4", "Up_And_Coming_V4", "CCU_Based_V1", "top-playing-now"],
+            ["Top_Trending_V4", "Up_And_Coming_V4", "top-playing-now"],
             [item["sort_id"] for item in specs],
         )
 
@@ -133,15 +194,14 @@ class TopTrendingSheetTests(unittest.TestCase):
         cfg = Config(
             feishu_top_trending_prev_ranks='{"101":1,"102":2}',
             feishu_up_and_coming_prev_ranks='{"201":5}',
-            feishu_ccu_based_prev_ranks="",
+            feishu_top_playing_now_prev_ranks='{"301":7}',
         )
 
         previous_ranks = get_previous_ranks(cfg)
 
         self.assertEqual({101: 1, 102: 2}, previous_ranks["top_trending_v4"])
         self.assertEqual({201: 5}, previous_ranks["up_and_coming_v4"])
-        self.assertEqual({}, previous_ranks["ccu_based_v1"])
-        self.assertEqual({}, previous_ranks["top_playing_now"])
+        self.assertEqual({301: 7}, previous_ranks["top_playing_now"])
 
     def test_data_rows_keep_same_column_representation(self) -> None:
         cfg = Config()
@@ -159,6 +219,7 @@ class TopTrendingSheetTests(unittest.TestCase):
                     up_votes=0,
                     down_votes=0,
                     fetched_at="2026-03-09T00:00:00Z",
+                    created_at="2026-03-01T12:00:00Z",
                     updated_at="2026-03-08T12:00:00Z",
                 ),
                 GameRecord(
@@ -171,6 +232,7 @@ class TopTrendingSheetTests(unittest.TestCase):
                     up_votes=0,
                     down_votes=0,
                     fetched_at="2026-03-09T00:00:00Z",
+                    created_at="2026-02-01T12:00:00Z",
                     updated_at="2026-03-07T12:00:00Z",
                 ),
             ],
@@ -197,7 +259,7 @@ class TopTrendingSheetTests(unittest.TestCase):
         )
 
         self.assertEqual(MIN_RENDER_ROWS, len(rows))
-        self.assertEqual(["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "更新"], rows[0])
+        self.assertEqual(["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "首次上线"], rows[0])
         self.assertEqual(["", "", "", "", "", "", ""], rows[-1])
 
     def test_game_name_width_tracks_visual_length(self) -> None:

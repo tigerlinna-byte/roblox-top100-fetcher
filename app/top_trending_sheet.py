@@ -13,17 +13,14 @@ from .models import GameRecord
 SPREADSHEET_TOKEN_VAR = "FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN"
 TOP_TRENDING_SHEET_ID_VAR = "FEISHU_TOP_TRENDING_SHEET_ID"
 UP_AND_COMING_SHEET_ID_VAR = "FEISHU_UP_AND_COMING_SHEET_ID"
-CCU_BASED_SHEET_ID_VAR = "FEISHU_CCU_BASED_SHEET_ID"
 TOP_PLAYING_NOW_SHEET_ID_VAR = "FEISHU_TOP_PLAYING_NOW_SHEET_ID"
 TOP_TRENDING_PREV_RANKS_VAR = "FEISHU_TOP_TRENDING_PREV_RANKS"
 UP_AND_COMING_PREV_RANKS_VAR = "FEISHU_UP_AND_COMING_PREV_RANKS"
-CCU_BASED_PREV_RANKS_VAR = "FEISHU_CCU_BASED_PREV_RANKS"
 TOP_PLAYING_NOW_PREV_RANKS_VAR = "FEISHU_TOP_PLAYING_NOW_PREV_RANKS"
 
 SORT_SHEETS = (
     ("Top_Trending_V4", "top_trending_v4", TOP_TRENDING_SHEET_ID_VAR, TOP_TRENDING_PREV_RANKS_VAR),
     ("Up_And_Coming_V4", "up_and_coming_v4", UP_AND_COMING_SHEET_ID_VAR, UP_AND_COMING_PREV_RANKS_VAR),
-    ("CCU_Based_V1", "ccu_based_v1", CCU_BASED_SHEET_ID_VAR, CCU_BASED_PREV_RANKS_VAR),
     ("top-playing-now", "top_playing_now", TOP_PLAYING_NOW_SHEET_ID_VAR, TOP_PLAYING_NOW_PREV_RANKS_VAR),
 )
 MIN_RENDER_ROWS = 140
@@ -52,6 +49,12 @@ class RankChangeCell:
     color: str
 
 
+@dataclass(frozen=True)
+class LaunchDateCell:
+    row_index: int
+    color: str
+
+
 def build_top_trending_values(
     cfg: Config,
     sheet_title: str,
@@ -60,12 +63,25 @@ def build_top_trending_values(
 ) -> list[list[object]]:
     del cfg, sheet_title
     rows: list[list[object]] = [
-        ["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "更新"],
+        ["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "首次上线"],
     ]
 
     for record in records:
         rows.append(build_data_row(record, previous_ranks))
     return pad_rows(rows, min_rows=MIN_RENDER_ROWS, column_count=7)
+
+
+def build_launch_date_cells(records: list[GameRecord]) -> list[LaunchDateCell]:
+    cells: list[LaunchDateCell] = []
+    for offset, record in enumerate(records, start=2):
+        launch_date = _format_created_at(record)
+        cells.append(
+            LaunchDateCell(
+                row_index=offset,
+                color=_resolve_launch_date_color(launch_date, record),
+            )
+        )
+    return cells
 
 
 def build_rank_change_cells(
@@ -102,7 +118,7 @@ def build_data_row(record: GameRecord, previous_ranks: dict[int, int]) -> list[o
         calculate_rank_change(previous_ranks, record),
         format_compact_number(record.visits),
         record.creator or "-",
-        _format_updated_at(record),
+        _format_created_at(record),
     ]
 
 
@@ -160,7 +176,6 @@ def get_previous_ranks(cfg: Config) -> dict[str, dict[int, int]]:
     raw_by_var = {
         TOP_TRENDING_PREV_RANKS_VAR: cfg.feishu_top_trending_prev_ranks,
         UP_AND_COMING_PREV_RANKS_VAR: cfg.feishu_up_and_coming_prev_ranks,
-        CCU_BASED_PREV_RANKS_VAR: cfg.feishu_ccu_based_prev_ranks,
         TOP_PLAYING_NOW_PREV_RANKS_VAR: cfg.feishu_top_playing_now_prev_ranks,
     }
     result: dict[str, dict[int, int]] = {}
@@ -176,7 +191,6 @@ def get_saved_spreadsheet_target(cfg: Config) -> SpreadsheetTarget | None:
     sheet_ids = {
         TOP_TRENDING_SHEET_ID_VAR: cfg.feishu_top_trending_sheet_id,
         UP_AND_COMING_SHEET_ID_VAR: cfg.feishu_up_and_coming_sheet_id,
-        CCU_BASED_SHEET_ID_VAR: cfg.feishu_ccu_based_sheet_id,
         TOP_PLAYING_NOW_SHEET_ID_VAR: cfg.feishu_top_playing_now_sheet_id,
     }
     if not all(sheet_ids.values()):
@@ -214,9 +228,27 @@ def build_default_sheet_specs() -> list[dict[str, str]]:
     ]
 
 
-def _format_updated_at(record: GameRecord) -> date | str:
-    raw = record.updated_at or record.fetched_at
+def _format_created_at(record: GameRecord) -> date | str:
+    raw = record.created_at or record.updated_at or record.fetched_at
     return _short_datetime(raw)
+
+
+def _resolve_launch_date_color(launch_date: date | str, record: GameRecord) -> str:
+    if not isinstance(launch_date, date):
+        return "black"
+
+    reference_date = _short_datetime(record.fetched_at)
+    if not isinstance(reference_date, date):
+        return "black"
+
+    age_days = max(0, (reference_date - launch_date).days)
+    if age_days <= 90:
+        return "green"
+    if age_days <= 180:
+        return "yellow"
+    if age_days > 365:
+        return "gray"
+    return "black"
 
 
 def _short_datetime(raw: str) -> date | str:
