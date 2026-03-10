@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import unittest
 from pathlib import Path
@@ -31,6 +32,8 @@ class StorageTests(unittest.TestCase):
                 up_votes=100,
                 down_votes=10,
                 fetched_at="2026-03-07T00:00:00Z",
+                created_at="2026-01-01T00:00:00Z",
+                updated_at="2026-03-01T00:00:00Z",
             )
         ]
 
@@ -41,6 +44,13 @@ class StorageTests(unittest.TestCase):
         payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
         self.assertEqual(1, len(payload))
         self.assertEqual("Game A", payload[0]["name"])
+        self.assertEqual("2026-01-01T00:00:00Z", payload[0]["created_at"])
+
+        with Path(csv_path).open("r", newline="", encoding="utf-8") as fp:
+            rows = list(csv.DictReader(fp))
+
+        self.assertEqual(1, len(rows))
+        self.assertEqual("2026-01-01T00:00:00Z", rows[0]["created_at"])
 
 
 if __name__ == "__main__":
