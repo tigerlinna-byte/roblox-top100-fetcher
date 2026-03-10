@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { handleRequest } from "../src/index.js";
+import { handleRequest, handleScheduled } from "../src/index.js";
 
 class MemoryKvStore {
   constructor() {
@@ -267,4 +267,44 @@ test("deduplicates repeated event ids with persistent store", async () => {
   assert.deepEqual(await secondResponse.json(), { ok: true, duplicate: true });
   assert.equal(ctx2.tasks.length, 0);
   assert.equal(calls.length, 3);
+});
+
+test("dispatches scheduled top_trending_sheet workflow to configured chats", async () => {
+  const calls = [];
+  const ctx = buildCtx();
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (String(url).includes("/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+
+  await handleScheduled(
+    { cron: "14 2 * * *" },
+    buildEnv({ SCHEDULE_CHAT_IDS: "oc_chat_a,oc_chat_b" }),
+    ctx,
+    fetchImpl,
+  );
+
+  assert.equal(calls.length, 1);
+  const dispatchBody = JSON.parse(calls[0].init.body);
+  assert.equal(dispatchBody.inputs.report_mode, "top_trending_sheet");
+  assert.equal(dispatchBody.inputs.trigger_source, "cloudflare_cron");
+  assert.equal(dispatchBody.inputs.chat_id, "oc_chat_a,oc_chat_b");
+});
+
+test("skips scheduled dispatch when no schedule chats configured", async () => {
+  let called = false;
+  await handleScheduled(
+    { cron: "14 2 * * *" },
+    buildEnv({ SCHEDULE_CHAT_IDS: "" }),
+    buildCtx(),
+    async () => {
+      called = true;
+      return new Response(null, { status: 204 });
+    },
+  );
+
+  assert.equal(called, false);
 });
