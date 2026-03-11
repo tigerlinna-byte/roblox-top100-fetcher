@@ -301,6 +301,77 @@ class FeishuClientTests(unittest.TestCase):
         self.assertEqual((), spreadsheet.sheet_ids)
         self.assertEqual(("sheet001", "sheet002", "sheet003"), sheet_ids)
 
+    def test_write_sheet_images_posts_values_image_payload_and_row_height(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        image_response = Mock()
+        image_response.status_code = 200
+        image_response.content = b"png-bytes"
+
+        write_image_response = Mock()
+        write_image_response.status_code = 200
+        write_image_response.json.return_value = {"code": 0, "data": {}}
+
+        row_height_response = Mock()
+        row_height_response.status_code = 200
+        row_height_response.json.return_value = {"code": 0, "data": {}}
+
+        session.request.side_effect = [
+            auth_response,
+            image_response,
+            write_image_response,
+            row_height_response,
+        ]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        from app.top_trending_sheet import ThumbnailCell
+
+        client.write_sheet_images(
+            "shtcn_sheet",
+            "sheet001",
+            [ThumbnailCell(row_index=2, url="https://t1.example/game-a.png")],
+        )
+
+        image_fetch_kwargs = session.request.call_args_list[1].kwargs
+        self.assertEqual("GET", image_fetch_kwargs["method"])
+        self.assertEqual("https://t1.example/game-a.png", image_fetch_kwargs["url"])
+
+        write_image_kwargs = session.request.call_args_list[2].kwargs
+        self.assertEqual(
+            "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/shtcn_sheet/values_image",
+            write_image_kwargs["url"],
+        )
+        self.assertEqual(
+            "sheet001!B2:B2",
+            write_image_kwargs["json"]["images"][0]["range"],
+        )
+
+        row_height_kwargs = session.request.call_args_list[3].kwargs
+        self.assertEqual(
+            "https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/shtcn_sheet/dimension_range",
+            row_height_kwargs["url"],
+        )
+        self.assertEqual(
+            "ROWS",
+            row_height_kwargs["json"]["dimension"]["majorDimension"],
+        )
+
     def test_apply_rank_change_colors_batches_ranges_by_color(self) -> None:
         session = Mock()
 

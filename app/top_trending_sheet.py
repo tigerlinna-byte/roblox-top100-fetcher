@@ -58,6 +58,12 @@ class LaunchDateCell:
 
 
 @dataclass(frozen=True)
+class ThumbnailCell:
+    row_index: int
+    url: str
+
+
+@dataclass(frozen=True)
 class SpreadsheetVariableSet:
     spreadsheet_token_variable_name: str
     spreadsheet_token: str
@@ -135,6 +141,15 @@ def build_top_trending_values(
     return pad_rows(rows, min_rows=MIN_RENDER_ROWS, column_count=8)
 
 
+def build_thumbnail_cells(records: list[GameRecord]) -> list[ThumbnailCell]:
+    cells: list[ThumbnailCell] = []
+    for offset, record in enumerate(records, start=2):
+        thumbnail_url = record.thumbnail_url.strip()
+        if thumbnail_url:
+            cells.append(ThumbnailCell(row_index=offset, url=thumbnail_url))
+    return cells
+
+
 def build_launch_date_cells(records: list[GameRecord]) -> list[LaunchDateCell]:
     cells: list[LaunchDateCell] = []
     for offset, record in enumerate(records, start=2):
@@ -176,7 +191,7 @@ def calculate_rank_change(previous_ranks: dict[int, int], record: GameRecord) ->
 def build_data_row(record: GameRecord, previous_ranks: dict[int, int]) -> list[object]:
     return [
         int(record.rank),
-        record.thumbnail_url,
+        "",
         build_display_name(record),
         format_compact_number(record.playing),
         calculate_rank_change(previous_ranks, record),

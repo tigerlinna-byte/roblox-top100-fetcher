@@ -12,6 +12,7 @@ from .storage import write_outputs
 from .summary import build_failure_markdown, build_success_markdown
 from .top_trending_sheet import (
     build_launch_date_cells,
+    build_thumbnail_cells,
     calculate_game_name_width,
     SheetTarget,
     SpreadsheetTarget,
@@ -155,6 +156,14 @@ def _sync_top_trending_sheet(
                 previous_sheet_ranks,
             ),
         )
+        try:
+            feishu_client.write_sheet_images(
+                target.spreadsheet_token,
+                sheet.sheet_id,
+                build_thumbnail_cells(sheet_records),
+            )
+        except FeishuClientError:
+            logging.warning("Failed to write sheet images for %s.", sheet.title, exc_info=True)
         feishu_client.apply_rank_change_colors(
             target.spreadsheet_token,
             sheet.sheet_id,
