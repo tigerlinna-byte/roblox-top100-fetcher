@@ -146,15 +146,21 @@ def _sync_top_trending_sheet(
     for sheet in target.sheets:
         sheet_records = records_by_sheet.get(sheet.title, [])
         previous_sheet_ranks = previous_ranks.get(sheet.title, {})
+        values = build_top_trending_values(
+            cfg,
+            sheet.title,
+            sheet_records,
+            previous_sheet_ranks,
+        )
         feishu_client.write_sheet_values(
             target.spreadsheet_token,
             sheet.sheet_id,
-            build_top_trending_values(
-                cfg,
-                sheet.title,
-                sheet_records,
-                previous_sheet_ranks,
-            ),
+            values,
+        )
+        feishu_client.reset_sheet_font_colors(
+            target.spreadsheet_token,
+            sheet.sheet_id,
+            row_count=len(values),
         )
         try:
             feishu_client.write_sheet_images(

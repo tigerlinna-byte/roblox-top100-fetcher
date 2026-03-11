@@ -373,6 +373,41 @@ class FeishuClientTests(unittest.TestCase):
             row_height_kwargs["json"]["dimension"]["majorDimension"],
         )
 
+    def test_reset_sheet_font_colors_clears_old_columns_to_black(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        style_response = Mock()
+        style_response.status_code = 200
+        style_response.json.return_value = {"code": 0, "data": {}}
+
+        session.request.side_effect = [auth_response, style_response]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        client.reset_sheet_font_colors("shtcn_sheet", "sheet001", row_count=140)
+
+        style_kwargs = session.request.call_args_list[1].kwargs
+        self.assertEqual(
+            ["sheet001!D2:H140"],
+            style_kwargs["json"]["data"][0]["ranges"],
+        )
+        self.assertEqual("#000000", style_kwargs["json"]["data"][0]["style"]["foreColor"])
+
     def test_apply_rank_change_colors_batches_ranges_by_color(self) -> None:
         session = Mock()
 
