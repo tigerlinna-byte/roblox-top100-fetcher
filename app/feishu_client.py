@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from datetime import date, datetime
 from dataclasses import dataclass
@@ -9,7 +10,7 @@ import requests
 
 from .config import Config
 from .retry import with_retry
-from .top_trending_sheet import LaunchDateCell, RankChangeCell
+from .top_trending_sheet import LaunchDateCell, RankChangeCell, ThumbnailCell
 
 
 class FeishuClientError(RuntimeError):
@@ -195,6 +196,48 @@ class FeishuClient:
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
+    def write_sheet_images(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        cells: list[ThumbnailCell],
+    ) -> None:
+        if not cells:
+            return
+
+        access_token = self._fetch_tenant_access_token()
+        images_payload: list[dict[str, str]] = []
+        max_row_index = 1
+        for cell in cells:
+            encoded_file = self._download_image_as_base64(cell.url)
+            if not encoded_file:
+                continue
+            images_payload.append(
+                {
+                    "range": f"{sheet_id}!B{cell.row_index}:B{cell.row_index}",
+                    "file": encoded_file,
+                }
+            )
+            max_row_index = max(max_row_index, cell.row_index)
+
+        if not images_payload:
+            return
+
+        self._request_json(
+            "POST",
+            f"https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/{spreadsheet_token}/values_image",
+            json_payload={"images": images_payload},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        self._set_row_height(
+            spreadsheet_token,
+            sheet_id,
+            start_index=1,
+            end_index=max_row_index,
+            height=120,
+            access_token=access_token,
+        )
+
     def query_sheets(self, spreadsheet_token: str) -> tuple[SheetInfo, ...]:
         access_token = self._fetch_tenant_access_token()
         data = self._request_json(
@@ -244,21 +287,14 @@ class FeishuClient:
             (5, 6, rank_change_width),
             (7, 8, developer_width),
         ):
-            self._request_json(
-                "PUT",
-                f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/dimension_range",
-                json_payload={
-                    "dimension": {
-                        "sheetId": sheet_id,
-                        "majorDimension": "COLUMNS",
-                        "startIndex": start_index,
-                        "endIndex": end_index,
-                    },
-                    "dimensionProperties": {
-                        "fixedSize": width,
-                    },
-                },
-                headers={"Authorization": f"Bearer {access_token}"},
+            self._set_dimension_size(
+                spreadsheet_token,
+                sheet_id,
+                major_dimension="COLUMNS",
+                start_index=start_index,
+                end_index=end_index,
+                fixed_size=width,
+                access_token=access_token,
             )
 
     def apply_rank_change_colors(
@@ -336,6 +372,79 @@ class FeishuClient:
             "PUT",
             f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/styles_batch_update",
             json_payload=payload,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    def _download_image_as_base64(self, url: str) -> str:
+        def _call() -> str:
+            assert self.session is not None
+            response = self.session.request(
+                method="GET",
+                url=url,
+                timeout=self.config.request_timeout_seconds,
+            )
+            if response.status_code >= 400:
+                raise requests.HTTPError(
+                    f"HTTP {response.status_code}: {response.text[:400]}",
+                    response=response,
+                )
+            return base64.b64encode(response.content).decode("ascii")
+
+        try:
+            return with_retry(
+                _call,
+                attempts=self.config.retry_max_attempts,
+                base_backoff_seconds=self.config.retry_backoff_seconds,
+                is_retryable=_is_retryable_exception,
+            )
+        except Exception:
+            return ""
+
+    def _set_row_height(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        *,
+        start_index: int,
+        end_index: int,
+        height: int,
+        access_token: str,
+    ) -> None:
+        self._set_dimension_size(
+            spreadsheet_token,
+            sheet_id,
+            major_dimension="ROWS",
+            start_index=start_index,
+            end_index=end_index,
+            fixed_size=height,
+            access_token=access_token,
+        )
+
+    def _set_dimension_size(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        *,
+        major_dimension: str,
+        start_index: int,
+        end_index: int,
+        fixed_size: int,
+        access_token: str,
+    ) -> None:
+        self._request_json(
+            "PUT",
+            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/dimension_range",
+            json_payload={
+                "dimension": {
+                    "sheetId": sheet_id,
+                    "majorDimension": major_dimension,
+                    "startIndex": start_index,
+                    "endIndex": end_index,
+                },
+                "dimensionProperties": {
+                    "fixedSize": fixed_size,
+                },
+            },
             headers={"Authorization": f"Bearer {access_token}"},
         )
 

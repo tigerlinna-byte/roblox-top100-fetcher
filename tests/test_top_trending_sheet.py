@@ -9,6 +9,7 @@ from app.models import GameRecord
 from app.top_trending_sheet import (
     MIN_RENDER_ROWS,
     build_launch_date_cells,
+    build_thumbnail_cells,
     build_rank_change_cells,
     calculate_game_name_width,
     calculate_rank_change,
@@ -58,12 +59,33 @@ class TopTrendingSheetTests(unittest.TestCase):
             rows[0],
         )
         self.assertEqual(1, rows[1][0])
-        self.assertEqual("https://t1.example/trending-a.png", rows[1][1])
+        self.assertEqual("", rows[1][1])
         self.assertEqual("Trending A 趋势A", rows[1][2])
         self.assertEqual("123.5K", rows[1][3])
         self.assertEqual(3, rows[1][4])
         self.assertEqual("987.7M", rows[1][5])
         self.assertEqual(date(2026, 3, 1), rows[1][7])
+
+    def test_build_thumbnail_cells_collects_row_and_url(self) -> None:
+        cells = build_thumbnail_cells(
+            [
+                GameRecord(
+                    rank=1,
+                    place_id=1,
+                    name="Game A",
+                    thumbnail_url="https://t1.example/game-a.png",
+                ),
+                GameRecord(
+                    rank=2,
+                    place_id=2,
+                    name="Game B",
+                ),
+            ]
+        )
+
+        self.assertEqual(1, len(cells))
+        self.assertEqual(2, cells[0].row_index)
+        self.assertEqual("https://t1.example/game-a.png", cells[0].url)
 
     def test_build_display_name_appends_localized_name(self) -> None:
         record = GameRecord(
