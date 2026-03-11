@@ -32,6 +32,14 @@ class Config:
     feishu_up_and_coming_prev_ranks: str = ""
     feishu_top_playing_now_prev_ranks: str = ""
     feishu_top_trending_spreadsheet_title: str = "Roblox Top 100"
+    feishu_top_trending_test_spreadsheet_token: str = ""
+    feishu_top_trending_test_sheet_id: str = ""
+    feishu_up_and_coming_test_sheet_id: str = ""
+    feishu_top_playing_now_test_sheet_id: str = ""
+    feishu_top_trending_test_prev_ranks: str = ""
+    feishu_up_and_coming_test_prev_ranks: str = ""
+    feishu_top_playing_now_test_prev_ranks: str = ""
+    feishu_top_trending_test_spreadsheet_title: str = "Roblox Top 100 Test"
 
 
 def _get_int(name: str, default: int) -> int:
@@ -95,5 +103,19 @@ def load_config() -> Config:
         feishu_top_trending_spreadsheet_title=os.getenv(
             "FEISHU_TOP_TRENDING_SPREADSHEET_TITLE",
             "Roblox Top 100",
+        ),
+        feishu_top_trending_test_spreadsheet_token=os.getenv(
+            "FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN",
+            "",
+        ),
+        feishu_top_trending_test_sheet_id=os.getenv("FEISHU_TOP_TRENDING_TEST_SHEET_ID", ""),
+        feishu_up_and_coming_test_sheet_id=os.getenv("FEISHU_UP_AND_COMING_TEST_SHEET_ID", ""),
+        feishu_top_playing_now_test_sheet_id=os.getenv("FEISHU_TOP_PLAYING_NOW_TEST_SHEET_ID", ""),
+        feishu_top_trending_test_prev_ranks=os.getenv("FEISHU_TOP_TRENDING_TEST_PREV_RANKS", ""),
+        feishu_up_and_coming_test_prev_ranks=os.getenv("FEISHU_UP_AND_COMING_TEST_PREV_RANKS", ""),
+        feishu_top_playing_now_test_prev_ranks=os.getenv("FEISHU_TOP_PLAYING_NOW_TEST_PREV_RANKS", ""),
+        feishu_top_trending_test_spreadsheet_title=os.getenv(
+            "FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TITLE",
+            "Roblox Top 100 Test",
         ),
     )
