@@ -185,7 +185,7 @@ def _apply_trending_sheet_presentation(spreadsheet_title: str, feishu_client, ta
                 target.spreadsheet_token,
                 sheet.sheet_id,
                 rank_width=60,
-                game_name_width=350,
+                game_name_width=400,
                 online_width=90,
                 rank_change_width=60,
                 developer_width=150,
