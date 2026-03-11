@@ -39,6 +39,7 @@ class TopTrendingSheetTests(unittest.TestCase):
                     place_id=123,
                     name="Trending A",
                     localized_name="趋势A",
+                    thumbnail_url="https://t1.example/trending-a.png",
                     creator="Studio A",
                     playing=123456,
                     visits=987654321,
@@ -53,15 +54,16 @@ class TopTrendingSheetTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            ["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "首次上线"],
+            ["排名", "缩略图", "游戏名", "在线", "排名变化", "访问量", "开发者", "首次上线"],
             rows[0],
         )
         self.assertEqual(1, rows[1][0])
-        self.assertEqual("Trending A 趋势A", rows[1][1])
-        self.assertEqual("123.5K", rows[1][2])
-        self.assertEqual(3, rows[1][3])
-        self.assertEqual("987.7M", rows[1][4])
-        self.assertEqual(date(2026, 3, 1), rows[1][6])
+        self.assertEqual("https://t1.example/trending-a.png", rows[1][1])
+        self.assertEqual("Trending A 趋势A", rows[1][2])
+        self.assertEqual("123.5K", rows[1][3])
+        self.assertEqual(3, rows[1][4])
+        self.assertEqual("987.7M", rows[1][5])
+        self.assertEqual(date(2026, 3, 1), rows[1][7])
 
     def test_build_display_name_appends_localized_name(self) -> None:
         record = GameRecord(
@@ -265,10 +267,12 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertIsInstance(rows[2][1], str)
         self.assertIsInstance(rows[1][2], str)
         self.assertIsInstance(rows[2][2], str)
-        self.assertIsInstance(rows[1][4], str)
-        self.assertIsInstance(rows[2][4], str)
-        self.assertIsInstance(rows[1][6], date)
-        self.assertIsInstance(rows[2][6], date)
+        self.assertIsInstance(rows[1][3], str)
+        self.assertIsInstance(rows[2][3], str)
+        self.assertIsInstance(rows[1][5], str)
+        self.assertIsInstance(rows[2][5], str)
+        self.assertIsInstance(rows[1][7], date)
+        self.assertIsInstance(rows[2][7], date)
 
     def test_values_are_padded_to_clear_old_tail_rows(self) -> None:
         rows = build_top_trending_values(
@@ -279,8 +283,8 @@ class TopTrendingSheetTests(unittest.TestCase):
         )
 
         self.assertEqual(MIN_RENDER_ROWS, len(rows))
-        self.assertEqual(["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "首次上线"], rows[0])
-        self.assertEqual(["", "", "", "", "", "", ""], rows[-1])
+        self.assertEqual(["排名", "缩略图", "游戏名", "在线", "排名变化", "访问量", "开发者", "首次上线"], rows[0])
+        self.assertEqual(["", "", "", "", "", "", "", ""], rows[-1])
 
     def test_game_name_width_tracks_visual_length(self) -> None:
         narrow = calculate_game_name_width(
@@ -336,8 +340,8 @@ class TopTrendingSheetTests(unittest.TestCase):
             {},
         )
 
-        self.assertEqual("0.9K", rows[1][2])
-        self.assertEqual("0.9K", rows[1][4])
+        self.assertEqual("0.9K", rows[1][3])
+        self.assertEqual("0.9K", rows[1][5])
 
     def test_get_previous_ranks_uses_test_variables_for_manual_runs(self) -> None:
         cfg = Config(

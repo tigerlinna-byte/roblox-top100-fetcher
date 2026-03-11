@@ -127,12 +127,12 @@ def build_top_trending_values(
 ) -> list[list[object]]:
     del cfg, sheet_title
     rows: list[list[object]] = [
-        ["排名", "游戏名", "在线", "排名变化", "访问量", "开发者", "首次上线"],
+        ["排名", "缩略图", "游戏名", "在线", "排名变化", "访问量", "开发者", "首次上线"],
     ]
 
     for record in records:
         rows.append(build_data_row(record, previous_ranks))
-    return pad_rows(rows, min_rows=MIN_RENDER_ROWS, column_count=7)
+    return pad_rows(rows, min_rows=MIN_RENDER_ROWS, column_count=8)
 
 
 def build_launch_date_cells(records: list[GameRecord]) -> list[LaunchDateCell]:
@@ -176,6 +176,7 @@ def calculate_rank_change(previous_ranks: dict[int, int], record: GameRecord) ->
 def build_data_row(record: GameRecord, previous_ranks: dict[int, int]) -> list[object]:
     return [
         int(record.rank),
+        record.thumbnail_url,
         build_display_name(record),
         format_compact_number(record.playing),
         calculate_rank_change(previous_ranks, record),
