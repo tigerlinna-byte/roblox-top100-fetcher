@@ -296,6 +296,20 @@ class FeishuClient:
                 access_token=access_token,
             )
 
+    def reset_sheet_font_colors(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        *,
+        row_count: int,
+    ) -> None:
+        if row_count < 2:
+            return
+        self._apply_font_colors(
+            spreadsheet_token,
+            [(f"{sheet_id}!D2:H{row_count}", "black")],
+        )
+
     def apply_rank_change_colors(
         self,
         spreadsheet_token: str,
