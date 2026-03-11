@@ -20,6 +20,7 @@ from .top_trending_sheet import (
     build_top_trending_values,
     get_saved_spreadsheet_target,
     get_previous_ranks,
+    resolve_spreadsheet_variables,
     save_previous_ranks,
     save_spreadsheet_target,
 )
@@ -105,12 +106,13 @@ def _sync_top_trending_sheet(
     records_by_sheet,
     feishu_client: FeishuClient,
 ) -> SpreadsheetTarget:
-    previous_ranks = get_previous_ranks(cfg)
+    variables = resolve_spreadsheet_variables(cfg)
+    previous_ranks = get_previous_ranks(cfg, variables)
     github_client = GitHubClient(cfg)
-    target = get_saved_spreadsheet_target(cfg)
+    target = get_saved_spreadsheet_target(cfg, variables)
     if target is None:
-        spreadsheet = feishu_client.create_spreadsheet(cfg.feishu_top_trending_spreadsheet_title)
-        sheet_specs = build_default_sheet_specs()
+        spreadsheet = feishu_client.create_spreadsheet(variables.spreadsheet_title)
+        sheet_specs = build_default_sheet_specs(variables)
         sheet_titles = [sheet_spec["title"] for sheet_spec in sheet_specs]
         sheet_ids = feishu_client.ensure_sheet_set(
             spreadsheet.spreadsheet_token,
@@ -131,14 +133,14 @@ def _sync_top_trending_sheet(
             ),
             url=spreadsheet.url,
         )
-        if not save_spreadsheet_target(github_client, target):
+        if not save_spreadsheet_target(github_client, target, variables):
             logging.warning("Top Trending spreadsheet identifiers were not persisted.")
 
     feishu_client.delete_extra_sheets(
         target.spreadsheet_token,
         keep_sheet_ids={sheet.sheet_id for sheet in target.sheets},
     )
-    _apply_trending_sheet_presentation(cfg, feishu_client, target, records_by_sheet)
+    _apply_trending_sheet_presentation(variables.spreadsheet_title, feishu_client, target)
 
     for sheet in target.sheets:
         sheet_records = records_by_sheet.get(sheet.title, [])
@@ -168,11 +170,11 @@ def _sync_top_trending_sheet(
     return target
 
 
-def _apply_trending_sheet_presentation(cfg, feishu_client, target, records_by_sheet) -> None:
+def _apply_trending_sheet_presentation(spreadsheet_title: str, feishu_client, target) -> None:
     try:
         feishu_client.update_spreadsheet_title(
             target.spreadsheet_token,
-            cfg.feishu_top_trending_spreadsheet_title,
+            spreadsheet_title,
         )
     except FeishuClientError:
         logging.warning("Failed to update spreadsheet title.", exc_info=True)

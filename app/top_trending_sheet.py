@@ -17,12 +17,14 @@ TOP_PLAYING_NOW_SHEET_ID_VAR = "FEISHU_TOP_PLAYING_NOW_SHEET_ID"
 TOP_TRENDING_PREV_RANKS_VAR = "FEISHU_TOP_TRENDING_PREV_RANKS"
 UP_AND_COMING_PREV_RANKS_VAR = "FEISHU_UP_AND_COMING_PREV_RANKS"
 TOP_PLAYING_NOW_PREV_RANKS_VAR = "FEISHU_TOP_PLAYING_NOW_PREV_RANKS"
+TEST_SPREADSHEET_TOKEN_VAR = "FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN"
+TEST_TOP_TRENDING_SHEET_ID_VAR = "FEISHU_TOP_TRENDING_TEST_SHEET_ID"
+TEST_UP_AND_COMING_SHEET_ID_VAR = "FEISHU_UP_AND_COMING_TEST_SHEET_ID"
+TEST_TOP_PLAYING_NOW_SHEET_ID_VAR = "FEISHU_TOP_PLAYING_NOW_TEST_SHEET_ID"
+TEST_TOP_TRENDING_PREV_RANKS_VAR = "FEISHU_TOP_TRENDING_TEST_PREV_RANKS"
+TEST_UP_AND_COMING_PREV_RANKS_VAR = "FEISHU_UP_AND_COMING_TEST_PREV_RANKS"
+TEST_TOP_PLAYING_NOW_PREV_RANKS_VAR = "FEISHU_TOP_PLAYING_NOW_TEST_PREV_RANKS"
 
-SORT_SHEETS = (
-    ("Top_Trending_V4", "top_trending_v4", TOP_TRENDING_SHEET_ID_VAR, TOP_TRENDING_PREV_RANKS_VAR),
-    ("Up_And_Coming_V4", "up_and_coming_v4", UP_AND_COMING_SHEET_ID_VAR, UP_AND_COMING_PREV_RANKS_VAR),
-    ("top-playing-now", "top_playing_now", TOP_PLAYING_NOW_SHEET_ID_VAR, TOP_PLAYING_NOW_PREV_RANKS_VAR),
-)
 MIN_RENDER_ROWS = 140
 
 
@@ -53,6 +55,68 @@ class RankChangeCell:
 class LaunchDateCell:
     row_index: int
     color: str
+
+
+@dataclass(frozen=True)
+class SpreadsheetVariableSet:
+    spreadsheet_token_variable_name: str
+    spreadsheet_token: str
+    spreadsheet_title: str
+    sort_sheets: tuple[tuple[str, str, str, str], ...]
+    previous_ranks_by_var: dict[str, str]
+
+
+FORMAL_SORT_SHEETS = (
+    ("Top_Trending_V4", "top_trending_v4", TOP_TRENDING_SHEET_ID_VAR, TOP_TRENDING_PREV_RANKS_VAR),
+    ("Up_And_Coming_V4", "up_and_coming_v4", UP_AND_COMING_SHEET_ID_VAR, UP_AND_COMING_PREV_RANKS_VAR),
+    ("top-playing-now", "top_playing_now", TOP_PLAYING_NOW_SHEET_ID_VAR, TOP_PLAYING_NOW_PREV_RANKS_VAR),
+)
+TEST_SORT_SHEETS = (
+    (
+        "Top_Trending_V4",
+        "top_trending_v4",
+        TEST_TOP_TRENDING_SHEET_ID_VAR,
+        TEST_TOP_TRENDING_PREV_RANKS_VAR,
+    ),
+    (
+        "Up_And_Coming_V4",
+        "up_and_coming_v4",
+        TEST_UP_AND_COMING_SHEET_ID_VAR,
+        TEST_UP_AND_COMING_PREV_RANKS_VAR,
+    ),
+    (
+        "top-playing-now",
+        "top_playing_now",
+        TEST_TOP_PLAYING_NOW_SHEET_ID_VAR,
+        TEST_TOP_PLAYING_NOW_PREV_RANKS_VAR,
+    ),
+)
+
+
+def resolve_spreadsheet_variables(cfg: Config) -> SpreadsheetVariableSet:
+    if _should_use_formal_sheet(cfg):
+        return SpreadsheetVariableSet(
+            spreadsheet_token_variable_name=SPREADSHEET_TOKEN_VAR,
+            spreadsheet_token=cfg.feishu_top_trending_spreadsheet_token,
+            spreadsheet_title=cfg.feishu_top_trending_spreadsheet_title,
+            sort_sheets=FORMAL_SORT_SHEETS,
+            previous_ranks_by_var={
+                TOP_TRENDING_PREV_RANKS_VAR: cfg.feishu_top_trending_prev_ranks,
+                UP_AND_COMING_PREV_RANKS_VAR: cfg.feishu_up_and_coming_prev_ranks,
+                TOP_PLAYING_NOW_PREV_RANKS_VAR: cfg.feishu_top_playing_now_prev_ranks,
+            },
+        )
+    return SpreadsheetVariableSet(
+        spreadsheet_token_variable_name=TEST_SPREADSHEET_TOKEN_VAR,
+        spreadsheet_token=cfg.feishu_top_trending_test_spreadsheet_token,
+        spreadsheet_title=cfg.feishu_top_trending_test_spreadsheet_title,
+        sort_sheets=TEST_SORT_SHEETS,
+        previous_ranks_by_var={
+            TEST_TOP_TRENDING_PREV_RANKS_VAR: cfg.feishu_top_trending_test_prev_ranks,
+            TEST_UP_AND_COMING_PREV_RANKS_VAR: cfg.feishu_up_and_coming_test_prev_ranks,
+            TEST_TOP_PLAYING_NOW_PREV_RANKS_VAR: cfg.feishu_top_playing_now_test_prev_ranks,
+        },
+    )
 
 
 def build_top_trending_values(
@@ -110,7 +174,6 @@ def calculate_rank_change(previous_ranks: dict[int, int], record: GameRecord) ->
 
 
 def build_data_row(record: GameRecord, previous_ranks: dict[int, int]) -> list[object]:
-    # Keep each column's data representation stable across all data rows.
     return [
         int(record.rank),
         record.name,
@@ -142,13 +205,16 @@ def format_compact_number(value: int) -> str:
 
 def calculate_game_name_width(records: list[GameRecord]) -> int:
     visual_units = max((_measure_text_units(record.name) for record in records), default=12)
-    # Approximate Feishu sheet column width from visible glyph width with padding.
     return max(240, min(960, int(visual_units * 12 + 48)))
 
 
-def save_spreadsheet_target(github_client: GitHubClient, target: SpreadsheetTarget) -> bool:
+def save_spreadsheet_target(
+    github_client: GitHubClient,
+    target: SpreadsheetTarget,
+    variables: SpreadsheetVariableSet,
+) -> bool:
     saved = github_client.upsert_repository_variable(
-        SPREADSHEET_TOKEN_VAR,
+        variables.spreadsheet_token_variable_name,
         target.spreadsheet_token,
     )
     for sheet in target.sheets:
@@ -172,32 +238,31 @@ def save_previous_ranks(
     )
 
 
-def get_previous_ranks(cfg: Config) -> dict[str, dict[int, int]]:
-    raw_by_var = {
-        TOP_TRENDING_PREV_RANKS_VAR: cfg.feishu_top_trending_prev_ranks,
-        UP_AND_COMING_PREV_RANKS_VAR: cfg.feishu_up_and_coming_prev_ranks,
-        TOP_PLAYING_NOW_PREV_RANKS_VAR: cfg.feishu_top_playing_now_prev_ranks,
-    }
+def get_previous_ranks(cfg: Config, variables: SpreadsheetVariableSet | None = None) -> dict[str, dict[int, int]]:
+    resolved_variables = variables or resolve_spreadsheet_variables(cfg)
     result: dict[str, dict[int, int]] = {}
-    for _, title, _, variable_name in SORT_SHEETS:
-        result[title] = _parse_previous_ranks(raw_by_var.get(variable_name, ""))
+    for _, title, _, variable_name in resolved_variables.sort_sheets:
+        result[title] = _parse_previous_ranks(resolved_variables.previous_ranks_by_var.get(variable_name, ""))
     return result
 
 
-def get_saved_spreadsheet_target(cfg: Config) -> SpreadsheetTarget | None:
-    if not cfg.feishu_top_trending_spreadsheet_token:
+def get_saved_spreadsheet_target(
+    cfg: Config,
+    variables: SpreadsheetVariableSet | None = None,
+) -> SpreadsheetTarget | None:
+    resolved_variables = variables or resolve_spreadsheet_variables(cfg)
+    if not resolved_variables.spreadsheet_token:
         return None
 
     sheet_ids = {
-        TOP_TRENDING_SHEET_ID_VAR: cfg.feishu_top_trending_sheet_id,
-        UP_AND_COMING_SHEET_ID_VAR: cfg.feishu_up_and_coming_sheet_id,
-        TOP_PLAYING_NOW_SHEET_ID_VAR: cfg.feishu_top_playing_now_sheet_id,
+        variable_name: _get_sheet_id_from_config(cfg, variable_name)
+        for _, _, variable_name, _ in resolved_variables.sort_sheets
     }
     if not all(sheet_ids.values()):
         return None
 
     return SpreadsheetTarget(
-        spreadsheet_token=cfg.feishu_top_trending_spreadsheet_token,
+        spreadsheet_token=resolved_variables.spreadsheet_token,
         sheets=tuple(
             SheetTarget(
                 sort_id=sort_id,
@@ -206,9 +271,9 @@ def get_saved_spreadsheet_target(cfg: Config) -> SpreadsheetTarget | None:
                 previous_ranks_variable_name=previous_ranks_variable_name,
                 sheet_id=sheet_ids[variable_name],
             )
-            for sort_id, title, variable_name, previous_ranks_variable_name in SORT_SHEETS
+            for sort_id, title, variable_name, previous_ranks_variable_name in resolved_variables.sort_sheets
         ),
-        url=build_spreadsheet_url(cfg.feishu_top_trending_spreadsheet_token),
+        url=build_spreadsheet_url(resolved_variables.spreadsheet_token),
     )
 
 
@@ -216,7 +281,16 @@ def build_spreadsheet_url(spreadsheet_token: str) -> str:
     return f"https://feishu.cn/sheets/{spreadsheet_token}"
 
 
-def build_default_sheet_specs() -> list[dict[str, str]]:
+def build_default_sheet_specs(
+    variables: SpreadsheetVariableSet | None = None,
+) -> list[dict[str, str]]:
+    resolved_variables = variables or SpreadsheetVariableSet(
+        spreadsheet_token_variable_name=SPREADSHEET_TOKEN_VAR,
+        spreadsheet_token="",
+        spreadsheet_title="",
+        sort_sheets=FORMAL_SORT_SHEETS,
+        previous_ranks_by_var={},
+    )
     return [
         {
             "sort_id": sort_id,
@@ -224,7 +298,7 @@ def build_default_sheet_specs() -> list[dict[str, str]]:
             "variable_name": variable_name,
             "previous_ranks_variable_name": previous_ranks_variable_name,
         }
-        for sort_id, title, variable_name, previous_ranks_variable_name in SORT_SHEETS
+        for sort_id, title, variable_name, previous_ranks_variable_name in resolved_variables.sort_sheets
     ]
 
 
@@ -294,3 +368,21 @@ def _measure_text_units(text: str) -> float:
         else:
             total += 1.0
     return total
+
+
+def _should_use_formal_sheet(cfg: Config) -> bool:
+    if cfg.run_report_mode != "top_trending_sheet":
+        return True
+    return cfg.run_trigger_source == "cloudflare_cron"
+
+
+def _get_sheet_id_from_config(cfg: Config, variable_name: str) -> str:
+    values = {
+        TOP_TRENDING_SHEET_ID_VAR: cfg.feishu_top_trending_sheet_id,
+        UP_AND_COMING_SHEET_ID_VAR: cfg.feishu_up_and_coming_sheet_id,
+        TOP_PLAYING_NOW_SHEET_ID_VAR: cfg.feishu_top_playing_now_sheet_id,
+        TEST_TOP_TRENDING_SHEET_ID_VAR: cfg.feishu_top_trending_test_sheet_id,
+        TEST_UP_AND_COMING_SHEET_ID_VAR: cfg.feishu_up_and_coming_test_sheet_id,
+        TEST_TOP_PLAYING_NOW_SHEET_ID_VAR: cfg.feishu_top_playing_now_test_sheet_id,
+    }
+    return values.get(variable_name, "")

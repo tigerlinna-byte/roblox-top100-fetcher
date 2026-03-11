@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 import unittest
+from unittest.mock import Mock
 
 from app.config import Config
 from app.models import GameRecord
@@ -14,6 +15,9 @@ from app.top_trending_sheet import (
     build_default_sheet_specs,
     build_top_trending_values,
     get_previous_ranks,
+    get_saved_spreadsheet_target,
+    resolve_spreadsheet_variables,
+    save_spreadsheet_target,
 )
 
 
@@ -318,6 +322,95 @@ class TopTrendingSheetTests(unittest.TestCase):
 
         self.assertEqual("0.9K", rows[1][2])
         self.assertEqual("0.9K", rows[1][4])
+
+    def test_get_previous_ranks_uses_test_variables_for_manual_runs(self) -> None:
+        cfg = Config(
+            run_report_mode="top_trending_sheet",
+            run_trigger_source="manual",
+            feishu_top_trending_test_prev_ranks='{"401":9}',
+            feishu_up_and_coming_test_prev_ranks='{"402":8}',
+            feishu_top_playing_now_test_prev_ranks='{"403":7}',
+        )
+
+        previous_ranks = get_previous_ranks(cfg)
+
+        self.assertEqual({401: 9}, previous_ranks["top_trending_v4"])
+        self.assertEqual({402: 8}, previous_ranks["up_and_coming_v4"])
+        self.assertEqual({403: 7}, previous_ranks["top_playing_now"])
+
+    def test_resolve_spreadsheet_variables_routes_cron_to_formal_sheet(self) -> None:
+        cfg = Config(
+            run_report_mode="top_trending_sheet",
+            run_trigger_source="cloudflare_cron",
+            feishu_top_trending_spreadsheet_title="Roblox Top 100",
+        )
+
+        variables = resolve_spreadsheet_variables(cfg)
+
+        self.assertEqual("FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN", variables.spreadsheet_token_variable_name)
+        self.assertEqual("Roblox Top 100", variables.spreadsheet_title)
+
+    def test_resolve_spreadsheet_variables_routes_manual_to_test_sheet(self) -> None:
+        cfg = Config(
+            run_report_mode="top_trending_sheet",
+            run_trigger_source="manual",
+            feishu_top_trending_test_spreadsheet_title="Roblox Top 100 Test",
+        )
+
+        variables = resolve_spreadsheet_variables(cfg)
+
+        self.assertEqual("FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN", variables.spreadsheet_token_variable_name)
+        self.assertEqual("Roblox Top 100 Test", variables.spreadsheet_title)
+
+    def test_get_saved_spreadsheet_target_reads_test_sheet_ids(self) -> None:
+        cfg = Config(
+            run_report_mode="top_trending_sheet",
+            run_trigger_source="feishu_chat_command",
+            feishu_top_trending_test_spreadsheet_token="shtcn_test",
+            feishu_top_trending_test_sheet_id="sheet_test_1",
+            feishu_up_and_coming_test_sheet_id="sheet_test_2",
+            feishu_top_playing_now_test_sheet_id="sheet_test_3",
+        )
+
+        target = get_saved_spreadsheet_target(cfg)
+
+        self.assertIsNotNone(target)
+        assert target is not None
+        self.assertEqual("shtcn_test", target.spreadsheet_token)
+        self.assertEqual(
+            ("sheet_test_1", "sheet_test_2", "sheet_test_3"),
+            tuple(sheet.sheet_id for sheet in target.sheets),
+        )
+
+    def test_save_spreadsheet_target_persists_test_variable_names(self) -> None:
+        cfg = Config(
+            run_report_mode="top_trending_sheet",
+            run_trigger_source="manual",
+        )
+        github_client = Mock()
+        github_client.upsert_repository_variable.return_value = True
+        variables = resolve_spreadsheet_variables(cfg)
+        target = get_saved_spreadsheet_target(
+            Config(
+                run_report_mode="top_trending_sheet",
+                run_trigger_source="manual",
+                feishu_top_trending_test_spreadsheet_token="shtcn_test",
+                feishu_top_trending_test_sheet_id="sheet_test_1",
+                feishu_up_and_coming_test_sheet_id="sheet_test_2",
+                feishu_top_playing_now_test_sheet_id="sheet_test_3",
+            )
+        )
+
+        assert target is not None
+        saved = save_spreadsheet_target(github_client, target, variables)
+
+        self.assertTrue(saved)
+        self.assertEqual(4, github_client.upsert_repository_variable.call_count)
+        first_call = github_client.upsert_repository_variable.call_args_list[0].args
+        self.assertEqual(
+            ("FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN", "shtcn_test"),
+            first_call,
+        )
 
 
 if __name__ == "__main__":
