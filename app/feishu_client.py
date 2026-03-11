@@ -229,6 +229,7 @@ class FeishuClient:
         sheet_id: str,
         *,
         rank_width: int,
+        thumbnail_width: int,
         game_name_width: int,
         online_width: int,
         rank_change_width: int,
@@ -237,10 +238,11 @@ class FeishuClient:
         access_token = self._fetch_tenant_access_token()
         for start_index, end_index, width in (
             (1, 2, rank_width),
-            (2, 3, game_name_width),
-            (3, 4, online_width),
-            (4, 5, rank_change_width),
-            (6, 7, developer_width),
+            (2, 3, thumbnail_width),
+            (3, 4, game_name_width),
+            (4, 5, online_width),
+            (5, 6, rank_change_width),
+            (7, 8, developer_width),
         ):
             self._request_json(
                 "PUT",
@@ -268,7 +270,7 @@ class FeishuClient:
         self._apply_font_colors(
             spreadsheet_token,
             [
-                (f"{sheet_id}!D{cell.row_index}:D{cell.row_index}", cell.color)
+                (f"{sheet_id}!E{cell.row_index}:E{cell.row_index}", cell.color)
                 for cell in cells
             ],
         )
@@ -282,7 +284,7 @@ class FeishuClient:
         self._apply_font_colors(
             spreadsheet_token,
             [
-                (f"{sheet_id}!G{cell.row_index}:G{cell.row_index}", cell.color)
+                (f"{sheet_id}!H{cell.row_index}:H{cell.row_index}", cell.color)
                 for cell in cells
             ],
         )

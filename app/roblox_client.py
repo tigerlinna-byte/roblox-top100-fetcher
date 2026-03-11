@@ -15,6 +15,7 @@ from .retry import with_retry
 GET_SORTS_URL = "https://apis.roblox.com/explore-api/v1/get-sorts"
 GET_SORT_CONTENT_URL = "https://apis.roblox.com/explore-api/v1/get-sort-content"
 GAMES_DETAIL_URL = "https://games.roblox.com/v1/games"
+THUMBNAILS_URL = "https://thumbnails.roblox.com/v1/games/icons"
 GAME_LOCALIZATION_URL_TEMPLATE = "https://gameinternationalization.roblox.com/v1/name-description/games/{universe_id}"
 TOP_TRENDING_SORT_ID_CANDIDATES = (
     "top-trending",
@@ -79,6 +80,7 @@ class RobloxClient:
         universe_ids = [str(_as_int(_pick(item, "universeId", "universe_id"))) for item in games]
         details_map = self._fetch_game_details(universe_ids)
         localized_names = self._fetch_localized_names(universe_ids)
+        thumbnail_urls = self._fetch_thumbnail_urls(universe_ids)
 
         fetched_at = now_iso()
         records: list[GameRecord] = []
@@ -99,6 +101,7 @@ class RobloxClient:
                     ),
                     name=str(_pick(raw, "name", "title", default=_pick(details, "name", default=""))),
                     localized_name=localized_names.get(universe_id, ""),
+                    thumbnail_url=thumbnail_urls.get(universe_id, ""),
                     creator=creator_name,
                     playing=_as_int(
                         _pick(
@@ -250,6 +253,36 @@ class RobloxClient:
             localized_name = _extract_preferred_localized_name(payload)
             if localized_name:
                 result[universe_id] = localized_name
+        return result
+
+    def _fetch_thumbnail_urls(self, universe_ids: list[str]) -> dict[int, str]:
+        filtered_ids = [uid for uid in universe_ids if uid and uid != "0"]
+        if not filtered_ids:
+            return {}
+
+        result: dict[int, str] = {}
+        for chunk in _chunked(filtered_ids, size=100):
+            try:
+                response = self._request_json(
+                    "GET",
+                    THUMBNAILS_URL,
+                    params={
+                        "universeIds": ",".join(chunk),
+                        "size": "150x150",
+                        "format": "Png",
+                        "isCircular": "false",
+                        "returnPolicy": "PlaceHolder",
+                    },
+                )
+            except RobloxClientError:
+                logging.warning("Failed to fetch thumbnail urls for universes %s.", ",".join(chunk))
+                continue
+
+            for item in _extract_list(response, "data"):
+                target_id = _as_int(_pick(item, "targetId", "target_id", default=0))
+                image_url = str(_pick(item, "imageUrl", "image_url", default="")).strip()
+                if target_id and image_url:
+                    result[target_id] = image_url
         return result
 
     def _request_json(
