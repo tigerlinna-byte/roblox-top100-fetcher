@@ -13,6 +13,7 @@ from app.top_trending_sheet import (
     calculate_game_name_width,
     calculate_rank_change,
     build_default_sheet_specs,
+    build_display_name,
     build_top_trending_values,
     get_previous_ranks,
     get_saved_spreadsheet_target,
@@ -34,8 +35,10 @@ class TopTrendingSheetTests(unittest.TestCase):
             [
                 GameRecord(
                     rank=1,
+                    universe_id=123,
                     place_id=123,
                     name="Trending A",
+                    localized_name="趋势A",
                     creator="Studio A",
                     playing=123456,
                     visits=987654321,
@@ -54,10 +57,23 @@ class TopTrendingSheetTests(unittest.TestCase):
             rows[0],
         )
         self.assertEqual(1, rows[1][0])
+        self.assertEqual("Trending A 趋势A", rows[1][1])
         self.assertEqual("123.5K", rows[1][2])
         self.assertEqual(3, rows[1][3])
         self.assertEqual("987.7M", rows[1][4])
         self.assertEqual(date(2026, 3, 1), rows[1][6])
+
+    def test_build_display_name_appends_localized_name(self) -> None:
+        record = GameRecord(
+            rank=1,
+            universe_id=1,
+            place_id=1,
+            name="Game A",
+            localized_name="游戏A",
+            fetched_at="2026-03-09T00:00:00Z",
+        )
+
+        self.assertEqual("Game A 游戏A", build_display_name(record))
 
     def test_calculate_rank_change_handles_first_entry(self) -> None:
         record = GameRecord(

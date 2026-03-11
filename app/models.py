@@ -8,14 +8,16 @@ from typing import Any
 @dataclass(frozen=True)
 class GameRecord:
     rank: int
-    place_id: int | None
     name: str
-    creator: str
-    playing: int
-    visits: int
-    up_votes: int
-    down_votes: int
-    fetched_at: str
+    universe_id: int | None = None
+    place_id: int | None = None
+    localized_name: str = ""
+    creator: str = ""
+    playing: int = 0
+    visits: int = 0
+    up_votes: int = 0
+    down_votes: int = 0
+    fetched_at: str = ""
     created_at: str = ""
     updated_at: str = ""
 
