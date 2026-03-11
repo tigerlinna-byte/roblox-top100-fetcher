@@ -354,13 +354,14 @@ class FeishuClientTests(unittest.TestCase):
 
         write_image_kwargs = session.request.call_args_list[2].kwargs
         self.assertEqual(
-            "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/shtcn_sheet/values_image",
+            "https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/shtcn_sheet/values_image",
             write_image_kwargs["url"],
         )
         self.assertEqual(
             "sheet001!B2:B2",
-            write_image_kwargs["json"]["images"][0]["range"],
+            write_image_kwargs["json"]["range"],
         )
+        self.assertEqual("thumbnail_2.png", write_image_kwargs["json"]["name"])
 
         row_height_kwargs = session.request.call_args_list[3].kwargs
         self.assertEqual(

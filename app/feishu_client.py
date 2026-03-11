@@ -206,29 +206,28 @@ class FeishuClient:
             return
 
         access_token = self._fetch_tenant_access_token()
-        images_payload: list[dict[str, str]] = []
         max_row_index = 1
+        wrote_any_image = False
         for cell in cells:
             encoded_file = self._download_image_as_base64(cell.url)
             if not encoded_file:
                 continue
-            images_payload.append(
-                {
+            self._request_json(
+                "POST",
+                f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_image",
+                json_payload={
                     "range": f"{sheet_id}!B{cell.row_index}:B{cell.row_index}",
-                    "file": encoded_file,
-                }
+                    "image": encoded_file,
+                    "name": f"thumbnail_{cell.row_index}.png",
+                },
+                headers={"Authorization": f"Bearer {access_token}"},
             )
+            wrote_any_image = True
             max_row_index = max(max_row_index, cell.row_index)
 
-        if not images_payload:
+        if not wrote_any_image:
             return
 
-        self._request_json(
-            "POST",
-            f"https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/{spreadsheet_token}/values_image",
-            json_payload={"images": images_payload},
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
         self._set_row_height(
             spreadsheet_token,
             sheet_id,
