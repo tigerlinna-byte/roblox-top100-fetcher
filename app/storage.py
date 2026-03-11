@@ -30,8 +30,10 @@ def write_outputs(
             fp,
             fieldnames=[
                 "rank",
+                "universe_id",
                 "place_id",
                 "name",
+                "localized_name",
                 "creator",
                 "playing",
                 "visits",

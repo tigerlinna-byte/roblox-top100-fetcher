@@ -176,13 +176,20 @@ def calculate_rank_change(previous_ranks: dict[int, int], record: GameRecord) ->
 def build_data_row(record: GameRecord, previous_ranks: dict[int, int]) -> list[object]:
     return [
         int(record.rank),
-        record.name,
+        build_display_name(record),
         format_compact_number(record.playing),
         calculate_rank_change(previous_ranks, record),
         format_compact_number(record.visits),
         record.creator or "-",
         _format_created_at(record),
     ]
+
+
+def build_display_name(record: GameRecord) -> str:
+    localized_name = record.localized_name.strip()
+    if not localized_name or localized_name == record.name:
+        return record.name
+    return f"{record.name} {localized_name}"
 
 
 def pad_rows(rows: list[list[object]], *, min_rows: int, column_count: int) -> list[list[object]]:

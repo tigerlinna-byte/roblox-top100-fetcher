@@ -15,11 +15,19 @@ from .retry import with_retry
 GET_SORTS_URL = "https://apis.roblox.com/explore-api/v1/get-sorts"
 GET_SORT_CONTENT_URL = "https://apis.roblox.com/explore-api/v1/get-sort-content"
 GAMES_DETAIL_URL = "https://games.roblox.com/v1/games"
+GAME_LOCALIZATION_URL_TEMPLATE = "https://gameinternationalization.roblox.com/v1/name-description/games/{universe_id}"
 TOP_TRENDING_SORT_ID_CANDIDATES = (
     "top-trending",
     "trending",
     "top-charts",
     "charts",
+)
+PREFERRED_LOCALIZATION_CODES = (
+    "zh-cn",
+    "zh_hans_cn",
+    "zh-hans-cn",
+    "zh-hans",
+    "zh_cn",
 )
 
 
@@ -70,6 +78,7 @@ class RobloxClient:
         games = games[: self.config.api_limit]
         universe_ids = [str(_as_int(_pick(item, "universeId", "universe_id"))) for item in games]
         details_map = self._fetch_game_details(universe_ids)
+        localized_names = self._fetch_localized_names(universe_ids)
 
         fetched_at = now_iso()
         records: list[GameRecord] = []
@@ -84,10 +93,12 @@ class RobloxClient:
             records.append(
                 GameRecord(
                     rank=index,
+                    universe_id=universe_id or None,
                     place_id=_as_int(
                         _pick(raw, "placeId", "rootPlaceId", "place_id", "id", default=0)
                     ),
                     name=str(_pick(raw, "name", "title", default=_pick(details, "name", default=""))),
+                    localized_name=localized_names.get(universe_id, ""),
                     creator=creator_name,
                     playing=_as_int(
                         _pick(
@@ -221,6 +232,26 @@ class RobloxClient:
                     details_map[uid] = item
         return details_map
 
+    def _fetch_localized_names(self, universe_ids: list[str]) -> dict[int, str]:
+        result: dict[int, str] = {}
+        for raw_universe_id in universe_ids:
+            universe_id = _as_int(raw_universe_id)
+            if not universe_id or universe_id in result:
+                continue
+            try:
+                payload = self._request_json(
+                    "GET",
+                    GAME_LOCALIZATION_URL_TEMPLATE.format(universe_id=universe_id),
+                )
+            except RobloxClientError:
+                logging.warning("Failed to fetch localized game name for universe %s.", universe_id)
+                continue
+
+            localized_name = _extract_preferred_localized_name(payload)
+            if localized_name:
+                result[universe_id] = localized_name
+        return result
+
     def _request_json(
         self,
         method: str,
@@ -334,4 +365,41 @@ def _extract_sort_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     for items in candidates:
         if items:
             return items
+    return []
+
+
+def _extract_preferred_localized_name(payload: dict[str, Any]) -> str:
+    candidates = _collect_localization_entries(payload)
+    for code in PREFERRED_LOCALIZATION_CODES:
+        for item in candidates:
+            language_code = str(
+                _pick(
+                    item,
+                    "languageCode",
+                    "language_code",
+                    "localeCode",
+                    "locale_code",
+                    "language",
+                    default="",
+                )
+            ).strip().lower()
+            if language_code == code:
+                localized_name = str(_pick(item, "name", "displayName", "title", default="")).strip()
+                if localized_name:
+                    return localized_name
+    return ""
+
+
+def _collect_localization_entries(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates = [
+        _extract_list(payload, "data"),
+        _extract_list(payload, "nameDescriptionLocalizationTargets"),
+        _extract_list(payload, "localizedGameNames"),
+        _extract_list(payload, "gameNameLocalizationTargets"),
+    ]
+    for items in candidates:
+        if items:
+            return items
+    if any(key in payload for key in ("languageCode", "localeCode", "name", "displayName", "title")):
+        return [payload]
     return []
