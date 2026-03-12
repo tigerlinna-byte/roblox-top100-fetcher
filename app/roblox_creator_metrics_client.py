@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
@@ -41,14 +43,19 @@ METRIC_DEFINITIONS = (
         ("payer conversion rate", "payer conversion", "payment conversion rate", "pay rate"),
     ),
     MetricDefinition("arppu", ("arppu", "average revenue per paying user")),
-    MetricDefinition("qptr", ("qptr",)),
+    MetricDefinition("qptr", ("qptr", "qtpr")),
     MetricDefinition(
         "five_minute_retention",
         ("5 minute retention", "5-minute retention", "five minute retention"),
     ),
     MetricDefinition(
         "home_recommendations",
-        ("home recommendations", "home recommendation", "home recommendation impressions"),
+        (
+            "home recommendations",
+            "home recommendation",
+            "home recommendation impressions",
+            "home recommendation count",
+        ),
     ),
 )
 VALUE_CANDIDATE_KEYS = (
@@ -73,10 +80,13 @@ BROWSER_HEADERS = {
     ),
 }
 INLINE_JSON_PATTERN = re.compile(r"<script[^>]*>(?P<content>.*?)</script>", re.IGNORECASE | re.DOTALL)
+JSON_PARSE_PATTERN = re.compile(r"JSON\.parse\((?P<quoted>\"(?:\\.|[^\"])*\")\)", re.DOTALL)
 VALUE_PATTERN = re.compile(
-    r"(?P<value>(?:\$|USD\s*)?\d[\d,]*(?:\.\d+)?%?|\d+h\s*\d+m|\d+m\s*\d+s|\d+[:]\d+|\d+)",
+    r"(?P<value>(?:\$|USD\s*)?\d[\d,]*(?:\.\d+)?%?|\d+h\s*\d+m(?:\s*\d+s)?|\d+m\s*\d+s|\d+[:]\d+|\d+)",
     re.IGNORECASE,
 )
+DEBUG_HTML_MAX_LENGTH = 120_000
+DEBUG_TEXT_MAX_LENGTH = 20_000
 
 
 class _VisibleTextParser(HTMLParser):
@@ -131,10 +141,17 @@ class RobloxCreatorMetricsClient:
         html_text = self._fetch_overview_html(overview_url)
         project_id = _extract_project_id(overview_url)
         metrics = self._extract_metrics(html_text)
-        missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if definition.field_name not in metrics]
+        missing_fields = [
+            definition.field_name
+            for definition in METRIC_DEFINITIONS
+            if definition.field_name not in metrics
+        ]
         if missing_fields:
+            debug_path = self._write_debug_snapshot(html_text, metrics, missing_fields)
             raise RobloxCreatorMetricsClientError(
-                "Creator overview 页面缺少指标: " + ", ".join(missing_fields)
+                "Creator overview 页面缺少指标: "
+                + ", ".join(missing_fields)
+                + f"；已输出调试样本: {debug_path}"
             )
 
         report_date = _resolve_report_date(self.config.feishu_timezone)
@@ -190,6 +207,7 @@ class RobloxCreatorMetricsClient:
     def _extract_metrics(self, html_text: str) -> dict[str, str]:
         metrics: dict[str, str] = {}
         metrics.update(self._extract_metrics_from_inline_json(html_text))
+        metrics.update(self._extract_metrics_from_script_assignments(html_text))
         visible_metrics = self._extract_metrics_from_visible_text(html_text)
         for key, value in visible_metrics.items():
             metrics.setdefault(key, value)
@@ -197,22 +215,27 @@ class RobloxCreatorMetricsClient:
 
     def _extract_metrics_from_inline_json(self, html_text: str) -> dict[str, str]:
         metrics: dict[str, str] = {}
-        for match in INLINE_JSON_PATTERN.finditer(html_text):
-            content = html.unescape(match.group("content")).strip()
-            if not content or len(content) < 2:
+        for script_content in _extract_script_contents(html_text):
+            stripped = html.unescape(script_content).strip()
+            if not stripped:
                 continue
-            if not ((content.startswith("{") and content.endswith("}")) or (content.startswith("[") and content.endswith("]"))):
+            for payload in _extract_json_payloads_from_script(stripped):
+                self._collect_metrics_from_payload(payload, metrics)
+        return metrics
+
+    def _extract_metrics_from_script_assignments(self, html_text: str) -> dict[str, str]:
+        metrics: dict[str, str] = {}
+        for script_content in _extract_script_contents(html_text):
+            decoded = html.unescape(script_content)
+            if not decoded:
                 continue
-            try:
-                payload = json.loads(content)
-            except json.JSONDecodeError:
-                continue
-            self._collect_metrics_from_payload(payload, metrics)
+            for payload in _extract_assignment_payloads(decoded):
+                self._collect_metrics_from_payload(payload, metrics)
         return metrics
 
     def _collect_metrics_from_payload(self, payload, metrics: dict[str, str]) -> None:
         if isinstance(payload, dict):
-            label_fields = ["label", "name", "title", "metric", "heading", "header"]
+            label_fields = ["label", "name", "title", "metric", "heading", "header", "metricName"]
             for field in label_fields:
                 raw_label = payload.get(field)
                 if not isinstance(raw_label, str):
@@ -249,7 +272,7 @@ class RobloxCreatorMetricsClient:
             same_segment_value = _extract_inline_value(segments[index], normalized_segment)
             if same_segment_value:
                 candidate_values.append(same_segment_value)
-            for offset in range(1, 5):
+            for offset in range(1, 6):
                 if index + offset >= len(segments):
                     break
                 next_segment = segments[index + offset]
@@ -263,12 +286,129 @@ class RobloxCreatorMetricsClient:
                 metrics.setdefault(matched_field, candidate_values[0])
         return metrics
 
+    def _write_debug_snapshot(
+        self,
+        html_text: str,
+        metrics: dict[str, str],
+        missing_fields: list[str],
+    ) -> str:
+        target_dir = Path(self.config.output_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        debug_path = target_dir / "creator_overview_debug.json"
+        parser = _VisibleTextParser()
+        parser.feed(html_text)
+        payload = {
+            "captured_metrics": metrics,
+            "missing_fields": missing_fields,
+            "html_excerpt": html_text[:DEBUG_HTML_MAX_LENGTH],
+            "visible_text_excerpt": parser.segments[:200],
+            "script_excerpt": _extract_script_contents(html_text)[:10],
+        }
+        debug_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        logging.warning("Creator overview debug snapshot saved to %s", debug_path)
+        return str(debug_path)
+
 
 def _extract_project_id(overview_url: str) -> str:
     match = re.search(r"/experiences/(\d+)/overview", overview_url)
     if not match:
         return ""
     return match.group(1)
+
+
+def _extract_script_contents(html_text: str) -> list[str]:
+    return [match.group("content") for match in INLINE_JSON_PATTERN.finditer(html_text)]
+
+
+def _extract_json_payloads_from_script(script_content: str) -> list[object]:
+    payloads: list[object] = []
+    stripped = script_content.strip()
+    if (stripped.startswith("{") and stripped.endswith("}")) or (
+        stripped.startswith("[") and stripped.endswith("]")
+    ):
+        payload = _try_load_json(stripped)
+        if payload is not None:
+            payloads.append(payload)
+    for match in JSON_PARSE_PATTERN.finditer(script_content):
+        try:
+            decoded = json.loads(match.group("quoted"))
+        except json.JSONDecodeError:
+            continue
+        payload = _try_load_json(decoded)
+        if payload is not None:
+            payloads.append(payload)
+    return payloads
+
+
+def _extract_assignment_payloads(script_content: str) -> list[object]:
+    payloads: list[object] = []
+    for token in ("=", ":"):
+        search_from = 0
+        while True:
+            position = script_content.find(token, search_from)
+            if position < 0:
+                break
+            start_index = _find_json_start(script_content, position + 1)
+            if start_index < 0:
+                search_from = position + 1
+                continue
+            candidate = _extract_balanced_json(script_content, start_index)
+            if candidate:
+                payload = _try_load_json(candidate)
+                if payload is not None:
+                    payloads.append(payload)
+            search_from = position + 1
+    return payloads
+
+
+def _find_json_start(text: str, start_index: int) -> int:
+    for index in range(start_index, len(text)):
+        if text[index] in "[{":
+            return index
+        if not text[index].isspace():
+            return -1
+    return -1
+
+
+def _extract_balanced_json(text: str, start_index: int) -> str:
+    opening = text[start_index]
+    closing = "}" if opening == "{" else "]"
+    depth = 0
+    in_string = False
+    escape = False
+    for index in range(start_index, len(text)):
+        char = text[index]
+        if in_string:
+            if escape:
+                escape = False
+                continue
+            if char == "\\":
+                escape = True
+                continue
+            if char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == opening:
+            depth += 1
+            continue
+        if char == closing:
+            depth -= 1
+            if depth == 0:
+                return text[start_index : index + 1]
+    return ""
+
+
+def _try_load_json(candidate: str) -> object | None:
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
 
 
 def _match_metric_alias(raw_label: str) -> str:
@@ -303,7 +443,7 @@ def _extract_value_from_payload(payload: dict) -> str:
         if _is_scalar_metric_value(raw_value):
             return _normalize_metric_value(str(raw_value))
     for key, raw_value in payload.items():
-        if key in {"label", "name", "title", "metric", "heading", "header"}:
+        if key in {"label", "name", "title", "metric", "heading", "header", "metricName"}:
             continue
         if _is_scalar_metric_value(raw_value):
             return _normalize_metric_value(str(raw_value))
