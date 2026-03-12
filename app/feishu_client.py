@@ -196,6 +196,27 @@ class FeishuClient:
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
+    def read_sheet_values(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        *,
+        end_column: str,
+        end_row: int,
+    ) -> list[list[object]]:
+        access_token = self._fetch_tenant_access_token()
+        range_ref = f"{sheet_id}!A1:{end_column}{end_row}"
+        data = self._request_json(
+            "GET",
+            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values/{range_ref}",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        value_range = data.get("data", {}).get("valueRange", {})
+        values = value_range.get("values", [])
+        if not isinstance(values, list):
+            return []
+        return [row for row in values if isinstance(row, list)]
+
     def write_sheet_images(
         self,
         spreadsheet_token: str,
@@ -277,21 +298,36 @@ class FeishuClient:
         rank_change_width: int,
         developer_width: int,
     ) -> None:
+        self.set_sheet_column_widths(
+            spreadsheet_token,
+            sheet_id,
+            [
+                rank_width,
+                thumbnail_width,
+                game_name_width,
+                online_width,
+                rank_change_width,
+                None,
+                developer_width,
+            ],
+        )
+
+    def set_sheet_column_widths(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        widths: list[int | None],
+    ) -> None:
         access_token = self._fetch_tenant_access_token()
-        for start_index, end_index, width in (
-            (1, 2, rank_width),
-            (2, 3, thumbnail_width),
-            (3, 4, game_name_width),
-            (4, 5, online_width),
-            (5, 6, rank_change_width),
-            (7, 8, developer_width),
-        ):
+        for column_index, width in enumerate(widths, start=1):
+            if width is None:
+                continue
             self._set_dimension_size(
                 spreadsheet_token,
                 sheet_id,
                 major_dimension="COLUMNS",
-                start_index=start_index,
-                end_index=end_index,
+                start_index=column_index,
+                end_index=column_index + 1,
                 fixed_size=width,
                 access_token=access_token,
             )

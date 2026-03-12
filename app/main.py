@@ -7,24 +7,40 @@ import time
 from .config import Config, load_config
 from .feishu_client import FeishuClient, FeishuClientError
 from .github_client import GitHubClient, GitHubClientError
+from .project_metrics_models import ProjectDailyMetricsRecord
+from .project_metrics_sheet import (
+    ProjectMetricsSpreadsheetTarget,
+    build_project_metrics_table,
+    get_saved_project_metrics_target,
+    resolve_project_metrics_variables,
+    save_project_metrics_target,
+)
 from .roblox_client import RobloxClient, RobloxClientError
-from .storage import write_outputs
+from .roblox_creator_metrics_client import (
+    RobloxCreatorMetricsClient,
+    RobloxCreatorMetricsClientError,
+)
+from .storage import write_outputs, write_project_metrics_output
 from .summary import build_failure_markdown, build_success_markdown
 from .top_trending_sheet import (
-    build_launch_date_cells,
-    build_thumbnail_cells,
-    calculate_game_name_width,
     SheetTarget,
     SpreadsheetTarget,
-    build_rank_change_cells,
     build_default_sheet_specs,
+    build_launch_date_cells,
+    build_rank_change_cells,
+    build_thumbnail_cells,
     build_top_trending_values,
-    get_saved_spreadsheet_target,
     get_previous_ranks,
+    get_saved_spreadsheet_target,
     resolve_spreadsheet_variables,
     save_previous_ranks,
     save_spreadsheet_target,
 )
+
+
+PROJECT_METRICS_REPORT_MODE = "roblox_project_daily_metrics"
+PROJECT_METRICS_SHEET_MAX_ROWS = 365
+PROJECT_METRICS_SHEET_END_COLUMN = "L"
 
 
 def configure_logging() -> None:
@@ -34,6 +50,7 @@ def configure_logging() -> None:
     )
 
 
+
 def run_once() -> int:
     configure_logging()
     cfg = load_config()
@@ -41,12 +58,11 @@ def run_once() -> int:
     start = time.time()
 
     try:
-        client = RobloxClient(cfg)
-        report_payload = _fetch_report_payload(cfg, client)
+        report_payload = _fetch_report_payload(cfg)
         json_path, csv_path = _write_report_outputs(cfg, report_payload)
-    except RobloxClientError:
+    except (RobloxClientError, RobloxCreatorMetricsClientError):
         logging.exception("Fetch failed.")
-        _notify_failure(cfg, "抓取Roblox排行榜失败")
+        _notify_failure(cfg, _resolve_fetch_failure_reason(cfg))
         return 1
     except Exception:  # noqa: BLE001
         logging.exception("Unexpected error.")
@@ -61,7 +77,7 @@ def run_once() -> int:
         _notify_success(cfg, report_payload)
     except FeishuClientError:
         logging.exception("Feishu notify failed.")
-        _notify_failure(cfg, "飞书机器人通知失败")
+        _notify_failure(cfg, _resolve_feishu_failure_reason(cfg))
         return 1
     except GitHubClientError:
         logging.exception("GitHub variable update failed.")
@@ -75,6 +91,7 @@ def run_once() -> int:
     return 0
 
 
+
 def _notify_failure(cfg: Config, reason: str) -> None:
     try:
         FeishuClient(cfg).send_group_markdown(build_failure_markdown(cfg, reason))
@@ -82,7 +99,12 @@ def _notify_failure(cfg: Config, reason: str) -> None:
         logging.exception("Failed to send failure notification.")
 
 
-def _fetch_report_payload(cfg: Config, client: RobloxClient):
+
+def _fetch_report_payload(cfg: Config):
+    if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
+        return RobloxCreatorMetricsClient(cfg).fetch_project_daily_metrics()
+
+    client = RobloxClient(cfg)
     if cfg.run_report_mode == "top_trending_sheet":
         return {
             "top_trending_v4": client.fetch_games_by_sort_id("Top_Trending_V4"),
@@ -92,6 +114,7 @@ def _fetch_report_payload(cfg: Config, client: RobloxClient):
     return client.fetch_top_games()
 
 
+
 def _notify_success(cfg: Config, report_payload) -> None:
     feishu_client = FeishuClient(cfg)
     if cfg.run_report_mode == "top_trending_sheet":
@@ -99,7 +122,13 @@ def _notify_success(cfg: Config, report_payload) -> None:
         feishu_client.send_group_markdown(target.url)
         return
 
+    if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
+        target = _sync_project_metrics_sheet(cfg, report_payload, feishu_client)
+        feishu_client.send_group_markdown(target.url)
+        return
+
     feishu_client.send_group_markdown(build_success_markdown(cfg, report_payload))
+
 
 
 def _sync_top_trending_sheet(
@@ -185,6 +214,52 @@ def _sync_top_trending_sheet(
     return target
 
 
+
+def _sync_project_metrics_sheet(
+    cfg: Config,
+    record: ProjectDailyMetricsRecord,
+    feishu_client: FeishuClient,
+):
+    variables = resolve_project_metrics_variables(cfg)
+    github_client = GitHubClient(cfg)
+    target = get_saved_project_metrics_target(cfg, variables)
+    if target is None:
+        spreadsheet = feishu_client.create_spreadsheet(variables.spreadsheet_title)
+        sheet_ids = feishu_client.ensure_sheet_set(
+            spreadsheet.spreadsheet_token,
+            spreadsheet.sheet_ids[0] if spreadsheet.sheet_ids else None,
+            [variables.sheet_title],
+        )
+        target = ProjectMetricsSpreadsheetTarget(
+            spreadsheet_token=spreadsheet.spreadsheet_token,
+            sheet_id=sheet_ids[0],
+            url=spreadsheet.url,
+        )
+        if not save_project_metrics_target(github_client, target, variables):
+            logging.warning("Project metrics spreadsheet identifiers were not persisted.")
+
+    feishu_client.delete_extra_sheets(
+        target.spreadsheet_token,
+        keep_sheet_ids={target.sheet_id},
+    )
+    _apply_project_metrics_sheet_presentation(variables.spreadsheet_title, feishu_client, target)
+
+    existing_rows = feishu_client.read_sheet_values(
+        target.spreadsheet_token,
+        target.sheet_id,
+        end_column=PROJECT_METRICS_SHEET_END_COLUMN,
+        end_row=PROJECT_METRICS_SHEET_MAX_ROWS,
+    )
+    table_state = build_project_metrics_table(existing_rows, record)
+    feishu_client.write_sheet_values(
+        target.spreadsheet_token,
+        target.sheet_id,
+        table_state.rows,
+    )
+    return target
+
+
+
 def _apply_trending_sheet_presentation(spreadsheet_title: str, feishu_client, target) -> None:
     try:
         feishu_client.update_spreadsheet_title(
@@ -210,10 +285,48 @@ def _apply_trending_sheet_presentation(spreadsheet_title: str, feishu_client, ta
             logging.warning("Failed to apply sheet layout for %s.", sheet.title, exc_info=True)
 
 
+
+def _apply_project_metrics_sheet_presentation(spreadsheet_title: str, feishu_client, target) -> None:
+    try:
+        feishu_client.update_spreadsheet_title(
+            target.spreadsheet_token,
+            spreadsheet_title,
+        )
+    except FeishuClientError:
+        logging.warning("Failed to update project metrics spreadsheet title.", exc_info=True)
+
+    try:
+        feishu_client.set_sheet_column_widths(
+            target.spreadsheet_token,
+            target.sheet_id,
+            [120, 110, 110, 130, 90, 90, 90, 140, 90, 110, 180, 180],
+        )
+    except FeishuClientError:
+        logging.warning("Failed to apply project metrics sheet layout.", exc_info=True)
+
+
+
+def _resolve_fetch_failure_reason(cfg: Config) -> str:
+    if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
+        return "抓取 Roblox 项目数据失败"
+    return "抓取Roblox排行榜失败"
+
+
+
+def _resolve_feishu_failure_reason(cfg: Config) -> str:
+    if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
+        return "飞书项目日报写入失败"
+    return "飞书机器人通知失败"
+
+
+
 def _output_prefix(cfg: Config) -> str:
     if cfg.run_report_mode == "top_trending_sheet":
         return "top_trending"
+    if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
+        return "project_metrics"
     return "top100"
+
 
 
 def _write_report_outputs(cfg: Config, report_payload):
@@ -221,6 +334,12 @@ def _write_report_outputs(cfg: Config, report_payload):
         return write_outputs(
             cfg.output_dir,
             report_payload["top_trending_v4"],
+            prefix=_output_prefix(cfg),
+        )
+    if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
+        return write_project_metrics_output(
+            cfg.output_dir,
+            report_payload,
             prefix=_output_prefix(cfg),
         )
     return write_outputs(
