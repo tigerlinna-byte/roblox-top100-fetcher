@@ -17,6 +17,26 @@ from .project_metrics_models import ProjectDailyMetricsRecord, now_iso
 from .retry import with_retry
 
 
+ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE = (
+    "https://apis.roblox.com/analytics-query-gateway/v1/metrics/resource/{resource_type}/id/{resource_id}"
+)
+ANALYTICS_RESOURCE_TYPES = (
+    "RESOURCE_TYPE_UNIVERSE",
+    "RESOURCE_TYPE_EXPERIENCE",
+    "RESOURCE_TYPE_PLACE",
+)
+ANALYTICS_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://create.roblox.com",
+    "Referer": "https://create.roblox.com/",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+    ),
+}
+
+
 class RobloxCreatorMetricsClientError(RuntimeError):
     """表示 Roblox Creator 后台指标抓取失败。"""
 
@@ -29,21 +49,44 @@ class MetricDefinition:
     aliases: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class AnalyticsGatewayAttempt:
+    """记录 analytics gateway 的一次请求结果，便于失败时排查。"""
+
+    resource_type: str
+    url: str
+    status: str
+    payload_excerpt: str
+
+
 METRIC_DEFINITIONS = (
-    MetricDefinition("average_ccu", ("average ccu", "avg ccu")),
-    MetricDefinition("peak_ccu", ("peak ccu", "peak concurrent users", "peak concurrents")),
+    MetricDefinition("average_ccu", ("average ccu", "avg ccu", "avg concurrents")),
+    MetricDefinition("peak_ccu", ("peak ccu", "peak concurrent users", "peak concurrents", "max ccu")),
     MetricDefinition(
         "average_session_time",
-        ("average session time", "avg session time", "average play time", "average session length"),
+        (
+            "average session time",
+            "avg session time",
+            "average play time",
+            "average session length",
+            "avg play time",
+        ),
     ),
     MetricDefinition("day1_retention", ("day 1 retention", "d1 retention", "1 day retention")),
     MetricDefinition("day7_retention", ("day 7 retention", "d7 retention", "7 day retention")),
     MetricDefinition(
         "payer_conversion_rate",
-        ("payer conversion rate", "payer conversion", "payment conversion rate", "pay rate"),
+        (
+            "payer conversion rate",
+            "payer conversion",
+            "payment conversion rate",
+            "pay rate",
+            "cvr",
+            "conversion rate",
+        ),
     ),
     MetricDefinition("arppu", ("arppu", "average revenue per paying user")),
-    MetricDefinition("qptr", ("qptr", "qtpr")),
+    MetricDefinition("qptr", ("qptr", "qtpr", "qualified play through rate")),
     MetricDefinition(
         "five_minute_retention",
         ("5 minute retention", "5-minute retention", "five minute retention"),
@@ -55,6 +98,7 @@ METRIC_DEFINITIONS = (
             "home recommendation",
             "home recommendation impressions",
             "home recommendation count",
+            "home impressions",
         ),
     ),
 )
@@ -68,6 +112,8 @@ VALUE_CANDIDATE_KEYS = (
     "metric_value",
     "currentValue",
     "current_value",
+    "latestValue",
+    "latest_value",
 )
 BROWSER_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -81,12 +127,14 @@ BROWSER_HEADERS = {
 }
 INLINE_JSON_PATTERN = re.compile(r"<script[^>]*>(?P<content>.*?)</script>", re.IGNORECASE | re.DOTALL)
 JSON_PARSE_PATTERN = re.compile(r"JSON\.parse\((?P<quoted>\"(?:\\.|[^\"])*\")\)", re.DOTALL)
+CAMEL_CASE_BOUNDARY_PATTERN = re.compile(r"([a-z0-9])([A-Z])")
+ACRONYM_BOUNDARY_PATTERN = re.compile(r"([A-Z]+)([A-Z][a-z])")
 VALUE_PATTERN = re.compile(
     r"(?P<value>(?:\$|USD\s*)?\d[\d,]*(?:\.\d+)?%?|\d+h\s*\d+m(?:\s*\d+s)?|\d+m\s*\d+s|\d+[:]\d+|\d+)",
     re.IGNORECASE,
 )
 DEBUG_HTML_MAX_LENGTH = 120_000
-DEBUG_TEXT_MAX_LENGTH = 20_000
+DEBUG_PAYLOAD_MAX_LENGTH = 20_000
 
 
 class _VisibleTextParser(HTMLParser):
@@ -138,16 +186,28 @@ class RobloxCreatorMetricsClient:
         if not self.config.roblox_creator_cookie.strip():
             raise RobloxCreatorMetricsClientError("ROBLOX_CREATOR_COOKIE 未配置")
 
-        html_text = self._fetch_overview_html(overview_url)
         project_id = _extract_project_id(overview_url)
-        metrics = self._extract_metrics(html_text)
+        analytics_attempts: list[AnalyticsGatewayAttempt] = []
+        metrics = self._fetch_analytics_gateway_metrics(project_id, overview_url, analytics_attempts)
+        html_text = ""
+        if _has_missing_metrics(metrics):
+            html_text = self._fetch_overview_html(overview_url)
+            html_metrics = self._extract_metrics_from_html(html_text)
+            for key, value in html_metrics.items():
+                metrics.setdefault(key, value)
+
         missing_fields = [
             definition.field_name
             for definition in METRIC_DEFINITIONS
             if definition.field_name not in metrics
         ]
         if missing_fields:
-            debug_path = self._write_debug_snapshot(html_text, metrics, missing_fields)
+            debug_path = self._write_debug_snapshot(
+                html_text,
+                metrics,
+                missing_fields,
+                analytics_attempts,
+            )
             raise RobloxCreatorMetricsClientError(
                 "Creator overview 页面缺少指标: "
                 + ", ".join(missing_fields)
@@ -171,6 +231,51 @@ class RobloxCreatorMetricsClient:
             source_url=overview_url,
             fetched_at=now_iso(),
         )
+
+    def _fetch_analytics_gateway_metrics(
+        self,
+        project_id: str,
+        overview_url: str,
+        attempts: list[AnalyticsGatewayAttempt],
+    ) -> dict[str, str]:
+        metrics: dict[str, str] = {}
+        if not project_id:
+            return metrics
+
+        for resource_type in ANALYTICS_RESOURCE_TYPES:
+            url = ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE.format(
+                resource_type=resource_type,
+                resource_id=project_id,
+            )
+            try:
+                payload = self._request_json(
+                    "GET",
+                    url,
+                    headers={**ANALYTICS_HEADERS, "Referer": overview_url},
+                )
+            except RobloxCreatorMetricsClientError as exc:
+                attempts.append(
+                    AnalyticsGatewayAttempt(
+                        resource_type=resource_type,
+                        url=url,
+                        status=f"error: {exc}",
+                        payload_excerpt="",
+                    )
+                )
+                continue
+
+            self._collect_metrics_from_payload(payload, metrics)
+            attempts.append(
+                AnalyticsGatewayAttempt(
+                    resource_type=resource_type,
+                    url=url,
+                    status="ok",
+                    payload_excerpt=_truncate_json(payload),
+                )
+            )
+            if not _has_missing_metrics(metrics):
+                break
+        return metrics
 
     def _fetch_overview_html(self, overview_url: str) -> str:
         def _call() -> str:
@@ -204,7 +309,41 @@ class RobloxCreatorMetricsClient:
         except Exception as exc:  # noqa: BLE001
             raise RobloxCreatorMetricsClientError(f"请求 Creator overview 失败: {overview_url}") from exc
 
-    def _extract_metrics(self, html_text: str) -> dict[str, str]:
+    def _request_json(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+    ):
+        def _call():
+            assert self.session is not None
+            response = self.session.request(
+                method=method,
+                url=url,
+                headers=headers,
+                cookies={".ROBLOSECURITY": self.config.roblox_creator_cookie},
+                timeout=self.config.request_timeout_seconds,
+                allow_redirects=True,
+            )
+            if response.status_code >= 400:
+                raise requests.HTTPError(
+                    f"HTTP {response.status_code}: {response.text[:400]}",
+                    response=response,
+                )
+            return response.json()
+
+        try:
+            return with_retry(
+                _call,
+                attempts=self.config.retry_max_attempts,
+                base_backoff_seconds=self.config.retry_backoff_seconds,
+                is_retryable=_is_retryable_exception,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise RobloxCreatorMetricsClientError(f"请求 analytics gateway 失败: {url}") from exc
+
+    def _extract_metrics_from_html(self, html_text: str) -> dict[str, str]:
         metrics: dict[str, str] = {}
         metrics.update(self._extract_metrics_from_inline_json(html_text))
         metrics.update(self._extract_metrics_from_script_assignments(html_text))
@@ -235,7 +374,18 @@ class RobloxCreatorMetricsClient:
 
     def _collect_metrics_from_payload(self, payload, metrics: dict[str, str]) -> None:
         if isinstance(payload, dict):
-            label_fields = ["label", "name", "title", "metric", "heading", "header", "metricName"]
+            label_fields = [
+                "label",
+                "name",
+                "title",
+                "metric",
+                "heading",
+                "header",
+                "metricName",
+                "metric_name",
+                "displayName",
+                "display_name",
+            ]
             for field in label_fields:
                 raw_label = payload.get(field)
                 if not isinstance(raw_label, str):
@@ -291,6 +441,7 @@ class RobloxCreatorMetricsClient:
         html_text: str,
         metrics: dict[str, str],
         missing_fields: list[str],
+        analytics_attempts: list[AnalyticsGatewayAttempt],
     ) -> str:
         target_dir = Path(self.config.output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -300,9 +451,18 @@ class RobloxCreatorMetricsClient:
         payload = {
             "captured_metrics": metrics,
             "missing_fields": missing_fields,
+            "analytics_gateway_attempts": [
+                {
+                    "resource_type": attempt.resource_type,
+                    "url": attempt.url,
+                    "status": attempt.status,
+                    "payload_excerpt": attempt.payload_excerpt,
+                }
+                for attempt in analytics_attempts
+            ],
             "html_excerpt": html_text[:DEBUG_HTML_MAX_LENGTH],
             "visible_text_excerpt": parser.segments[:200],
-            "script_excerpt": _extract_script_contents(html_text)[:10],
+            "script_excerpt": [item[:DEBUG_PAYLOAD_MAX_LENGTH] for item in _extract_script_contents(html_text)[:10]],
         }
         debug_path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
@@ -411,6 +571,14 @@ def _try_load_json(candidate: str) -> object | None:
         return None
 
 
+def _has_missing_metrics(metrics: dict[str, str]) -> bool:
+    return any(definition.field_name not in metrics for definition in METRIC_DEFINITIONS)
+
+
+def _truncate_json(payload: object) -> str:
+    return json.dumps(payload, ensure_ascii=False, default=str)[:DEBUG_PAYLOAD_MAX_LENGTH]
+
+
 def _match_metric_alias(raw_label: str) -> str:
     normalized = _normalize_label(raw_label)
     for definition in METRIC_DEFINITIONS:
@@ -420,6 +588,10 @@ def _match_metric_alias(raw_label: str) -> str:
 
 
 def _normalize_label(value: str) -> str:
+    value = str(value)
+    value = ACRONYM_BOUNDARY_PATTERN.sub(r"\1 \2", value)
+    value = CAMEL_CASE_BOUNDARY_PATTERN.sub(r"\1 \2", value)
+    value = re.sub(r"[^A-Za-z0-9%]+", " ", value)
     return _normalize_space(value).lower().replace("_", " ")
 
 
@@ -443,7 +615,18 @@ def _extract_value_from_payload(payload: dict) -> str:
         if _is_scalar_metric_value(raw_value):
             return _normalize_metric_value(str(raw_value))
     for key, raw_value in payload.items():
-        if key in {"label", "name", "title", "metric", "heading", "header", "metricName"}:
+        if key in {
+            "label",
+            "name",
+            "title",
+            "metric",
+            "heading",
+            "header",
+            "metricName",
+            "metric_name",
+            "displayName",
+            "display_name",
+        }:
             continue
         if _is_scalar_metric_value(raw_value):
             return _normalize_metric_value(str(raw_value))
