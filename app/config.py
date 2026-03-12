@@ -13,6 +13,8 @@ class Config:
     api_limit: int = 100
     roblox_sort_id: str = "top-playing-now"
     roblox_top_trending_sort_id: str = ""
+    roblox_creator_overview_url: str = ""
+    roblox_creator_cookie: str = ""
     feishu_bot_webhook: str = ""
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
@@ -40,6 +42,10 @@ class Config:
     feishu_up_and_coming_test_prev_ranks: str = ""
     feishu_top_playing_now_test_prev_ranks: str = ""
     feishu_top_trending_test_spreadsheet_title: str = "Roblox Top 100 Test"
+    feishu_project_metrics_spreadsheet_token: str = ""
+    feishu_project_metrics_sheet_id: str = ""
+    feishu_project_metrics_spreadsheet_title: str = "Roblox Project Metrics Test"
+
 
 
 def _get_int(name: str, default: int) -> int:
@@ -49,6 +55,7 @@ def _get_int(name: str, default: int) -> int:
     return int(value)
 
 
+
 def _get_float(name: str, default: float) -> float:
     value = os.getenv(name)
     if not value:
@@ -56,11 +63,13 @@ def _get_float(name: str, default: float) -> float:
     return float(value)
 
 
+
 def _split_repository_slug(value: str) -> tuple[str, str]:
     parts = [part for part in value.split("/", 1) if part]
     if len(parts) != 2:
         return "", ""
     return parts[0], parts[1]
+
 
 
 def load_config() -> Config:
@@ -79,6 +88,8 @@ def load_config() -> Config:
         api_limit=max(1, min(100, _get_int("API_LIMIT", 100))),
         roblox_sort_id=os.getenv("ROBLOX_SORT_ID", "top-playing-now"),
         roblox_top_trending_sort_id=os.getenv("ROBLOX_TOP_TRENDING_SORT_ID", ""),
+        roblox_creator_overview_url=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL", ""),
+        roblox_creator_cookie=os.getenv("ROBLOX_CREATOR_COOKIE", ""),
         feishu_bot_webhook=os.getenv("FEISHU_BOT_WEBHOOK", ""),
         feishu_app_id=os.getenv("FEISHU_APP_ID", ""),
         feishu_app_secret=os.getenv("FEISHU_APP_SECRET", ""),
@@ -117,5 +128,14 @@ def load_config() -> Config:
         feishu_top_trending_test_spreadsheet_title=os.getenv(
             "FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TITLE",
             "Roblox Top 100 Test",
+        ),
+        feishu_project_metrics_spreadsheet_token=os.getenv(
+            "FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN",
+            "",
+        ),
+        feishu_project_metrics_sheet_id=os.getenv("FEISHU_PROJECT_METRICS_SHEET_ID", ""),
+        feishu_project_metrics_spreadsheet_title=os.getenv(
+            "FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE",
+            "Roblox Project Metrics Test",
         ),
     )

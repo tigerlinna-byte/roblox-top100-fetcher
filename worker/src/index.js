@@ -1,5 +1,6 @@
 const DEFAULT_TOP100_COMMAND = "/roblox-top100";
 const DEFAULT_TOP_DAY_COMMAND = "/roblox-top-day";
+const DEFAULT_PROJECT_METRICS_COMMAND = "/roblox-project-metrics";
 const processedEvents = new Map();
 const DEFAULT_DEDUP_KV_BINDING = "EVENT_DEDUP_KV";
 
@@ -368,6 +369,10 @@ function resolveCommand(env, text) {
       text: env.TOP_DAY_COMMAND_TEXT || DEFAULT_TOP_DAY_COMMAND,
       reportMode: "top_trending_sheet",
     },
+    {
+      text: env.PROJECT_METRICS_COMMAND_TEXT || DEFAULT_PROJECT_METRICS_COMMAND,
+      reportMode: "roblox_project_daily_metrics",
+    },
   ];
 
   return commands.find((command) => command.text === text) || null;
@@ -391,7 +396,7 @@ async function sendAck(fetchImpl, env, chatId) {
         receive_id: chatId,
         msg_type: "text",
         content: JSON.stringify({
-          text: "已提交 Roblox 排行榜抓取任务，稍后会回传结果。",
+          text: "已提交 Roblox 数据抓取任务，稍后会回传结果。",
         }),
       }),
     },

@@ -505,6 +505,86 @@ class FeishuClientTests(unittest.TestCase):
             style_kwargs["json"]["data"][0]["ranges"],
         )
 
+    def test_read_sheet_values_returns_rows(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        read_response = Mock()
+        read_response.status_code = 200
+        read_response.json.return_value = {
+            "code": 0,
+            "data": {
+                "valueRange": {
+                    "values": [["日期", "平均CCU"], ["2026-03-12", "1234"]],
+                }
+            },
+        }
+
+        session.request.side_effect = [auth_response, read_response]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        values = client.read_sheet_values("shtcn_sheet", "sheet001", end_column="L", end_row=20)
+
+        self.assertEqual([["日期", "平均CCU"], ["2026-03-12", "1234"]], values)
+        read_kwargs = session.request.call_args_list[1].kwargs
+        self.assertEqual(
+            "https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/shtcn_sheet/values/sheet001!A1:L20",
+            read_kwargs["url"],
+        )
+
+    def test_set_sheet_column_widths_skips_none_entries(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        width_response_a = Mock()
+        width_response_a.status_code = 200
+        width_response_a.json.return_value = {"code": 0, "data": {}}
+
+        width_response_b = Mock()
+        width_response_b.status_code = 200
+        width_response_b.json.return_value = {"code": 0, "data": {}}
+
+        session.request.side_effect = [auth_response, width_response_a, width_response_b]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        client.set_sheet_column_widths("shtcn_sheet", "sheet001", [120, None, 240])
+
+        self.assertEqual(3, session.request.call_count)
+        first_width_kwargs = session.request.call_args_list[1].kwargs
+        second_width_kwargs = session.request.call_args_list[2].kwargs
+        self.assertEqual(1, first_width_kwargs["json"]["dimension"]["startIndex"])
+        self.assertEqual(3, second_width_kwargs["json"]["dimension"]["startIndex"])
+
 
 if __name__ == "__main__":
     unittest.main()

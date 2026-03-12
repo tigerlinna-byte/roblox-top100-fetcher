@@ -132,6 +132,58 @@ test("dispatches workflow and sends ack for allowed command", async () => {
   assert.equal(ackBody.receive_id, "oc_test_chat");
 });
 
+test("dispatches project metrics workflow for /roblox-project-metrics", async () => {
+  const calls = [];
+  const ctx = buildCtx();
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, init });
+
+    if (String(url).includes("/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+
+    if (String(url).includes("/tenant_access_token/internal")) {
+      return Response.json({ code: 0, tenant_access_token: "tenant-token" });
+    }
+
+    if (String(url).includes("/im/v1/messages")) {
+      return Response.json({ code: 0, data: { message_id: "om_test" } });
+    }
+
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+
+  const response = await handleRequest(
+    buildRequest({
+      header: { token: "verify-me", event_id: "evt_project_metrics" },
+      event: {
+        sender: {
+          sender_id: {
+            open_id: "ou_test_user",
+          },
+        },
+        message: {
+          message_id: "om_message_project_metrics",
+          chat_id: "oc_test_chat",
+          message_type: "text",
+          content: JSON.stringify({ text: "/roblox-project-metrics" }),
+        },
+      },
+    }),
+    buildEnv(),
+    ctx,
+    fetchImpl,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, dispatched: true });
+  await Promise.all(ctx.tasks);
+
+  const dispatchBody = JSON.parse(calls[0].init.body);
+  assert.equal(dispatchBody.inputs.report_mode, "roblox_project_daily_metrics");
+  assert.equal(dispatchBody.inputs.chat_id, "oc_test_chat");
+});
+
 test("dispatches Top Trending workflow for /roblox-top-day", async () => {
   const calls = [];
   const ctx = buildCtx();
