@@ -584,7 +584,7 @@ class FeishuClientTests(unittest.TestCase):
             read_kwargs["url"],
         )
 
-    def test_clear_sheet_values_uses_delete_values_endpoint(self) -> None:
+    def test_clear_sheet_values_uses_put_values_endpoint_with_empty_matrix(self) -> None:
         session = Mock()
 
         auth_response = Mock()
@@ -613,12 +613,15 @@ class FeishuClientTests(unittest.TestCase):
         client.clear_sheet_values("shtcn_sheet", "sheet001", start_cell="A2", end_column="L", end_row=365)
 
         clear_kwargs = session.request.call_args_list[1].kwargs
-        self.assertEqual("DELETE", clear_kwargs["method"])
+        self.assertEqual("PUT", clear_kwargs["method"])
         self.assertEqual(
             "https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/shtcn_sheet/values",
             clear_kwargs["url"],
         )
-        self.assertEqual("sheet001!A2:L365", clear_kwargs["json"]["range"])
+        self.assertEqual("sheet001!A2:L365", clear_kwargs["json"]["valueRange"]["range"])
+        self.assertEqual(364, len(clear_kwargs["json"]["valueRange"]["values"]))
+        self.assertEqual(12, len(clear_kwargs["json"]["valueRange"]["values"][0]))
+        self.assertEqual("", clear_kwargs["json"]["valueRange"]["values"][0][0])
         self.assertEqual("Bearer tenant-token", clear_kwargs["headers"]["Authorization"])
 
     def test_set_sheet_column_widths_skips_none_entries(self) -> None:

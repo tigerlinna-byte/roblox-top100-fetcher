@@ -226,14 +226,29 @@ class FeishuClient:
         end_column: str,
         end_row: int,
     ) -> None:
-        """清空指定工作表范围，避免旧数据残留。"""
+        """通过写空值矩阵清空指定工作表范围，避免旧数据残留。"""
 
         access_token = self._fetch_tenant_access_token()
+        start_column_letters = "".join(character for character in start_cell if character.isalpha())
+        start_row_digits = "".join(character for character in start_cell if character.isdigit())
+        start_row = int(start_row_digits)
+        start_column_index = _column_index(start_column_letters)
+        end_column_index = _column_index(end_column)
+        column_count = end_column_index - start_column_index + 1
+        row_count = end_row - start_row + 1
+        if column_count <= 0 or row_count <= 0:
+            return
         range_ref = f"{sheet_id}!{start_cell}:{end_column}{end_row}"
+        empty_values = [["" for _ in range(column_count)] for _ in range(row_count)]
         self._request_json(
-            "DELETE",
+            "PUT",
             f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values",
-            json_payload={"range": range_ref},
+            json_payload={
+                "valueRange": {
+                    "range": range_ref,
+                    "values": empty_values,
+                }
+            },
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
@@ -676,6 +691,15 @@ def _column_letter(index: int) -> str:
         value, remainder = divmod(value - 1, 26)
         letters.append(chr(65 + remainder))
     return "".join(reversed(letters))
+
+
+def _column_index(column_letters: str) -> int:
+    value = 0
+    for character in column_letters.upper():
+        if not character.isalpha():
+            continue
+        value = value * 26 + (ord(character) - 64)
+    return value
 
 
 def _serialize_sheet_values(values: list[list[object]]) -> list[list[object]]:
