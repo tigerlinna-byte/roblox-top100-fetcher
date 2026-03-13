@@ -243,6 +243,13 @@ def _sync_project_metrics_sheet(
         keep_sheet_ids={target.sheet_id},
     )
     _apply_project_metrics_sheet_presentation(variables.spreadsheet_title, feishu_client, target)
+    feishu_client.clear_sheet_values(
+        target.spreadsheet_token,
+        target.sheet_id,
+        start_cell="A2",
+        end_column=PROJECT_METRICS_SHEET_END_COLUMN,
+        end_row=PROJECT_METRICS_SHEET_MAX_ROWS,
+    )
 
     table_state = build_project_metrics_table([], records)
     feishu_client.write_sheet_values(

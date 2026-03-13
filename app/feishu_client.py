@@ -217,6 +217,26 @@ class FeishuClient:
             return []
         return [row for row in values if isinstance(row, list)]
 
+    def clear_sheet_values(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        *,
+        start_cell: str,
+        end_column: str,
+        end_row: int,
+    ) -> None:
+        """清空指定工作表范围，避免旧数据残留。"""
+
+        access_token = self._fetch_tenant_access_token()
+        range_ref = f"{sheet_id}!{start_cell}:{end_column}{end_row}"
+        self._request_json(
+            "DELETE",
+            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values",
+            json_payload={"range": range_ref},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
     def write_sheet_images(
         self,
         spreadsheet_token: str,
