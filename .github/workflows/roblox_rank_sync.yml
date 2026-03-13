@@ -1,8 +1,6 @@
 name: Roblox Rank Sync
 
 on:
-  schedule:
-    - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
       report_mode:
@@ -26,10 +24,10 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     env:
-      RUN_REPORT_MODE: ${{ github.event_name == 'schedule' && 'roblox_project_daily_metrics' || github.event.inputs.report_mode || 'top100_message' }}
+      RUN_REPORT_MODE: ${{ github.event.inputs.report_mode || 'top100_message' }}
       RUN_TRIGGER_SOURCE: ${{ github.event.inputs.trigger_source || github.event_name }}
       RUN_TRIGGER_ACTOR: ${{ github.event.inputs.trigger_actor || github.actor }}
-      RUN_CHAT_ID: ${{ github.event_name == 'schedule' && '' || github.event.inputs.chat_id || '' }}
+      RUN_CHAT_ID: ${{ github.event.inputs.chat_id || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
