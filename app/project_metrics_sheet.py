@@ -53,6 +53,7 @@ class ProjectMetricsTableState:
 
     rows: list[list[object]]
     updated_row_index: int
+    was_updated: bool = True
 
 
 def resolve_project_metrics_variables(cfg: Config) -> ProjectMetricsSheetVariables:
@@ -130,21 +131,29 @@ def build_project_metrics_table(
     existing_rows: list[list[object]],
     record: ProjectDailyMetricsRecord,
 ) -> ProjectMetricsTableState:
-    """将单日指标按日期写入已有表格内容，存在则覆盖，不存在则追加。"""
+    """将单日指标按日期写入已有表格内容。"""
 
     normalized_rows = _normalize_existing_rows(existing_rows)
     data_row = build_project_metrics_values(record)
     target_index = _find_report_date_row(normalized_rows, record.report_date)
 
-    if target_index is None:
-        normalized_rows.append(data_row)
-        normalized_rows[1:] = sorted(normalized_rows[1:], key=lambda row: str(row[0]))
-        target_index = _find_report_date_row(normalized_rows, record.report_date)
-        assert target_index is not None
-    else:
+    if target_index is not None:
         normalized_rows[target_index] = data_row
+        return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=target_index + 1)
 
-    return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=target_index + 1)
+    existing_dates = _extract_existing_report_dates(normalized_rows)
+    if not existing_dates:
+        normalized_rows.append(data_row)
+        return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=2)
+
+    latest_date = existing_dates[0]
+    oldest_date = existing_dates[-1]
+    if record.report_date > latest_date:
+        normalized_rows.insert(1, data_row)
+        return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=2)
+    if record.report_date < oldest_date:
+        return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=0, was_updated=False)
+    return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=0, was_updated=False)
 
 
 def _normalize_existing_rows(existing_rows: list[list[object]]) -> list[list[object]]:
@@ -155,6 +164,17 @@ def _normalize_existing_rows(existing_rows: list[list[object]]) -> list[list[obj
         if any(str(cell).strip() for cell in normalized):
             rows.append(normalized)
     return rows
+
+
+def _extract_existing_report_dates(rows: list[list[object]]) -> list[str]:
+    return [str(row[0]).strip() for row in rows[1:] if _is_iso_date_string(str(row[0]).strip())]
+
+
+def _is_iso_date_string(value: str) -> bool:
+    parts = value.split("-")
+    if len(parts) != 3:
+        return False
+    return all(part.isdigit() for part in parts) and len(parts[0]) == 4 and len(parts[1]) == 2 and len(parts[2]) == 2
 
 
 def _find_report_date_row(rows: list[list[object]], report_date: str) -> int | None:
