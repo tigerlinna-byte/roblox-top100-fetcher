@@ -4,8 +4,8 @@ import html
 import json
 import logging
 import re
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -19,11 +19,6 @@ from .retry import with_retry
 
 ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE = (
     "https://apis.roblox.com/analytics-query-gateway/v1/metrics/resource/{resource_type}/id/{resource_id}"
-)
-ANALYTICS_RESOURCE_TYPES = (
-    "RESOURCE_TYPE_UNIVERSE",
-    "RESOURCE_TYPE_EXPERIENCE",
-    "RESOURCE_TYPE_PLACE",
 )
 ANALYTICS_HEADERS = {
     "Accept": "application/json, text/plain, */*",
@@ -47,16 +42,6 @@ class MetricDefinition:
 
     field_name: str
     aliases: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class AnalyticsGatewayAttempt:
-    """记录 analytics gateway 的一次请求结果，便于失败时排查。"""
-
-    resource_type: str
-    url: str
-    status: str
-    payload_excerpt: str
 
 
 METRIC_DEFINITIONS = (
@@ -137,6 +122,73 @@ DEBUG_HTML_MAX_LENGTH = 120_000
 DEBUG_PAYLOAD_MAX_LENGTH = 20_000
 
 
+MISSING_METRIC_PLACEHOLDER = "未获取"
+ANALYTICS_STATUS_CONFIG_URL_TEMPLATE = (
+    "https://apis.roblox.com/analytics-query-gateway/v1/status-config?universeId={resource_id}"
+)
+ANALYTICS_FEATURE_PERMISSIONS_URL_TEMPLATE = (
+    "https://apis.roblox.com/developer-analytics-aggregations/v1/feature-permissions?universeId={resource_id}"
+)
+ANALYTICS_RESOURCE_TYPE = "RESOURCE_TYPE_UNIVERSE"
+MINIMUM_REQUIRED_FIELDS = ("average_ccu", "peak_ccu")
+
+
+@dataclass(frozen=True)
+class MetricQuerySpec:
+    """描述一个 direct analytics 指标查询。"""
+
+    field_name: str
+    metric: str
+    granularity: str
+    lookback_days: int
+    value_type: str
+    breakdown_dimensions: tuple[str, ...] = ()
+    filters: tuple[dict[str, object], ...] = ()
+    limit: int | None = None
+
+
+@dataclass(frozen=True)
+class QueryAttempt:
+    """记录一次内部 analytics 请求结果，便于失败时排查。"""
+
+    endpoint_name: str
+    url: str
+    method: str
+    status: str
+    request_excerpt: str
+    payload_excerpt: str
+
+
+DIRECT_QUERY_SPECS = (
+    MetricQuerySpec("average_ccu", "ConcurrentPlayers", "METRIC_GRANULARITY_ONE_HOUR", 14, "daily_average"),
+    MetricQuerySpec("peak_ccu", "PeakConcurrentPlayers", "METRIC_GRANULARITY_ONE_HOUR", 14, "daily_max"),
+    MetricQuerySpec("average_session_time", "AverageSessionLengthMinutes", "METRIC_GRANULARITY_ONE_DAY", 14, "minutes"),
+    MetricQuerySpec("day1_retention", "D1Retention", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+    MetricQuerySpec("day7_retention", "D7Retention", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+    MetricQuerySpec("payer_conversion_rate", "PayingUsersCVR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+    MetricQuerySpec("arppu", "AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
+    MetricQuerySpec("qptr", "RFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+)
+DIRECT_QUERY_FALLBACK_SPECS = (
+    MetricQuerySpec("average_session_time", "SessionDurationSecondsAvg", "METRIC_GRANULARITY_ONE_MINUTE", 1, "seconds"),
+    MetricQuerySpec("day1_retention", "L7AverageForwardD1Retention", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+    MetricQuerySpec("day7_retention", "L7AverageForwardD7Retention", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+    MetricQuerySpec("payer_conversion_rate", "L7AveragePayingUsersCVR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+    MetricQuerySpec("arppu", "L7AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
+    MetricQuerySpec("qptr", "L7AverageRFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+)
+HOME_RECOMMENDATIONS_SPEC = MetricQuerySpec(
+    "home_recommendations",
+    "DailyActiveUsers",
+    "METRIC_GRANULARITY_NONE",
+    7,
+    "breakdown_count",
+    breakdown_dimensions=("AcquisitionSource",),
+    filters=({"dimension": "IsNewUser", "values": ["New"], "operation": "FILTER_OPERATION_CONTAINS"},),
+    limit=5,
+)
+
+
 class _VisibleTextParser(HTMLParser):
     """提取页面中的可见文本，跳过脚本与样式内容。"""
 
@@ -172,6 +224,7 @@ class RobloxCreatorMetricsClient:
 
     config: Config
     session: requests.Session | None = None
+    _csrf_token: str = field(default="", init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.session is None:
@@ -187,8 +240,8 @@ class RobloxCreatorMetricsClient:
             raise RobloxCreatorMetricsClientError("ROBLOX_CREATOR_COOKIE 未配置")
 
         project_id = _extract_project_id(overview_url)
-        analytics_attempts: list[AnalyticsGatewayAttempt] = []
-        metrics = self._fetch_analytics_gateway_metrics(project_id, overview_url, analytics_attempts)
+        direct_attempts: list[QueryAttempt] = []
+        metrics = self._fetch_direct_metrics(project_id, direct_attempts)
         html_text = ""
         if _has_missing_metrics(metrics):
             html_text = self._fetch_overview_html(overview_url)
@@ -196,23 +249,19 @@ class RobloxCreatorMetricsClient:
             for key, value in html_metrics.items():
                 metrics.setdefault(key, value)
 
-        missing_fields = [
-            definition.field_name
-            for definition in METRIC_DEFINITIONS
-            if definition.field_name not in metrics
-        ]
+        minimum_missing = [field_name for field_name in MINIMUM_REQUIRED_FIELDS if not metrics.get(field_name)]
+        missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if not metrics.get(definition.field_name)]
+        debug_path = ""
         if missing_fields:
-            debug_path = self._write_debug_snapshot(
-                html_text,
-                metrics,
-                missing_fields,
-                analytics_attempts,
-            )
+            debug_path = self._write_debug_snapshot(html_text, metrics, missing_fields, direct_attempts)
+        if minimum_missing:
             raise RobloxCreatorMetricsClientError(
-                "Creator overview 页面缺少指标: "
-                + ", ".join(missing_fields)
-                + f"；已输出调试样本: {debug_path}"
+                "Creator overview 页面缺少核心指标: "
+                + ", ".join(minimum_missing)
+                + (f"；已输出调试样本: {debug_path}" if debug_path else "")
             )
+        for definition in METRIC_DEFINITIONS:
+            metrics.setdefault(definition.field_name, MISSING_METRIC_PLACEHOLDER)
 
         report_date = _resolve_report_date(self.config.feishu_timezone)
         return ProjectDailyMetricsRecord(
@@ -232,50 +281,153 @@ class RobloxCreatorMetricsClient:
             fetched_at=now_iso(),
         )
 
-    def _fetch_analytics_gateway_metrics(
-        self,
-        project_id: str,
-        overview_url: str,
-        attempts: list[AnalyticsGatewayAttempt],
-    ) -> dict[str, str]:
+    def _fetch_direct_metrics(self, project_id: str, attempts: list[QueryAttempt]) -> dict[str, str]:
+        """优先通过真实内部 analytics 接口抓取指标。"""
+
         metrics: dict[str, str] = {}
-        if not project_id:
-            return metrics
+        self._fetch_feature_permissions(project_id, attempts)
+        self._fetch_status_config(project_id, attempts)
 
-        for resource_type in ANALYTICS_RESOURCE_TYPES:
-            url = ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE.format(
-                resource_type=resource_type,
-                resource_id=project_id,
-            )
-            try:
-                payload = self._request_json(
-                    "GET",
-                    url,
-                    headers={**ANALYTICS_HEADERS, "Referer": overview_url},
-                )
-            except RobloxCreatorMetricsClientError as exc:
-                attempts.append(
-                    AnalyticsGatewayAttempt(
-                        resource_type=resource_type,
-                        url=url,
-                        status=f"error: {exc}",
-                        payload_excerpt="",
-                    )
-                )
+        for spec in DIRECT_QUERY_SPECS:
+            value = self._query_metric_value(project_id, spec, attempts)
+            if value:
+                metrics[spec.field_name] = value
+        for spec in DIRECT_QUERY_FALLBACK_SPECS:
+            if metrics.get(spec.field_name):
                 continue
-
-            self._collect_metrics_from_payload(payload, metrics)
-            attempts.append(
-                AnalyticsGatewayAttempt(
-                    resource_type=resource_type,
-                    url=url,
-                    status="ok",
-                    payload_excerpt=_truncate_json(payload),
-                )
-            )
-            if not _has_missing_metrics(metrics):
-                break
+            value = self._query_metric_value(project_id, spec, attempts)
+            if value:
+                metrics[spec.field_name] = value
+        home_recommendations = self._query_home_recommendations(project_id, attempts)
+        if home_recommendations:
+            metrics["home_recommendations"] = home_recommendations
         return metrics
+
+    def _fetch_feature_permissions(self, project_id: str, attempts: list[QueryAttempt]) -> None:
+        """探测项目是否拥有 analytics 页面权限。"""
+
+        url = ANALYTICS_FEATURE_PERMISSIONS_URL_TEMPLATE.format(resource_id=project_id)
+        try:
+            payload = self._request_json("GET", url, json_body=None)
+        except RobloxCreatorMetricsClientError as exc:
+            attempts.append(QueryAttempt("feature_permissions", url, "GET", f"error: {exc}", "", ""))
+            return
+        attempts.append(QueryAttempt("feature_permissions", url, "GET", "ok", "", _truncate_json(payload)))
+
+    def _fetch_status_config(self, project_id: str, attempts: list[QueryAttempt]) -> None:
+        """抓取 status config，方便后续定位可用指标。"""
+
+        url = ANALYTICS_STATUS_CONFIG_URL_TEMPLATE.format(resource_id=project_id)
+        try:
+            payload = self._request_json("GET", url, json_body=None)
+        except RobloxCreatorMetricsClientError as exc:
+            attempts.append(QueryAttempt("status_config", url, "GET", f"error: {exc}", "", ""))
+            return
+        attempts.append(QueryAttempt("status_config", url, "GET", "ok", "", _truncate_json(payload)))
+
+    def _query_metric_value(self, project_id: str, spec: MetricQuerySpec, attempts: list[QueryAttempt]) -> str:
+        """按指标配置请求 analytics-query-gateway，并返回格式化后的值。"""
+
+        url = ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE.format(resource_type=ANALYTICS_RESOURCE_TYPE, resource_id=project_id)
+        request_payload = self._build_metric_request_payload(project_id, spec)
+        try:
+            payload = self._request_json("POST", url, json_body=request_payload)
+        except RobloxCreatorMetricsClientError as exc:
+            attempts.append(QueryAttempt(spec.metric, url, "POST", f"error: {exc}", _truncate_json(request_payload), ""))
+            return ""
+        attempts.append(QueryAttempt(spec.metric, url, "POST", "ok", _truncate_json(request_payload), _truncate_json(payload)))
+        return self._extract_metric_value_from_query_result(payload, spec)
+
+    def _query_home_recommendations(self, project_id: str, attempts: list[QueryAttempt]) -> str:
+        """抓取 Home Recommendation 数量。"""
+
+        url = ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE.format(resource_type=ANALYTICS_RESOURCE_TYPE, resource_id=project_id)
+        request_payload = self._build_metric_request_payload(project_id, HOME_RECOMMENDATIONS_SPEC)
+        try:
+            payload = self._request_json("POST", url, json_body=request_payload)
+        except RobloxCreatorMetricsClientError as exc:
+            attempts.append(QueryAttempt(HOME_RECOMMENDATIONS_SPEC.metric, url, "POST", f"error: {exc}", _truncate_json(request_payload), ""))
+            return ""
+        attempts.append(QueryAttempt(HOME_RECOMMENDATIONS_SPEC.metric, url, "POST", "ok", _truncate_json(request_payload), _truncate_json(payload)))
+        values = self._extract_query_values(payload)
+        latest_candidates: list[tuple[datetime, float]] = []
+        for series in values:
+            breakdown_values = series.get("breakdownValue", [])
+            if not _contains_breakdown_value(breakdown_values, "HomeRecommendation"):
+                continue
+            for point in series.get("dataPoints", []):
+                if not isinstance(point, dict):
+                    continue
+                parsed = _parse_iso_datetime(str(point.get("time", "")))
+                numeric = _coerce_numeric(point.get("value"))
+                if parsed is None or numeric is None:
+                    continue
+                latest_candidates.append((parsed, numeric))
+        if not latest_candidates:
+            return ""
+        latest_candidates.sort(key=lambda item: item[0])
+        return _format_count(latest_candidates[-1][1])
+
+    def _build_metric_request_payload(self, project_id: str, spec: MetricQuerySpec) -> dict[str, object]:
+        """组装 direct analytics 请求体。"""
+
+        end_time = _utc_midnight_now()
+        start_time = end_time - timedelta(days=spec.lookback_days)
+        query: dict[str, object] = {
+            "metric": spec.metric,
+            "granularity": spec.granularity,
+            "startTime": start_time.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "endTime": end_time.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "breakdown": [{"dimensions": list(spec.breakdown_dimensions)}] if spec.breakdown_dimensions else [],
+        }
+        if spec.filters:
+            query["filter"] = [dict(item) for item in spec.filters]
+        if spec.limit is not None:
+            query["limit"] = spec.limit
+        return {"resourceType": ANALYTICS_RESOURCE_TYPE, "resourceId": project_id, "query": query}
+
+    def _extract_metric_value_from_query_result(self, payload: object, spec: MetricQuerySpec) -> str:
+        """从 queryResult 中抽取并格式化单个指标。"""
+
+        values = self._extract_query_values(payload)
+        datapoints = _flatten_numeric_datapoints(values)
+        if not datapoints:
+            return ""
+        if spec.value_type == "daily_average":
+            return _format_count(_latest_day_average(datapoints))
+        if spec.value_type == "daily_max":
+            return _format_count(_latest_day_max(datapoints))
+        latest_value = _latest_value(datapoints)
+        if latest_value is None:
+            return ""
+        if spec.value_type == "ratio":
+            return _format_ratio(latest_value)
+        if spec.value_type == "currency":
+            return _format_currency(latest_value)
+        if spec.value_type == "minutes":
+            return _format_duration_from_minutes(latest_value)
+        if spec.value_type == "seconds":
+            return _format_duration_from_seconds(latest_value)
+        return _normalize_metric_value(str(latest_value))
+
+    def _extract_query_values(self, payload: object) -> list[dict[str, object]]:
+        """从 analytics gateway 响应中提取 values 列表。"""
+
+        if not isinstance(payload, dict):
+            return []
+        operation = payload.get("operation")
+        if isinstance(operation, dict):
+            query_result = operation.get("queryResult")
+            if isinstance(query_result, dict):
+                values = query_result.get("values")
+                if isinstance(values, list):
+                    return [item for item in values if isinstance(item, dict)]
+        result = payload.get("result")
+        if isinstance(result, dict):
+            values = result.get("values")
+            if isinstance(values, list):
+                return [item for item in values if isinstance(item, dict)]
+        return []
 
     def _fetch_overview_html(self, overview_url: str) -> str:
         def _call() -> str:
@@ -309,29 +461,11 @@ class RobloxCreatorMetricsClient:
         except Exception as exc:  # noqa: BLE001
             raise RobloxCreatorMetricsClientError(f"请求 Creator overview 失败: {overview_url}") from exc
 
-    def _request_json(
-        self,
-        method: str,
-        url: str,
-        *,
-        headers: dict[str, str],
-    ):
+    def _request_json(self, method: str, url: str, *, json_body: dict[str, object] | None):
+        """发送 JSON 请求，并在需要时自动刷新 x-csrf-token。"""
+
         def _call():
-            assert self.session is not None
-            response = self.session.request(
-                method=method,
-                url=url,
-                headers=headers,
-                cookies={".ROBLOSECURITY": self.config.roblox_creator_cookie},
-                timeout=self.config.request_timeout_seconds,
-                allow_redirects=True,
-            )
-            if response.status_code >= 400:
-                raise requests.HTTPError(
-                    f"HTTP {response.status_code}: {response.text[:400]}",
-                    response=response,
-                )
-            return response.json()
+            return self._send_json_request(method, url, json_body)
 
         try:
             return with_retry(
@@ -340,8 +474,51 @@ class RobloxCreatorMetricsClient:
                 base_backoff_seconds=self.config.retry_backoff_seconds,
                 is_retryable=_is_retryable_exception,
             )
+        except RobloxCreatorMetricsClientError:
+            raise
         except Exception as exc:  # noqa: BLE001
-            raise RobloxCreatorMetricsClientError(f"请求 analytics gateway 失败: {url}") from exc
+            raise RobloxCreatorMetricsClientError(f"请求 analytics 接口失败: {url}") from exc
+
+    def _send_json_request(self, method: str, url: str, json_body: dict[str, object] | None):
+        """执行一次真实 HTTP 请求。"""
+
+        assert self.session is not None
+        headers = dict(ANALYTICS_HEADERS)
+        if method.upper() == "GET":
+            headers.pop("Content-Type", None)
+        elif self._csrf_token:
+            headers["x-csrf-token"] = self._csrf_token
+
+        response = self.session.request(
+            method=method,
+            url=url,
+            headers=headers,
+            json=json_body,
+            cookies={".ROBLOSECURITY": self.config.roblox_creator_cookie},
+            timeout=self.config.request_timeout_seconds,
+            allow_redirects=True,
+        )
+        if response.status_code == 403:
+            csrf_token = response.headers.get("x-csrf-token", "")
+            if csrf_token and csrf_token != self._csrf_token and method.upper() != "GET":
+                self._csrf_token = csrf_token
+                retry_headers = dict(headers)
+                retry_headers["x-csrf-token"] = csrf_token
+                response = self.session.request(
+                    method=method,
+                    url=url,
+                    headers=retry_headers,
+                    json=json_body,
+                    cookies={".ROBLOSECURITY": self.config.roblox_creator_cookie},
+                    timeout=self.config.request_timeout_seconds,
+                    allow_redirects=True,
+                )
+        if response.status_code >= 400:
+            raise requests.HTTPError(
+                f"HTTP {response.status_code}: {response.text[:400]}",
+                response=response,
+            )
+        return response.json()
 
     def _extract_metrics_from_html(self, html_text: str) -> dict[str, str]:
         metrics: dict[str, str] = {}
@@ -441,7 +618,7 @@ class RobloxCreatorMetricsClient:
         html_text: str,
         metrics: dict[str, str],
         missing_fields: list[str],
-        analytics_attempts: list[AnalyticsGatewayAttempt],
+        direct_attempts: list[QueryAttempt],
     ) -> str:
         target_dir = Path(self.config.output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -451,14 +628,16 @@ class RobloxCreatorMetricsClient:
         payload = {
             "captured_metrics": metrics,
             "missing_fields": missing_fields,
-            "analytics_gateway_attempts": [
+            "direct_query_attempts": [
                 {
-                    "resource_type": attempt.resource_type,
+                    "endpoint_name": attempt.endpoint_name,
                     "url": attempt.url,
+                    "method": attempt.method,
                     "status": attempt.status,
+                    "request_excerpt": attempt.request_excerpt,
                     "payload_excerpt": attempt.payload_excerpt,
                 }
-                for attempt in analytics_attempts
+                for attempt in direct_attempts
             ],
             "html_excerpt": html_text[:DEBUG_HTML_MAX_LENGTH],
             "visible_text_excerpt": parser.segments[:200],
@@ -572,7 +751,7 @@ def _try_load_json(candidate: str) -> object | None:
 
 
 def _has_missing_metrics(metrics: dict[str, str]) -> bool:
-    return any(definition.field_name not in metrics for definition in METRIC_DEFINITIONS)
+    return any(not metrics.get(definition.field_name) for definition in METRIC_DEFINITIONS)
 
 
 def _truncate_json(payload: object) -> str:
@@ -670,5 +849,101 @@ def _is_retryable_exception(exc: Exception) -> bool:
         response = exc.response
         if response is None:
             return False
-        return response.status_code in {408, 409, 425, 429, 500, 502, 503, 504}
+        return response.status_code in {403, 408, 409, 425, 429, 500, 502, 503, 504}
     return False
+
+
+def _parse_iso_datetime(raw_value: str) -> datetime | None:
+    if not raw_value:
+        return None
+    try:
+        return datetime.fromisoformat(raw_value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _coerce_numeric(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _flatten_numeric_datapoints(values: list[dict[str, object]]) -> list[tuple[datetime, float]]:
+    datapoints: list[tuple[datetime, float]] = []
+    for series in values:
+        for point in series.get("dataPoints", []):
+            if not isinstance(point, dict):
+                continue
+            parsed = _parse_iso_datetime(str(point.get("time", "")))
+            numeric = _coerce_numeric(point.get("value"))
+            if parsed is None or numeric is None:
+                continue
+            datapoints.append((parsed, numeric))
+    datapoints.sort(key=lambda item: item[0])
+    return datapoints
+
+
+def _latest_value(datapoints: list[tuple[datetime, float]]) -> float | None:
+    if not datapoints:
+        return None
+    return datapoints[-1][1]
+
+
+def _latest_day_average(datapoints: list[tuple[datetime, float]]) -> float:
+    latest_day = datapoints[-1][0].date()
+    same_day = [value for timestamp, value in datapoints if timestamp.date() == latest_day]
+    return sum(same_day) / max(1, len(same_day))
+
+
+def _latest_day_max(datapoints: list[tuple[datetime, float]]) -> float:
+    latest_day = datapoints[-1][0].date()
+    same_day = [value for timestamp, value in datapoints if timestamp.date() == latest_day]
+    return max(same_day) if same_day else datapoints[-1][1]
+
+
+def _format_count(value: float) -> str:
+    return format(int(round(value)), ",")
+
+
+def _format_ratio(value: float) -> str:
+    percent = value * 100 if value <= 1.0 else value
+    text = f"{percent:.2f}".rstrip("0").rstrip(".")
+    return f"{text}%"
+
+
+def _format_currency(value: float) -> str:
+    return f"${value:.2f}"
+
+
+def _format_duration_from_minutes(value: float) -> str:
+    return _format_duration_from_seconds(value * 60)
+
+
+def _format_duration_from_seconds(value: float) -> str:
+    total_seconds = max(0, int(round(value)))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    if minutes > 0:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
+def _contains_breakdown_value(breakdown_values: list[object], expected_value: str) -> bool:
+    for item in breakdown_values:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("value", "")) == expected_value:
+            return True
+    return False
+
+
+def _utc_midnight_now() -> datetime:
+    now = datetime.now(timezone.utc)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
