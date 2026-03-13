@@ -45,7 +45,6 @@ class MetricDefinition:
 
 
 METRIC_DEFINITIONS = (
-    MetricDefinition("average_ccu", ("average ccu", "avg ccu", "avg concurrents")),
     MetricDefinition("peak_ccu", ("peak ccu", "peak concurrent users", "peak concurrents", "max ccu")),
     MetricDefinition(
         "average_session_time",
@@ -91,6 +90,7 @@ METRIC_DEFINITIONS = (
             "home impressions",
         ),
     ),
+    MetricDefinition("client_crash_rate", ("client crash rate", "crash rate", "client crash rate 15m")),
 )
 VALUE_CANDIDATE_KEYS = (
     "value",
@@ -136,7 +136,7 @@ ANALYTICS_FEATURE_PERMISSIONS_URL_TEMPLATE = (
 )
 ANALYTICS_METADATA_URL = "https://apis.roblox.com/analytics-query-gateway/v1/metrics/metadata"
 ANALYTICS_RESOURCE_TYPE = "RESOURCE_TYPE_UNIVERSE"
-MINIMUM_REQUIRED_FIELDS = ("average_ccu", "peak_ccu")
+MINIMUM_REQUIRED_FIELDS = ("peak_ccu",)
 
 
 @dataclass(frozen=True)
@@ -166,12 +166,12 @@ class QueryAttempt:
 
 
 DIRECT_QUERY_SPECS = (
-    MetricQuerySpec("average_ccu", "ConcurrentPlayers", "METRIC_GRANULARITY_ONE_HOUR", 14, "daily_average"),
-    MetricQuerySpec("peak_ccu", "PeakConcurrentPlayers", "METRIC_GRANULARITY_ONE_HOUR", 14, "daily_max"),
+    MetricQuerySpec("peak_ccu", "PeakConcurrentPlayers", "METRIC_GRANULARITY_ONE_DAY", 14, "integer"),
     MetricQuerySpec("average_session_time", "AveragePlayTimeMinutesPerDAU", "METRIC_GRANULARITY_ONE_DAY", 14, "minutes"),
     MetricQuerySpec("payer_conversion_rate", "PayingUsersCVR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("arppu", "AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
     MetricQuerySpec("qptr", "RFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+    MetricQuerySpec("client_crash_rate", "ClientCrashRate15m", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
 )
 DIRECT_QUERY_FALLBACK_SPECS = (
     MetricQuerySpec("average_session_time", "SessionDurationSecondsAvg", "METRIC_GRANULARITY_ONE_MINUTE", 1, "seconds"),
@@ -197,7 +197,7 @@ FIVE_MINUTE_RETENTION_SPEC = MetricQuerySpec(
 )
 HOME_RECOMMENDATIONS_SPEC = MetricQuerySpec(
     "home_recommendations",
-    "DailyActiveUsers",
+    "UniqueUsersWithPlaySessions",
     "METRIC_GRANULARITY_ONE_DAY",
     10,
     "breakdown_count",
@@ -296,7 +296,6 @@ class RobloxCreatorMetricsClient:
             records.append(
                 ProjectDailyMetricsRecord(
                     report_date=report_date,
-                    average_ccu=metrics_by_field.get("average_ccu", {}).get(report_date, ""),
                     peak_ccu=metrics_by_field.get("peak_ccu", {}).get(report_date, ""),
                     average_session_time=metrics_by_field.get("average_session_time", {}).get(report_date, ""),
                     day1_retention=metrics_by_field.get("day1_retention", {}).get(report_date, ""),
@@ -306,6 +305,7 @@ class RobloxCreatorMetricsClient:
                     qptr=metrics_by_field.get("qptr", {}).get(report_date, ""),
                     five_minute_retention=metrics_by_field.get("five_minute_retention", {}).get(report_date, ""),
                     home_recommendations=metrics_by_field.get("home_recommendations", {}).get(report_date, ""),
+                    client_crash_rate=metrics_by_field.get("client_crash_rate", {}).get(report_date, ""),
                     project_id=project_id,
                     source_url=overview_url,
                     fetched_at=fetched_at,

@@ -40,36 +40,24 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             "metadata": [
                                 {"metric": "AverageSessionLengthMinutes", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "DailyActiveUsers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "UniqueUsersWithPlaySessions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                             ]
                         },
                     }
                 })
             if method == "POST" and "analytics-query-gateway" in url:
                 metric = kwargs["json"]["query"]["metric"]
-                if metric == "ConcurrentPlayers":
-                    return _build_json_response(
-                        _wrap_query_result(
-                            {"breakdownValue": [], "dataPoints": [
-                                {"time": "2026-03-10T01:00:00Z", "value": 3.2},
-                                {"time": "2026-03-10T02:00:00Z", "value": 4.8},
-                                {"time": "2026-03-11T01:00:00Z", "value": 5.2},
-                                {"time": "2026-03-11T02:00:00Z", "value": 6.8},
-                            ]}
-                        )
-                    )
                 if metric == "PeakConcurrentPlayers":
                     return _build_json_response(
                         _wrap_query_result(
                             {"breakdownValue": [], "dataPoints": [
-                                {"time": "2026-03-10T01:00:00Z", "value": 7.1},
-                                {"time": "2026-03-10T02:00:00Z", "value": 8.2},
-                                {"time": "2026-03-11T01:00:00Z", "value": 9.5},
-                                {"time": "2026-03-11T02:00:00Z", "value": 10.1},
+                                {"time": "2026-03-10T00:00:00Z", "value": 8.2},
+                                {"time": "2026-03-11T00:00:00Z", "value": 10.1},
                             ]}
                         )
                     )
@@ -128,7 +116,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             ]
                         )
                     )
-                if metric == "DailyActiveUsers":
+                if metric == "UniqueUsersWithPlaySessions":
                     return _build_json_response(
                         _wrap_query_result(
                             [
@@ -142,6 +130,11 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             ]
                         )
                     )
+                if metric == "ClientCrashRate15m":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.0012},
+                        {"time": "2026-03-11T00:00:00Z", "value": 0.0015},
+                    ]}))
                 return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
             raise AssertionError(f"unexpected request: {method} {url}")
 
@@ -160,12 +153,12 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         self.assertEqual(["2026-03-11", "2026-03-10", "2026-03-09"], [record.report_date for record in records])
         record_map = {record.report_date: record for record in records}
-        self.assertEqual("6", record_map["2026-03-11"].average_ccu)
-        self.assertEqual("10", record_map["2026-03-11"].peak_ccu)
+        self.assertEqual("10.1", record_map["2026-03-11"].peak_ccu)
         self.assertEqual("15m 0s", record_map["2026-03-11"].average_session_time)
         self.assertEqual("", record_map["2026-03-11"].day1_retention)
         self.assertEqual("50%", record_map["2026-03-11"].five_minute_retention)
         self.assertEqual("610", record_map["2026-03-11"].home_recommendations)
+        self.assertEqual("0.15%", record_map["2026-03-11"].client_crash_rate)
         self.assertEqual("6.77%", record_map["2026-03-10"].day1_retention)
         self.assertEqual("", record_map["2026-03-10"].day7_retention)
         self.assertEqual("7.58%", record_map["2026-03-09"].day1_retention)
@@ -193,11 +186,11 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             "metadata": [
                                 {"metric": "AverageSessionLengthMinutes", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "DailyActiveUsers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "UniqueUsersWithPlaySessions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                             ]
                         },
                     }
@@ -205,10 +198,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "POST" and "analytics-query-gateway" in url:
                 metric = kwargs["json"]["query"]["metric"]
                 token = kwargs["headers"].get("x-csrf-token", "")
-                if metric == "ConcurrentPlayers" and not token:
+                if metric == "PeakConcurrentPlayers" and not token:
                     return csrf_failed
-                if metric == "ConcurrentPlayers":
-                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 3.0}]}))
                 if metric == "PeakConcurrentPlayers":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 5.0}]}))
                 return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
@@ -227,8 +218,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         records = client.fetch_project_daily_metrics()
 
-        self.assertEqual("3", records[0].average_ccu)
-        self.assertEqual("5", records[0].peak_ccu)
+        self.assertEqual("5.0", records[0].peak_ccu)
         self.assertEqual("token-123", client._csrf_token)
 
     def test_fetch_project_daily_metrics_writes_debug_snapshot_when_core_metrics_missing(self) -> None:
