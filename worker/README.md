@@ -36,7 +36,7 @@ It also supports Cloudflare Cron Triggers for both the daily Top100 trending she
 `worker/wrangler.toml` currently configures two daily cron triggers:
 
 - Top100 trending sheet: UTC `01:00` (`0 1 * * *`)
-- Shoot Or Shot project metrics: UTC `19:00` / Beijing `03:00` (`0 19 * * *`)
+- Shoot Or Shot project metrics: UTC `19:11` / Beijing `03:11` (`11 19 * * *`)
 
 Top100 scheduled dispatch still requires `SCHEDULE_CHAT_IDS` and sends the final result back to those chats.
 Shoot Or Shot scheduled dispatch does not pass `chat_id`; final Feishu delivery falls back to the existing `FEISHU_BOT_WEBHOOK`.

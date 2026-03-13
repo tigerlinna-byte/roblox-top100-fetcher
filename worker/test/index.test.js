@@ -358,7 +358,7 @@ test("dispatches scheduled project metrics workflow", async () => {
   };
 
   await handleScheduled(
-    { cron: "0 19 * * *" },
+    { cron: "11 19 * * *" },
     buildEnv(),
     ctx,
     fetchImpl,
@@ -389,7 +389,7 @@ test("skips scheduled top_trending dispatch when no schedule chats configured", 
 test("skips scheduled dispatch for unknown cron", async () => {
   let called = false;
   await handleScheduled(
-    { cron: "0 0 * * *" },
+    { cron: "0 19 * * *" },
     buildEnv({ SCHEDULE_CHAT_IDS: "oc_chat_a" }),
     buildCtx(),
     async () => {
