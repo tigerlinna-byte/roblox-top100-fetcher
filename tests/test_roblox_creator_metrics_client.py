@@ -157,7 +157,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         records = client.fetch_project_daily_metrics()
 
-        self.assertEqual(["2026-03-11", "2026-03-10"], [record.report_date for record in records])
+        self.assertEqual(["2026-03-11", "2026-03-10", "2026-03-09"], [record.report_date for record in records])
         record_map = {record.report_date: record for record in records}
         self.assertEqual("6", record_map["2026-03-11"].average_ccu)
         self.assertEqual("10", record_map["2026-03-11"].peak_ccu)
@@ -167,7 +167,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("610", record_map["2026-03-11"].home_recommendations)
         self.assertEqual("6.77%", record_map["2026-03-10"].day1_retention)
         self.assertEqual("", record_map["2026-03-10"].day7_retention)
-        self.assertNotIn("2026-03-09", record_map)
+        self.assertEqual("7.58%", record_map["2026-03-09"].day1_retention)
         self.assertNotIn("2026-03-04", record_map)
         self.assertNotIn("2026-03-13", record_map)
 

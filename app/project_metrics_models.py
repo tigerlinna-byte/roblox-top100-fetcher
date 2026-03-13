@@ -6,7 +6,7 @@ from typing import Any
 
 
 PROJECT_START_DATES = {
-    "9682356542": "2026-03-10",
+    "9682356542": "2026-03-09",
 }
 PROJECT_METRICS_FIELD_NAMES = (
     "average_ccu",
