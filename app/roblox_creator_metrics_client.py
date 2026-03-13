@@ -203,7 +203,6 @@ HOME_RECOMMENDATIONS_SPEC = MetricQuerySpec(
     10,
     "breakdown_count",
     breakdown_dimensions=("AcquisitionSource",),
-    limit=5,
 )
 
 
