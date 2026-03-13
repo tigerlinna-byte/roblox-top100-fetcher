@@ -358,8 +358,8 @@ test("dispatches scheduled project metrics workflow", async () => {
   };
 
   await handleScheduled(
-    { cron: "11 19 * * *" },
-    buildEnv(),
+    { cron: "25 19 * * *" },
+    buildEnv({ SCHEDULE_CHAT_IDS: "oc_chat_a,oc_chat_b" }),
     ctx,
     fetchImpl,
   );
@@ -368,13 +368,28 @@ test("dispatches scheduled project metrics workflow", async () => {
   const dispatchBody = JSON.parse(calls[0].init.body);
   assert.equal(dispatchBody.inputs.report_mode, "roblox_project_daily_metrics");
   assert.equal(dispatchBody.inputs.trigger_source, "cloudflare_cron");
-  assert.equal(dispatchBody.inputs.chat_id, "");
+  assert.equal(dispatchBody.inputs.chat_id, "oc_chat_a,oc_chat_b");
 });
 
 test("skips scheduled top_trending dispatch when no schedule chats configured", async () => {
   let called = false;
   await handleScheduled(
     { cron: "0 1 * * *" },
+    buildEnv({ SCHEDULE_CHAT_IDS: "" }),
+    buildCtx(),
+    async () => {
+      called = true;
+      return new Response(null, { status: 204 });
+    },
+  );
+
+  assert.equal(called, false);
+});
+
+test("skips scheduled project metrics dispatch when no schedule chats configured", async () => {
+  let called = false;
+  await handleScheduled(
+    { cron: "25 19 * * *" },
     buildEnv({ SCHEDULE_CHAT_IDS: "" }),
     buildCtx(),
     async () => {
