@@ -115,17 +115,17 @@ export async function handleScheduled(controller, env, ctx, fetchImpl = fetch) {
 }
 
 function resolveScheduledTrigger(env, cron) {
-  if (cron === "0 1 * * *") {
-    const chatIds = parseCsvList(env.SCHEDULE_CHAT_IDS);
-    if (!chatIds.length) {
-      console.warn(JSON.stringify({
-        level: "warn",
-        action: "schedule_skipped_missing_chat_ids",
-        cron,
-      }));
-      return null;
-    }
+  const chatIds = parseCsvList(env.SCHEDULE_CHAT_IDS);
+  if ((cron === "0 1 * * *" || cron === "25 19 * * *") && !chatIds.length) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      action: "schedule_skipped_missing_chat_ids",
+      cron,
+    }));
+    return null;
+  }
 
+  if (cron === "0 1 * * *") {
     return {
       triggerSource: "cloudflare_cron",
       triggerActor: "cloudflare-cron",
@@ -134,11 +134,11 @@ function resolveScheduledTrigger(env, cron) {
     };
   }
 
-  if (cron === "11 19 * * *") {
+  if (cron === "25 19 * * *") {
     return {
       triggerSource: "cloudflare_cron",
       triggerActor: "cloudflare-cron",
-      chatId: "",
+      chatId: chatIds.join(","),
       reportMode: "roblox_project_daily_metrics",
     };
   }
