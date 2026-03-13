@@ -284,7 +284,13 @@ class FeishuClient:
         )
 
     def update_spreadsheet_title(self, spreadsheet_token: str, title: str) -> None:
-        del spreadsheet_token, title
+        access_token = self._fetch_tenant_access_token()
+        self._request_json(
+            "PATCH",
+            f"https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/{spreadsheet_token}",
+            json_payload={"title": title},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
 
     def apply_sheet_layout(
         self,

@@ -117,6 +117,43 @@ class FeishuClientTests(unittest.TestCase):
         self.assertEqual("oc_test_chat_a", send_kwargs_a["json"]["receive_id"])
         self.assertEqual("oc_test_chat_b", send_kwargs_b["json"]["receive_id"])
 
+    def test_update_spreadsheet_title_calls_patch_endpoint(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        patch_response = Mock()
+        patch_response.status_code = 200
+        patch_response.json.return_value = {"code": 0, "data": {}}
+
+        session.request.side_effect = [auth_response, patch_response]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        client.update_spreadsheet_title("shtcn_sheet", "Shoot Or Shot")
+
+        patch_kwargs = session.request.call_args_list[1].kwargs
+        self.assertEqual("PATCH", patch_kwargs["method"])
+        self.assertEqual(
+            "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/shtcn_sheet",
+            patch_kwargs["url"],
+        )
+        self.assertEqual("Shoot Or Shot", patch_kwargs["json"]["title"])
+        self.assertEqual("Bearer tenant-token", patch_kwargs["headers"]["Authorization"])
+
     def test_create_spreadsheet_extracts_token_and_sheet_id(self) -> None:
         session = Mock()
 
