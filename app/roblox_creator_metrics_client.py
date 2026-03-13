@@ -74,7 +74,12 @@ METRIC_DEFINITIONS = (
     MetricDefinition("qptr", ("qptr", "qtpr", "qualified play through rate")),
     MetricDefinition(
         "five_minute_retention",
-        ("5 minute retention", "5-minute retention", "five minute retention"),
+        (
+            "5 minute retention",
+            "5-minute retention",
+            "five minute retention",
+            "new user first session retention",
+        ),
     ),
     MetricDefinition(
         "home_recommendations",
@@ -176,6 +181,14 @@ DIRECT_QUERY_FALLBACK_SPECS = (
     MetricQuerySpec("payer_conversion_rate", "L7AveragePayingUsersCVR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("arppu", "L7AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
     MetricQuerySpec("qptr", "L7AverageRFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+)
+FIVE_MINUTE_RETENTION_SPEC = MetricQuerySpec(
+    "five_minute_retention",
+    "TotalSessionsEndedInBucket",
+    "METRIC_GRANULARITY_NONE",
+    28,
+    "session_bucket_ratio",
+    breakdown_dimensions=("SessionTimeBucket",),
 )
 HOME_RECOMMENDATIONS_SPEC = MetricQuerySpec(
     "home_recommendations",
@@ -298,6 +311,10 @@ class RobloxCreatorMetricsClient:
             value = self._query_metric_value(project_id, spec, attempts)
             if value:
                 metrics[spec.field_name] = value
+        if not metrics.get("five_minute_retention"):
+            value = self._query_metric_value(project_id, FIVE_MINUTE_RETENTION_SPEC, attempts)
+            if value:
+                metrics["five_minute_retention"] = value
         home_recommendations = self._query_home_recommendations(project_id, attempts)
         if home_recommendations:
             metrics["home_recommendations"] = home_recommendations
@@ -397,6 +414,11 @@ class RobloxCreatorMetricsClient:
             return _format_count(_latest_day_average(datapoints))
         if spec.value_type == "daily_max":
             return _format_count(_latest_day_max(datapoints))
+        if spec.value_type == "session_bucket_ratio":
+            ratio = _extract_session_bucket_retention_ratio(values, threshold_seconds=300)
+            if ratio is None:
+                return ""
+            return _format_ratio(ratio)
         latest_value = _latest_value(datapoints)
         if latest_value is None:
             return ""
@@ -942,6 +964,54 @@ def _contains_breakdown_value(breakdown_values: list[object], expected_value: st
         if str(item.get("value", "")) == expected_value:
             return True
     return False
+
+
+def _extract_session_bucket_retention_ratio(values: list[dict[str, object]], threshold_seconds: int) -> float | None:
+    """从 SessionTimeBucket 分桶中推导指定时长阈值的留存占比。"""
+
+    bucket_counts: dict[int, float] = {}
+    for series in values:
+        bucket_seconds = _extract_session_bucket_seconds(series.get("breakdownValue", []))
+        if bucket_seconds is None:
+            continue
+        datapoints = _flatten_numeric_datapoints([series])
+        latest_value = _latest_value(datapoints)
+        if latest_value is None or latest_value <= 0:
+            continue
+        bucket_counts[bucket_seconds] = latest_value
+    if not bucket_counts:
+        return None
+
+    base_bucket = min(bucket_counts)
+    denominator = bucket_counts.get(base_bucket)
+    if denominator is None or denominator <= 0:
+        return None
+
+    retained_bucket = min(bucket_counts, key=lambda bucket: (abs(bucket - threshold_seconds), bucket))
+    numerator = bucket_counts.get(retained_bucket)
+    if numerator is None or numerator < 0:
+        return None
+    return numerator / denominator
+
+
+def _extract_session_bucket_seconds(breakdown_values: object) -> int | None:
+    """从 SessionTimeBucket 的 breakdownValue 中提取秒数阈值。"""
+
+    if not isinstance(breakdown_values, list):
+        return None
+    for item in breakdown_values:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("dimension", "")).strip() != "SessionTimeBucket":
+            continue
+        raw_value = str(item.get("value", "")).strip()
+        if not raw_value:
+            return None
+        try:
+            return int(float(raw_value))
+        except ValueError:
+            return None
+    return None
 
 
 def _utc_midnight_now() -> datetime:
