@@ -4,6 +4,7 @@ import html
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
@@ -474,6 +475,7 @@ class RobloxCreatorMetricsClient:
         request_payload = self._build_metric_request_payload(project_id, spec, start_time, end_time)
         try:
             payload = self._request_json("POST", url, json_body=request_payload)
+            payload = self._poll_query_result(url, request_payload, payload)
         except RobloxCreatorMetricsClientError as exc:
             attempts.append(QueryAttempt(spec.metric, url, "POST", f"error: {exc}", _truncate_json(request_payload), ""))
             return {}
@@ -512,6 +514,26 @@ class RobloxCreatorMetricsClient:
         if spec.limit is not None:
             query["limit"] = spec.limit
         return {"resourceType": ANALYTICS_RESOURCE_TYPE, "resourceId": project_id, "query": query}
+
+
+    def _poll_query_result(self, url: str, request_payload: dict[str, object], payload: object) -> object:
+        """对异步 query 轮询同一接口，直到返回 done=true 或达到重试上限。"""
+
+        operation = payload.get("operation") if isinstance(payload, dict) else None
+        if not isinstance(operation, dict) or operation.get("done") is True:
+            return payload
+
+        attempts = max(1, self.config.retry_max_attempts)
+        for index in range(1, attempts + 1):
+            backoff_seconds = max(0.0, self.config.retry_backoff_seconds) * index
+            if backoff_seconds > 0:
+                time.sleep(backoff_seconds)
+            payload = self._request_json("POST", url, json_body=request_payload)
+            operation = payload.get("operation") if isinstance(payload, dict) else None
+            if not isinstance(operation, dict) or operation.get("done") is True:
+                return payload
+
+        return payload
 
     def _extract_metric_series_from_query_result(
         self,
