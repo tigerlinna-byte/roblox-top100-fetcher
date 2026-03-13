@@ -52,7 +52,6 @@ class StorageTests(unittest.TestCase):
         sample = [
             ProjectDailyMetricsRecord(
                 report_date="2026-03-12",
-                average_ccu="1,234",
                 peak_ccu="2,345",
                 average_session_time="18m 30s",
                 day1_retention="31%",
@@ -62,13 +61,13 @@ class StorageTests(unittest.TestCase):
                 qptr="4.2",
                 five_minute_retention="40%",
                 home_recommendations="98",
+                client_crash_rate="0.12%",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
                 fetched_at="2026-03-12T01:02:03Z",
             ),
             ProjectDailyMetricsRecord(
                 report_date="2026-03-11",
-                average_ccu="1,111",
                 peak_ccu="2,222",
                 average_session_time="17m",
                 day1_retention="30%",
@@ -78,6 +77,7 @@ class StorageTests(unittest.TestCase):
                 qptr="4.0",
                 five_minute_retention="39%",
                 home_recommendations="90",
+                client_crash_rate="0.10%",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
                 fetched_at="2026-03-12T01:02:03Z",
@@ -87,7 +87,6 @@ class StorageTests(unittest.TestCase):
         json_path, csv_path = write_project_metrics_output(str(self.base), sample)
         payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
         self.assertEqual(2, len(payload))
-        self.assertEqual("1,234", payload[0]["average_ccu"])
 
         with Path(csv_path).open("r", newline="", encoding="utf-8") as fp:
             rows = list(csv.DictReader(fp))

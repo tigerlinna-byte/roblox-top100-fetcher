@@ -9,7 +9,6 @@ PROJECT_START_DATES = {
     "9682356542": "2026-03-09",
 }
 PROJECT_METRICS_FIELD_NAMES = (
-    "average_ccu",
     "peak_ccu",
     "average_session_time",
     "day1_retention",
@@ -19,6 +18,7 @@ PROJECT_METRICS_FIELD_NAMES = (
     "qptr",
     "five_minute_retention",
     "home_recommendations",
+    "client_crash_rate",
 )
 
 
@@ -27,7 +27,6 @@ class ProjectDailyMetricsRecord:
     """表示 Roblox Creator 后台某项目单日指标。"""
 
     report_date: str
-    average_ccu: str
     peak_ccu: str
     average_session_time: str
     day1_retention: str
@@ -37,6 +36,7 @@ class ProjectDailyMetricsRecord:
     qptr: str
     five_minute_retention: str
     home_recommendations: str
+    client_crash_rate: str
     project_id: str
     source_url: str
     fetched_at: str

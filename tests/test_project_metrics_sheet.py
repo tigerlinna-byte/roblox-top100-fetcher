@@ -15,7 +15,6 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_values_follows_expected_column_order(self) -> None:
         record = ProjectDailyMetricsRecord(
             report_date="2026-03-12",
-            average_ccu="1,234",
             peak_ccu="2,345",
             average_session_time="18m 30s",
             day1_retention="31%",
@@ -25,6 +24,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             qptr="4.2",
             five_minute_retention="40%",
             home_recommendations="98",
+            client_crash_rate="0.12%",
             project_id="9682356542",
             source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
             fetched_at="2026-03-12T01:02:03Z",
@@ -33,16 +33,15 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         row = build_project_metrics_values(record)
 
         self.assertEqual("2026-03-12", row[0])
-        self.assertEqual("1,234", row[1])
-        self.assertEqual("2,345", row[2])
-        self.assertEqual("18m 30s", row[3])
+        self.assertEqual("2,345", row[1])
+        self.assertEqual("18m 30s", row[2])
+        self.assertEqual("0.12%", row[10])
         self.assertEqual("2026-03-12T01:02:03Z", row[11])
 
     def test_build_project_metrics_table_adds_rows_in_date_desc_order(self) -> None:
         records = [
             ProjectDailyMetricsRecord(
                 report_date="2026-03-10",
-                average_ccu="100",
                 peak_ccu="200",
                 average_session_time="10m",
                 day1_retention="30%",
@@ -52,13 +51,13 @@ class ProjectMetricsSheetTests(unittest.TestCase):
                 qptr="3%",
                 five_minute_retention="35%",
                 home_recommendations="50",
+                client_crash_rate="0.10%",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
                 fetched_at="2026-03-12T01:02:03Z",
             ),
             ProjectDailyMetricsRecord(
                 report_date="2026-03-12",
-                average_ccu="120",
                 peak_ccu="220",
                 average_session_time="12m",
                 day1_retention="32%",
@@ -68,6 +67,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
                 qptr="4%",
                 five_minute_retention="37%",
                 home_recommendations="60",
+                client_crash_rate="0.11%",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
                 fetched_at="2026-03-12T01:02:03Z",
@@ -82,13 +82,12 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_table_merges_existing_rows_without_clearing_history(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11", "100", "200", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
-            ["2026-03-10", "90", "180", "", "", "", "", "", "", "", "", "2026-03-10T01:02:03Z"],
+            ["2026-03-11", "200", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
+            ["2026-03-10", "180", "", "", "", "", "", "", "", "", "2026-03-10T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
                 report_date="2026-03-12",
-                average_ccu="120",
                 peak_ccu="220",
                 average_session_time="12m",
                 day1_retention="32%",
@@ -98,13 +97,13 @@ class ProjectMetricsSheetTests(unittest.TestCase):
                 qptr="4%",
                 five_minute_retention="37%",
                 home_recommendations="60",
+                client_crash_rate="0.11%",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
                 fetched_at="2026-03-12T01:02:03Z",
             ),
             ProjectDailyMetricsRecord(
                 report_date="2026-03-11",
-                average_ccu="130",
                 peak_ccu="230",
                 average_session_time="13m",
                 day1_retention="33%",
@@ -114,6 +113,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
                 qptr="4.5%",
                 five_minute_retention="38%",
                 home_recommendations="61",
+                client_crash_rate="0.09%",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
                 fetched_at="2026-03-12T01:02:03Z",
@@ -123,19 +123,18 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         table_state = build_project_metrics_table(existing_rows, records)
 
         self.assertEqual(["2026-03-12", "2026-03-11", "2026-03-10"], [row[0] for row in table_state.rows[1:]])
-        self.assertEqual("130", table_state.rows[2][1])
-        self.assertEqual("13m", table_state.rows[2][3])
-        self.assertEqual("90", table_state.rows[3][1])
+        self.assertEqual("230", table_state.rows[2][1])
+        self.assertEqual("13m", table_state.rows[2][2])
+        self.assertEqual("180", table_state.rows[3][1])
 
     def test_build_project_metrics_table_clears_existing_value_when_new_value_missing(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11", "100", "200", "15m", "31%", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
+            ["2026-03-11", "200", "15m", "31%", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
                 report_date="2026-03-11",
-                average_ccu="130",
                 peak_ccu="230",
                 average_session_time="",
                 day1_retention="",
@@ -145,6 +144,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
                 qptr="",
                 five_minute_retention="",
                 home_recommendations="",
+                client_crash_rate="",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
                 fetched_at="2026-03-12T01:02:03Z",
@@ -153,15 +153,14 @@ class ProjectMetricsSheetTests(unittest.TestCase):
 
         table_state = build_project_metrics_table(existing_rows, records)
 
-        self.assertEqual("130", table_state.rows[1][1])
+        self.assertEqual("230", table_state.rows[1][1])
+        self.assertEqual("", table_state.rows[1][2])
         self.assertEqual("", table_state.rows[1][3])
-        self.assertEqual("", table_state.rows[1][4])
 
     def test_build_project_metrics_rebuild_rows_pads_blank_rows_to_fixed_height(self) -> None:
         records = [
             ProjectDailyMetricsRecord(
                 report_date="2026-03-12",
-                average_ccu="120",
                 peak_ccu="220",
                 average_session_time="12m",
                 day1_retention="32%",
@@ -171,6 +170,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
                 qptr="4%",
                 five_minute_retention="37%",
                 home_recommendations="60",
+                client_crash_rate="0.11%",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
                 fetched_at="2026-03-12T01:02:03Z",

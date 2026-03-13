@@ -73,7 +73,6 @@ def write_project_metrics_output(
     with csv_path.open("w", newline="", encoding="utf-8") as fp:
         fieldnames = list(payload[0].keys()) if payload else list(ProjectDailyMetricsRecord(
             report_date="",
-            average_ccu="",
             peak_ccu="",
             average_session_time="",
             day1_retention="",
@@ -83,6 +82,7 @@ def write_project_metrics_output(
             qptr="",
             five_minute_retention="",
             home_recommendations="",
+            client_crash_rate="",
             project_id="",
             source_url="",
             fetched_at="",

@@ -12,8 +12,7 @@ PROJECT_METRICS_SHEET_ID_VAR = "FEISHU_PROJECT_METRICS_SHEET_ID"
 DEFAULT_PROJECT_METRICS_SHEET_TITLE = "daily_metrics"
 PROJECT_METRICS_HEADERS = [
     "日期",
-    "平均CCU",
-    "峰值CCU",
+    "峰值PCU",
     "平均在线时长",
     "次留",
     "7留",
@@ -22,6 +21,7 @@ PROJECT_METRICS_HEADERS = [
     "QPTR",
     "五分钟留存",
     "Home Recommendation数量",
+    "报错率",
     "更新时间",
 ]
 
@@ -111,7 +111,6 @@ def build_project_metrics_values(record: ProjectDailyMetricsRecord) -> list[obje
 
     return [
         record.report_date,
-        record.average_ccu,
         record.peak_ccu,
         record.average_session_time,
         record.day1_retention,
@@ -121,6 +120,7 @@ def build_project_metrics_values(record: ProjectDailyMetricsRecord) -> list[obje
         record.qptr,
         record.five_minute_retention,
         record.home_recommendations,
+        record.client_crash_rate,
         record.fetched_at,
     ]
 
