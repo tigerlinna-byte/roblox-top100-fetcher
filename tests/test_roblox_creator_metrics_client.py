@@ -221,6 +221,75 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("5", records[0].peak_ccu)
         self.assertEqual("token-123", client._csrf_token)
 
+    def test_fetch_project_daily_metrics_polls_async_query_results(self) -> None:
+        session = Mock()
+        query_counts: dict[str, int] = {}
+
+        def request(method: str, url: str, **kwargs):
+            if method == "GET" and "feature-permissions" in url:
+                return _build_json_response({"userCanViewAnalyticsForUniverse": True})
+            if method == "GET" and "status-config" in url:
+                return _build_json_response({"annotationConfigurations": []})
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({
+                    "operation": {
+                        "done": True,
+                        "metricMetadataResult": {
+                            "metadata": [
+                                {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-12T00:00:00Z"},
+                                {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-12T00:00:00Z"},
+                                {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-12T00:00:00Z"},
+                            ]
+                        },
+                    }
+                })
+            if method == "POST" and "analytics-query-gateway" in url:
+                metric = kwargs["json"]["query"]["metric"]
+                query_counts[metric] = query_counts.get(metric, 0) + 1
+                if metric == "PeakConcurrentPlayers":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [{"time": "2026-03-12T00:00:00Z", "value": 12.2}]}))
+                if metric == "DailyCohortRetention":
+                    if query_counts[metric] == 1:
+                        return _build_json_response({"operation": {"path": "async-retention", "done": False}})
+                    return _build_json_response(_wrap_query_result([
+                        {
+                            "breakdownValue": [{"dimension": "CohortDay", "value": "1"}],
+                            "dataPoints": [{"time": "2026-03-10T00:00:00Z", "value": 0.0677}],
+                        }
+                    ]))
+                if metric == "UniqueUsersWithImpressions":
+                    if query_counts[metric] == 1:
+                        return _build_json_response({"operation": {"path": "async-home", "done": False}})
+                    return _build_json_response(_wrap_query_result([
+                        {
+                            "breakdownValue": [{"dimension": "AcquisitionSource", "value": "HomeRecommendation"}],
+                            "dataPoints": [{"time": "2026-03-10T00:00:00Z", "value": 584}],
+                        }
+                    ]))
+                return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=2,
+                retry_backoff_seconds=0,
+                feishu_timezone="Asia/Shanghai",
+            ),
+            session=session,
+        )
+
+        records = client.fetch_project_daily_metrics()
+        record_map = {record.report_date: record for record in records}
+
+        self.assertEqual("12", record_map["2026-03-12"].peak_ccu)
+        self.assertEqual("6.77%", record_map["2026-03-10"].day1_retention)
+        self.assertEqual("584", record_map["2026-03-10"].home_recommendations)
+        self.assertEqual(2, query_counts["DailyCohortRetention"])
+        self.assertEqual(2, query_counts["UniqueUsersWithImpressions"])
+
     def test_fetch_project_daily_metrics_writes_debug_snapshot_when_core_metrics_missing(self) -> None:
         session = Mock()
         output_dir = Path(".test-output")
