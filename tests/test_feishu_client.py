@@ -584,46 +584,6 @@ class FeishuClientTests(unittest.TestCase):
             read_kwargs["url"],
         )
 
-    def test_clear_sheet_values_uses_put_values_endpoint_with_empty_matrix(self) -> None:
-        session = Mock()
-
-        auth_response = Mock()
-        auth_response.status_code = 200
-        auth_response.json.return_value = {
-            "code": 0,
-            "tenant_access_token": "tenant-token",
-        }
-
-        clear_response = Mock()
-        clear_response.status_code = 200
-        clear_response.json.return_value = {"code": 0, "data": {}}
-
-        session.request.side_effect = [auth_response, clear_response]
-
-        client = FeishuClient(
-            Config(
-                feishu_app_id="cli_xxx",
-                feishu_app_secret="secret",
-                request_timeout_seconds=3,
-                retry_max_attempts=1,
-            ),
-            session=session,
-        )
-
-        client.clear_sheet_values("shtcn_sheet", "sheet001", start_cell="A2", end_column="L", end_row=365)
-
-        clear_kwargs = session.request.call_args_list[1].kwargs
-        self.assertEqual("PUT", clear_kwargs["method"])
-        self.assertEqual(
-            "https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/shtcn_sheet/values",
-            clear_kwargs["url"],
-        )
-        self.assertEqual("sheet001!A2:L365", clear_kwargs["json"]["valueRange"]["range"])
-        self.assertEqual(364, len(clear_kwargs["json"]["valueRange"]["values"]))
-        self.assertEqual(12, len(clear_kwargs["json"]["valueRange"]["values"][0]))
-        self.assertEqual("", clear_kwargs["json"]["valueRange"]["values"][0][0])
-        self.assertEqual("Bearer tenant-token", clear_kwargs["headers"]["Authorization"])
-
     def test_set_sheet_column_widths_skips_none_entries(self) -> None:
         session = Mock()
 

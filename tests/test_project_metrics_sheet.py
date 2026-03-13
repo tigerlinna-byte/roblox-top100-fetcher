@@ -5,6 +5,7 @@ import unittest
 from app.project_metrics_models import ProjectDailyMetricsRecord
 from app.project_metrics_sheet import (
     PROJECT_METRICS_HEADERS,
+    build_project_metrics_rebuild_rows,
     build_project_metrics_table,
     build_project_metrics_values,
 )
@@ -155,6 +156,33 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("130", table_state.rows[1][1])
         self.assertEqual("", table_state.rows[1][3])
         self.assertEqual("", table_state.rows[1][4])
+
+    def test_build_project_metrics_rebuild_rows_pads_blank_rows_to_fixed_height(self) -> None:
+        records = [
+            ProjectDailyMetricsRecord(
+                report_date="2026-03-12",
+                average_ccu="120",
+                peak_ccu="220",
+                average_session_time="12m",
+                day1_retention="32%",
+                day7_retention="12%",
+                payer_conversion_rate="2.2%",
+                arppu="$6.00",
+                qptr="4%",
+                five_minute_retention="37%",
+                home_recommendations="60",
+                project_id="9682356542",
+                source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                fetched_at="2026-03-12T01:02:03Z",
+            ),
+        ]
+
+        rows = build_project_metrics_rebuild_rows(records, total_rows=5)
+
+        self.assertEqual(5, len(rows))
+        self.assertEqual(PROJECT_METRICS_HEADERS, rows[0])
+        self.assertEqual("2026-03-12", rows[1][0])
+        self.assertEqual([""] * len(PROJECT_METRICS_HEADERS), rows[-1])
 
 
 if __name__ == "__main__":
