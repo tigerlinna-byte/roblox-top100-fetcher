@@ -121,7 +121,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         _wrap_query_result(
                             [
                                 {
-                                    "breakdownValue": [{"dimension": "AcquisitionSource", "value": "HomeRecommendation"}],
+                                    "breakdownValue": [{"dimension": "AcquisitionSource", "value": "Home Recommendation"}],
                                     "dataPoints": [
                                         {"time": "2026-03-10T00:00:00Z", "value": 584},
                                         {"time": "2026-03-11T00:00:00Z", "value": 610},
