@@ -84,6 +84,21 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                     return _build_json_response(
                         _wrap_query_result({"breakdownValue": [], "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 0.042}]})
                     )
+                if metric == "TotalSessionsEndedInBucket":
+                    return _build_json_response(
+                        _wrap_query_result(
+                            [
+                                {
+                                    "breakdownValue": [{"dimension": "SessionTimeBucket", "value": "0"}],
+                                    "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 1609}],
+                                },
+                                {
+                                    "breakdownValue": [{"dimension": "SessionTimeBucket", "value": "300"}],
+                                    "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 700}],
+                                },
+                            ]
+                        )
+                    )
                 if metric == "DailyActiveUsers":
                     return _build_json_response(
                         _wrap_query_result(
@@ -121,8 +136,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("2.5%", record.payer_conversion_rate)
         self.assertEqual("$8.90", record.arppu)
         self.assertEqual("4.2%", record.qptr)
+        self.assertEqual("43.51%", record.five_minute_retention)
         self.assertEqual("584", record.home_recommendations)
-        self.assertEqual("未获取", record.five_minute_retention)
 
     def test_fetch_project_daily_metrics_refreshes_xcsrf_token(self) -> None:
         session = Mock()
@@ -167,6 +182,89 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("3", record.average_ccu)
         self.assertEqual("5", record.peak_ccu)
         self.assertEqual("token-123", client._csrf_token)
+
+    def test_fetch_project_daily_metrics_maps_new_user_first_session_retention_alias(self) -> None:
+        session = Mock()
+
+        def request(method: str, url: str, **kwargs):
+            if method == "GET" and "feature-permissions" in url:
+                return _build_json_response({"userCanViewAnalyticsForUniverse": True})
+            if method == "GET" and "status-config" in url:
+                return _build_json_response({"annotationConfigurations": []})
+            if method == "POST" and "analytics-query-gateway" in url:
+                metric = kwargs["json"]["query"]["metric"]
+                if metric == "ConcurrentPlayers":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 3.0}]}))
+                if metric == "PeakConcurrentPlayers":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 5.0}]}))
+                return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
+            if method == "GET":
+                return _build_html_response("<html><body><div>New user first session retention</div><div>44%</div></body></html>")
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=1,
+                feishu_timezone="Asia/Shanghai",
+            ),
+            session=session,
+        )
+
+        record = client.fetch_project_daily_metrics()
+
+        self.assertEqual("44%", record.five_minute_retention)
+
+    def test_fetch_project_daily_metrics_derives_five_minute_retention_from_session_buckets(self) -> None:
+        session = Mock()
+
+        def request(method: str, url: str, **kwargs):
+            if method == "GET" and "feature-permissions" in url:
+                return _build_json_response({"userCanViewAnalyticsForUniverse": True})
+            if method == "GET" and "status-config" in url:
+                return _build_json_response({"annotationConfigurations": []})
+            if method == "POST" and "analytics-query-gateway" in url:
+                metric = kwargs["json"]["query"]["metric"]
+                if metric == "ConcurrentPlayers":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 3.0}]}))
+                if metric == "PeakConcurrentPlayers":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 5.0}]}))
+                if metric == "TotalSessionsEndedInBucket":
+                    return _build_json_response(
+                        _wrap_query_result(
+                            [
+                                {
+                                    "breakdownValue": [{"dimension": "SessionTimeBucket", "value": "0"}],
+                                    "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 1000}],
+                                },
+                                {
+                                    "breakdownValue": [{"dimension": "SessionTimeBucket", "value": "300"}],
+                                    "dataPoints": [{"time": "2026-03-11T00:00:00Z", "value": 420}],
+                                },
+                            ]
+                        )
+                    )
+                return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
+            if method == "GET":
+                return _build_html_response("<html><body></body></html>")
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=1,
+                feishu_timezone="Asia/Shanghai",
+            ),
+            session=session,
+        )
+
+        record = client.fetch_project_daily_metrics()
+
+        self.assertEqual("42%", record.five_minute_retention)
 
     def test_fetch_project_daily_metrics_writes_debug_snapshot_when_core_metrics_missing(self) -> None:
         session = Mock()
