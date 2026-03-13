@@ -153,7 +153,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         self.assertEqual(["2026-03-11", "2026-03-10", "2026-03-09"], [record.report_date for record in records])
         record_map = {record.report_date: record for record in records}
-        self.assertEqual("10.1", record_map["2026-03-11"].peak_ccu)
+        self.assertEqual("10", record_map["2026-03-11"].peak_ccu)
         self.assertEqual("15m 0s", record_map["2026-03-11"].average_session_time)
         self.assertEqual("", record_map["2026-03-11"].day1_retention)
         self.assertEqual("50%", record_map["2026-03-11"].five_minute_retention)
@@ -218,7 +218,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         records = client.fetch_project_daily_metrics()
 
-        self.assertEqual("5.0", records[0].peak_ccu)
+        self.assertEqual("5", records[0].peak_ccu)
         self.assertEqual("token-123", client._csrf_token)
 
     def test_fetch_project_daily_metrics_writes_debug_snapshot_when_core_metrics_missing(self) -> None:
