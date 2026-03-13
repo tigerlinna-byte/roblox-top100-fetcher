@@ -168,7 +168,7 @@ class QueryAttempt:
 DIRECT_QUERY_SPECS = (
     MetricQuerySpec("average_ccu", "ConcurrentPlayers", "METRIC_GRANULARITY_ONE_HOUR", 14, "daily_average"),
     MetricQuerySpec("peak_ccu", "PeakConcurrentPlayers", "METRIC_GRANULARITY_ONE_HOUR", 14, "daily_max"),
-    MetricQuerySpec("average_session_time", "AverageSessionLengthMinutes", "METRIC_GRANULARITY_ONE_DAY", 14, "minutes"),
+    MetricQuerySpec("average_session_time", "AveragePlayTimeMinutesPerDAU", "METRIC_GRANULARITY_ONE_DAY", 14, "minutes"),
     MetricQuerySpec("payer_conversion_rate", "PayingUsersCVR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("arppu", "AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
     MetricQuerySpec("qptr", "RFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),

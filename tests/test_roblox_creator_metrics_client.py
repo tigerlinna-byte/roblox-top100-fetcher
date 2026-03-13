@@ -39,6 +39,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         "metricMetadataResult": {
                             "metadata": [
                                 {"metric": "AverageSessionLengthMinutes", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
@@ -72,7 +73,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             ]}
                         )
                     )
-                if metric == "AverageSessionLengthMinutes":
+                if metric == "AveragePlayTimeMinutesPerDAU":
                     return _build_json_response(
                         _wrap_query_result({"breakdownValue": [], "dataPoints": [
                             {"time": "2026-03-10T00:00:00Z", "value": 12.5},
@@ -191,6 +192,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         "metricMetadataResult": {
                             "metadata": [
                                 {"metric": "AverageSessionLengthMinutes", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
