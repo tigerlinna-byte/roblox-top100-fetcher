@@ -134,7 +134,7 @@ function resolveScheduledTrigger(env, cron) {
     };
   }
 
-  if (cron === "0 19 * * *") {
+  if (cron === "11 19 * * *") {
     return {
       triggerSource: "cloudflare_cron",
       triggerActor: "cloudflare-cron",
