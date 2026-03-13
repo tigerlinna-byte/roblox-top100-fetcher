@@ -151,11 +151,7 @@ def _merge_single_record(rows: list[list[object]], record: ProjectDailyMetricsRe
         if index == 0:
             current_row[index] = text
             continue
-        if index == len(row_values) - 1:
-            current_row[index] = text
-            continue
-        if text:
-            current_row[index] = text
+        current_row[index] = text
     rows[target_index] = current_row
 
 

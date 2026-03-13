@@ -32,6 +32,22 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({
+                    "operation": {
+                        "done": True,
+                        "metricMetadataResult": {
+                            "metadata": [
+                                {"metric": "AverageSessionLengthMinutes", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "DailyActiveUsers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                            ]
+                        },
+                    }
+                })
             if method == "POST" and "analytics-query-gateway" in url:
                 metric = kwargs["json"]["query"]["metric"]
                 if metric == "ConcurrentPlayers":
@@ -61,17 +77,29 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         _wrap_query_result({"breakdownValue": [], "dataPoints": [
                             {"time": "2026-03-10T00:00:00Z", "value": 12.5},
                             {"time": "2026-03-11T00:00:00Z", "value": 15.0},
+                            {"time": "2026-03-12T00:00:00Z", "value": 18.0},
                         ]})
                     )
-                if metric == "D1Retention":
+                if metric == "DailyCohortRetention":
                     return _build_json_response(
-                        _wrap_query_result({"breakdownValue": [], "dataPoints": [
-                            {"time": "2026-03-10T00:00:00Z", "value": 0.312},
-                            {"time": "2026-03-11T00:00:00Z", "value": 0.425},
-                        ]})
+                        _wrap_query_result([
+                            {
+                                "breakdownValue": [{"dimension": "CohortDay", "value": "1"}],
+                                "dataPoints": [
+                                    {"time": "2026-03-09T00:00:00Z", "value": 0.0758},
+                                    {"time": "2026-03-10T00:00:00Z", "value": 0.0677},
+                                    {"time": "2026-03-11T00:00:00Z", "value": 0.0811},
+                                ],
+                            },
+                            {
+                                "breakdownValue": [{"dimension": "CohortDay", "value": "7"}],
+                                "dataPoints": [
+                                    {"time": "2026-03-04T00:00:00Z", "value": 0.0061},
+                                    {"time": "2026-03-05T00:00:00Z", "value": 0.0070},
+                                ],
+                            },
+                        ])
                     )
-                if metric == "D7Retention":
-                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
                 if metric == "PayingUsersCVR":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
                 if metric == "AverageRevenuePerPayingUser":
@@ -129,15 +157,19 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         records = client.fetch_project_daily_metrics()
 
-        self.assertEqual(["2026-03-11", "2026-03-10", "2026-03-09"], [record.report_date for record in records])
+        self.assertEqual(["2026-03-11", "2026-03-10"], [record.report_date for record in records])
         record_map = {record.report_date: record for record in records}
         self.assertEqual("6", record_map["2026-03-11"].average_ccu)
         self.assertEqual("10", record_map["2026-03-11"].peak_ccu)
         self.assertEqual("15m 0s", record_map["2026-03-11"].average_session_time)
+        self.assertEqual("", record_map["2026-03-11"].day1_retention)
         self.assertEqual("50%", record_map["2026-03-11"].five_minute_retention)
         self.assertEqual("610", record_map["2026-03-11"].home_recommendations)
-        self.assertEqual("42.5%", record_map["2026-03-10"].day1_retention)
-        self.assertEqual("31.2%", record_map["2026-03-09"].day1_retention)
+        self.assertEqual("6.77%", record_map["2026-03-10"].day1_retention)
+        self.assertEqual("", record_map["2026-03-10"].day7_retention)
+        self.assertNotIn("2026-03-09", record_map)
+        self.assertNotIn("2026-03-04", record_map)
+        self.assertNotIn("2026-03-13", record_map)
 
     def test_fetch_project_daily_metrics_refreshes_xcsrf_token(self) -> None:
         session = Mock()
@@ -152,6 +184,22 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({
+                    "operation": {
+                        "done": True,
+                        "metricMetadataResult": {
+                            "metadata": [
+                                {"metric": "AverageSessionLengthMinutes", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "DailyActiveUsers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                            ]
+                        },
+                    }
+                })
             if method == "POST" and "analytics-query-gateway" in url:
                 metric = kwargs["json"]["query"]["metric"]
                 token = kwargs["headers"].get("x-csrf-token", "")
@@ -192,6 +240,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         def request(method: str, url: str, **kwargs):
             if method == "GET" and ("feature-permissions" in url or "status-config" in url):
                 return _build_json_response({})
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({"operation": {"done": True, "metricMetadataResult": {"metadata": []}}})
             if method == "POST" and "analytics-query-gateway" in url:
                 return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
             raise AssertionError(f"unexpected request: {method} {url}")

@@ -126,10 +126,10 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("13m", table_state.rows[2][3])
         self.assertEqual("90", table_state.rows[3][1])
 
-    def test_build_project_metrics_table_keeps_existing_value_when_new_value_missing(self) -> None:
+    def test_build_project_metrics_table_clears_existing_value_when_new_value_missing(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11", "100", "200", "15m", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
+            ["2026-03-11", "100", "200", "15m", "31%", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
@@ -137,7 +137,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
                 average_ccu="130",
                 peak_ccu="230",
                 average_session_time="",
-                day1_retention="33%",
+                day1_retention="",
                 day7_retention="",
                 payer_conversion_rate="",
                 arppu="",
@@ -153,7 +153,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         table_state = build_project_metrics_table(existing_rows, records)
 
         self.assertEqual("130", table_state.rows[1][1])
-        self.assertEqual("15m", table_state.rows[1][3])
+        self.assertEqual("", table_state.rows[1][3])
+        self.assertEqual("", table_state.rows[1][4])
 
 
 if __name__ == "__main__":
