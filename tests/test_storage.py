@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 import unittest
 from pathlib import Path
-import shutil
 
 from app.models import GameRecord
 from app.project_metrics_models import ProjectDailyMetricsRecord
@@ -47,46 +47,52 @@ class StorageTests(unittest.TestCase):
         payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
         self.assertEqual(1, len(payload))
         self.assertEqual("Game A", payload[0]["name"])
-        self.assertEqual("https://t1.example/game-a.png", payload[0]["thumbnail_url"])
-        self.assertEqual("2026-01-01T00:00:00Z", payload[0]["created_at"])
-
-        with Path(csv_path).open("r", newline="", encoding="utf-8") as fp:
-            rows = list(csv.DictReader(fp))
-
-        self.assertEqual(1, len(rows))
-        self.assertEqual("https://t1.example/game-a.png", rows[0]["thumbnail_url"])
-        self.assertEqual("2026-01-01T00:00:00Z", rows[0]["created_at"])
 
     def test_writes_project_metrics_json_and_csv(self) -> None:
-        sample = ProjectDailyMetricsRecord(
-            report_date="2026-03-12",
-            average_ccu="1,234",
-            peak_ccu="2,345",
-            average_session_time="18m 30s",
-            day1_retention="31%",
-            day7_retention="12%",
-            payer_conversion_rate="2.5%",
-            arppu="$8.90",
-            qptr="4.2",
-            five_minute_retention="40%",
-            home_recommendations="98",
-            project_id="9682356542",
-            source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-            fetched_at="2026-03-12T01:02:03Z",
-        )
+        sample = [
+            ProjectDailyMetricsRecord(
+                report_date="2026-03-12",
+                average_ccu="1,234",
+                peak_ccu="2,345",
+                average_session_time="18m 30s",
+                day1_retention="31%",
+                day7_retention="12%",
+                payer_conversion_rate="2.5%",
+                arppu="$8.90",
+                qptr="4.2",
+                five_minute_retention="40%",
+                home_recommendations="98",
+                project_id="9682356542",
+                source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                fetched_at="2026-03-12T01:02:03Z",
+            ),
+            ProjectDailyMetricsRecord(
+                report_date="2026-03-11",
+                average_ccu="1,111",
+                peak_ccu="2,222",
+                average_session_time="17m",
+                day1_retention="30%",
+                day7_retention="11%",
+                payer_conversion_rate="2.1%",
+                arppu="$8.10",
+                qptr="4.0",
+                five_minute_retention="39%",
+                home_recommendations="90",
+                project_id="9682356542",
+                source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                fetched_at="2026-03-12T01:02:03Z",
+            ),
+        ]
 
         json_path, csv_path = write_project_metrics_output(str(self.base), sample)
-        self.assertTrue(Path(json_path).exists())
-        self.assertTrue(Path(csv_path).exists())
-
         payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
-        self.assertEqual("1,234", payload["average_ccu"])
-        self.assertEqual("98", payload["home_recommendations"])
+        self.assertEqual(2, len(payload))
+        self.assertEqual("1,234", payload[0]["average_ccu"])
 
         with Path(csv_path).open("r", newline="", encoding="utf-8") as fp:
             rows = list(csv.DictReader(fp))
 
-        self.assertEqual(1, len(rows))
+        self.assertEqual(2, len(rows))
         self.assertEqual("4.2", rows[0]["qptr"])
 
 

@@ -52,8 +52,6 @@ class ProjectMetricsTableState:
     """表示项目日报表当前的二维表内容。"""
 
     rows: list[list[object]]
-    updated_row_index: int
-    was_updated: bool = True
 
 
 def resolve_project_metrics_variables(cfg: Config) -> ProjectMetricsSheetVariables:
@@ -129,31 +127,46 @@ def build_project_metrics_values(record: ProjectDailyMetricsRecord) -> list[obje
 
 def build_project_metrics_table(
     existing_rows: list[list[object]],
-    record: ProjectDailyMetricsRecord,
+    records: list[ProjectDailyMetricsRecord],
 ) -> ProjectMetricsTableState:
-    """将单日指标按日期写入已有表格内容。"""
+    """将最近窗口内的项目指标合并到已有表格中。"""
 
     normalized_rows = _normalize_existing_rows(existing_rows)
-    data_row = build_project_metrics_values(record)
-    target_index = _find_report_date_row(normalized_rows, record.report_date)
+    for record in sorted(records, key=lambda item: item.report_date):
+        _merge_single_record(normalized_rows, record)
+    return ProjectMetricsTableState(rows=normalized_rows)
 
-    if target_index is not None:
-        normalized_rows[target_index] = data_row
-        return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=target_index + 1)
 
-    existing_dates = _extract_existing_report_dates(normalized_rows)
-    if not existing_dates:
-        normalized_rows.append(data_row)
-        return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=2)
+def _merge_single_record(rows: list[list[object]], record: ProjectDailyMetricsRecord) -> None:
+    date_to_index = _build_date_index(rows)
+    row_values = build_project_metrics_values(record)
+    target_index = date_to_index.get(record.report_date)
+    if target_index is None:
+        target_index = _resolve_insert_index(rows, record.report_date)
+        rows.insert(target_index, [""] * len(PROJECT_METRICS_HEADERS))
 
-    latest_date = existing_dates[0]
-    oldest_date = existing_dates[-1]
-    if record.report_date > latest_date:
-        normalized_rows.insert(1, data_row)
-        return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=2)
-    if record.report_date < oldest_date:
-        return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=0, was_updated=False)
-    return ProjectMetricsTableState(rows=normalized_rows, updated_row_index=0, was_updated=False)
+    current_row = list(rows[target_index])
+    for index, value in enumerate(row_values):
+        text = str(value) if value is not None else ""
+        if index == 0:
+            current_row[index] = text
+            continue
+        if index == len(row_values) - 1:
+            current_row[index] = text
+            continue
+        if text:
+            current_row[index] = text
+    rows[target_index] = current_row
+
+
+def _resolve_insert_index(rows: list[list[object]], report_date: str) -> int:
+    for index, row in enumerate(rows[1:], start=1):
+        current_date = str(row[0]).strip()
+        if not _is_iso_date_string(current_date):
+            continue
+        if report_date > current_date:
+            return index
+    return len(rows)
 
 
 def _normalize_existing_rows(existing_rows: list[list[object]]) -> list[list[object]]:
@@ -166,8 +179,12 @@ def _normalize_existing_rows(existing_rows: list[list[object]]) -> list[list[obj
     return rows
 
 
-def _extract_existing_report_dates(rows: list[list[object]]) -> list[str]:
-    return [str(row[0]).strip() for row in rows[1:] if _is_iso_date_string(str(row[0]).strip())]
+def _build_date_index(rows: list[list[object]]) -> dict[str, int]:
+    return {
+        str(row[0]).strip(): index
+        for index, row in enumerate(rows[1:], start=1)
+        if _is_iso_date_string(str(row[0]).strip())
+    }
 
 
 def _is_iso_date_string(value: str) -> bool:
@@ -175,10 +192,3 @@ def _is_iso_date_string(value: str) -> bool:
     if len(parts) != 3:
         return False
     return all(part.isdigit() for part in parts) and len(parts[0]) == 4 and len(parts[1]) == 2 and len(parts[2]) == 2
-
-
-def _find_report_date_row(rows: list[list[object]], report_date: str) -> int | None:
-    for index, row in enumerate(rows[1:], start=1):
-        if str(row[0]).strip() == report_date:
-            return index
-    return None

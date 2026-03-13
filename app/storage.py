@@ -55,7 +55,7 @@ def write_outputs(
 
 def write_project_metrics_output(
     output_dir: str,
-    record: ProjectDailyMetricsRecord,
+    records: list[ProjectDailyMetricsRecord],
     *,
     prefix: str = "project_metrics",
 ) -> tuple[Path, Path]:
@@ -67,12 +67,29 @@ def write_project_metrics_output(
     date_str = datetime.now().strftime("%Y-%m-%d")
     json_path = target / f"{prefix}_{date_str}.json"
     csv_path = target / f"{prefix}_{date_str}.csv"
-    payload = record.to_dict()
+    payload = [record.to_dict() for record in records]
 
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     with csv_path.open("w", newline="", encoding="utf-8") as fp:
-        writer = csv.DictWriter(fp, fieldnames=list(payload.keys()))
+        fieldnames = list(payload[0].keys()) if payload else list(ProjectDailyMetricsRecord(
+            report_date="",
+            average_ccu="",
+            peak_ccu="",
+            average_session_time="",
+            day1_retention="",
+            day7_retention="",
+            payer_conversion_rate="",
+            arppu="",
+            qptr="",
+            five_minute_retention="",
+            home_recommendations="",
+            project_id="",
+            source_url="",
+            fetched_at="",
+        ).to_dict().keys())
+        writer = csv.DictWriter(fp, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerow(payload)
+        for row in payload:
+            writer.writerow(row)
 
     return json_path, csv_path

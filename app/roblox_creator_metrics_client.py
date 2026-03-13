@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import requests
 
 from .config import Config
-from .project_metrics_models import ProjectDailyMetricsRecord, now_iso
+from .project_metrics_models import ProjectDailyMetricsRecord, get_project_start_date, now_iso
 from .retry import with_retry
 
 
@@ -185,16 +185,16 @@ DIRECT_QUERY_FALLBACK_SPECS = (
 FIVE_MINUTE_RETENTION_SPEC = MetricQuerySpec(
     "five_minute_retention",
     "TotalSessionsEndedInBucket",
-    "METRIC_GRANULARITY_NONE",
-    28,
+    "METRIC_GRANULARITY_ONE_DAY",
+    10,
     "session_bucket_ratio",
     breakdown_dimensions=("SessionTimeBucket",),
 )
 HOME_RECOMMENDATIONS_SPEC = MetricQuerySpec(
     "home_recommendations",
     "DailyActiveUsers",
-    "METRIC_GRANULARITY_NONE",
-    7,
+    "METRIC_GRANULARITY_ONE_DAY",
+    10,
     "breakdown_count",
     breakdown_dimensions=("AcquisitionSource",),
     filters=({"dimension": "IsNewUser", "values": ["New"], "operation": "FILTER_OPERATION_CONTAINS"},),
@@ -243,8 +243,8 @@ class RobloxCreatorMetricsClient:
         if self.session is None:
             self.session = requests.Session()
 
-    def fetch_project_daily_metrics(self) -> ProjectDailyMetricsRecord:
-        """抓取项目 overview 页面，并提取日报所需指标。"""
+    def fetch_project_daily_metrics(self) -> list[ProjectDailyMetricsRecord]:
+        """抓取项目最近窗口内的真实日期指标序列。"""
 
         overview_url = self.config.roblox_creator_overview_url.strip()
         if not overview_url:
@@ -253,69 +253,80 @@ class RobloxCreatorMetricsClient:
             raise RobloxCreatorMetricsClientError("ROBLOX_CREATOR_COOKIE 未配置")
 
         project_id = _extract_project_id(overview_url)
-        direct_attempts: list[QueryAttempt] = []
-        metrics = self._fetch_direct_metrics(project_id, direct_attempts)
-        html_text = ""
-        if _has_missing_metrics(metrics):
-            html_text = self._fetch_overview_html(overview_url)
-            html_metrics = self._extract_metrics_from_html(html_text)
-            for key, value in html_metrics.items():
-                metrics.setdefault(key, value)
+        window = _resolve_project_query_window(project_id)
+        if window is None:
+            return []
 
-        minimum_missing = [field_name for field_name in MINIMUM_REQUIRED_FIELDS if not metrics.get(field_name)]
-        missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if not metrics.get(definition.field_name)]
+        start_time, end_time = window
+        direct_attempts: list[QueryAttempt] = []
+        metrics_by_field = self._fetch_direct_metrics(project_id, start_time, end_time, direct_attempts)
+        minimum_missing = [field_name for field_name in MINIMUM_REQUIRED_FIELDS if not metrics_by_field.get(field_name)]
+        missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if not metrics_by_field.get(definition.field_name)]
         debug_path = ""
         if missing_fields:
-            debug_path = self._write_debug_snapshot(html_text, metrics, missing_fields, direct_attempts)
+            debug_path = self._write_debug_snapshot("", metrics_by_field, missing_fields, direct_attempts)
         if minimum_missing:
             raise RobloxCreatorMetricsClientError(
                 "Creator overview 页面缺少核心指标: "
                 + ", ".join(minimum_missing)
                 + (f"；已输出调试样本: {debug_path}" if debug_path else "")
             )
-        for definition in METRIC_DEFINITIONS:
-            metrics.setdefault(definition.field_name, MISSING_METRIC_PLACEHOLDER)
 
-        report_date = _resolve_report_date(self.config.feishu_timezone)
-        return ProjectDailyMetricsRecord(
-            report_date=report_date,
-            average_ccu=metrics["average_ccu"],
-            peak_ccu=metrics["peak_ccu"],
-            average_session_time=metrics["average_session_time"],
-            day1_retention=metrics["day1_retention"],
-            day7_retention=metrics["day7_retention"],
-            payer_conversion_rate=metrics["payer_conversion_rate"],
-            arppu=metrics["arppu"],
-            qptr=metrics["qptr"],
-            five_minute_retention=metrics["five_minute_retention"],
-            home_recommendations=metrics["home_recommendations"],
-            project_id=project_id,
-            source_url=overview_url,
-            fetched_at=now_iso(),
+        report_dates = sorted(
+            {report_date for series in metrics_by_field.values() for report_date in series.keys()},
+            reverse=True,
         )
+        fetched_at = now_iso()
+        records: list[ProjectDailyMetricsRecord] = []
+        for report_date in report_dates:
+            records.append(
+                ProjectDailyMetricsRecord(
+                    report_date=report_date,
+                    average_ccu=metrics_by_field.get("average_ccu", {}).get(report_date, ""),
+                    peak_ccu=metrics_by_field.get("peak_ccu", {}).get(report_date, ""),
+                    average_session_time=metrics_by_field.get("average_session_time", {}).get(report_date, ""),
+                    day1_retention=metrics_by_field.get("day1_retention", {}).get(report_date, ""),
+                    day7_retention=metrics_by_field.get("day7_retention", {}).get(report_date, ""),
+                    payer_conversion_rate=metrics_by_field.get("payer_conversion_rate", {}).get(report_date, ""),
+                    arppu=metrics_by_field.get("arppu", {}).get(report_date, ""),
+                    qptr=metrics_by_field.get("qptr", {}).get(report_date, ""),
+                    five_minute_retention=metrics_by_field.get("five_minute_retention", {}).get(report_date, ""),
+                    home_recommendations=metrics_by_field.get("home_recommendations", {}).get(report_date, ""),
+                    project_id=project_id,
+                    source_url=overview_url,
+                    fetched_at=fetched_at,
+                )
+            )
+        return records
 
-    def _fetch_direct_metrics(self, project_id: str, attempts: list[QueryAttempt]) -> dict[str, str]:
-        """优先通过真实内部 analytics 接口抓取指标。"""
+    def _fetch_direct_metrics(
+        self,
+        project_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        attempts: list[QueryAttempt],
+    ) -> dict[str, dict[str, str]]:
+        """优先通过真实内部 analytics 接口抓取最近窗口内的日期序列。"""
 
-        metrics: dict[str, str] = {}
+        metrics: dict[str, dict[str, str]] = {}
         self._fetch_feature_permissions(project_id, attempts)
         self._fetch_status_config(project_id, attempts)
 
         for spec in DIRECT_QUERY_SPECS:
-            value = self._query_metric_value(project_id, spec, attempts)
-            if value:
-                metrics[spec.field_name] = value
+            series = self._query_metric_series(project_id, spec, start_time, end_time, attempts)
+            if series:
+                metrics[spec.field_name] = series
         for spec in DIRECT_QUERY_FALLBACK_SPECS:
             if metrics.get(spec.field_name):
                 continue
-            value = self._query_metric_value(project_id, spec, attempts)
-            if value:
-                metrics[spec.field_name] = value
+            series = self._query_metric_series(project_id, spec, start_time, end_time, attempts)
+            if series:
+                metrics[spec.field_name] = series
         if not metrics.get("five_minute_retention"):
-            value = self._query_metric_value(project_id, FIVE_MINUTE_RETENTION_SPEC, attempts)
-            if value:
-                metrics["five_minute_retention"] = value
-        home_recommendations = self._query_home_recommendations(project_id, attempts)
+            series = self._query_metric_series(project_id, FIVE_MINUTE_RETENTION_SPEC, start_time, end_time, attempts)
+            if series:
+                metrics["five_minute_retention"] = series
+        home_recommendations = self._query_metric_series(project_id, HOME_RECOMMENDATIONS_SPEC, start_time, end_time, attempts)
         if home_recommendations:
             metrics["home_recommendations"] = home_recommendations
         return metrics
@@ -342,54 +353,35 @@ class RobloxCreatorMetricsClient:
             return
         attempts.append(QueryAttempt("status_config", url, "GET", "ok", "", _truncate_json(payload)))
 
-    def _query_metric_value(self, project_id: str, spec: MetricQuerySpec, attempts: list[QueryAttempt]) -> str:
-        """按指标配置请求 analytics-query-gateway，并返回格式化后的值。"""
+    def _query_metric_series(
+        self,
+        project_id: str,
+        spec: MetricQuerySpec,
+        start_time: datetime,
+        end_time: datetime,
+        attempts: list[QueryAttempt],
+    ) -> dict[str, str]:
+        """按指标配置请求 analytics-query-gateway，并返回按日期组织的值。"""
 
         url = ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE.format(resource_type=ANALYTICS_RESOURCE_TYPE, resource_id=project_id)
-        request_payload = self._build_metric_request_payload(project_id, spec)
+        request_payload = self._build_metric_request_payload(project_id, spec, start_time, end_time)
         try:
             payload = self._request_json("POST", url, json_body=request_payload)
         except RobloxCreatorMetricsClientError as exc:
             attempts.append(QueryAttempt(spec.metric, url, "POST", f"error: {exc}", _truncate_json(request_payload), ""))
-            return ""
+            return {}
         attempts.append(QueryAttempt(spec.metric, url, "POST", "ok", _truncate_json(request_payload), _truncate_json(payload)))
-        return self._extract_metric_value_from_query_result(payload, spec)
+        return self._extract_metric_series_from_query_result(payload, spec)
 
-    def _query_home_recommendations(self, project_id: str, attempts: list[QueryAttempt]) -> str:
-        """抓取 Home Recommendation 数量。"""
-
-        url = ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE.format(resource_type=ANALYTICS_RESOURCE_TYPE, resource_id=project_id)
-        request_payload = self._build_metric_request_payload(project_id, HOME_RECOMMENDATIONS_SPEC)
-        try:
-            payload = self._request_json("POST", url, json_body=request_payload)
-        except RobloxCreatorMetricsClientError as exc:
-            attempts.append(QueryAttempt(HOME_RECOMMENDATIONS_SPEC.metric, url, "POST", f"error: {exc}", _truncate_json(request_payload), ""))
-            return ""
-        attempts.append(QueryAttempt(HOME_RECOMMENDATIONS_SPEC.metric, url, "POST", "ok", _truncate_json(request_payload), _truncate_json(payload)))
-        values = self._extract_query_values(payload)
-        latest_candidates: list[tuple[datetime, float]] = []
-        for series in values:
-            breakdown_values = series.get("breakdownValue", [])
-            if not _contains_breakdown_value(breakdown_values, "HomeRecommendation"):
-                continue
-            for point in series.get("dataPoints", []):
-                if not isinstance(point, dict):
-                    continue
-                parsed = _parse_iso_datetime(str(point.get("time", "")))
-                numeric = _coerce_numeric(point.get("value"))
-                if parsed is None or numeric is None:
-                    continue
-                latest_candidates.append((parsed, numeric))
-        if not latest_candidates:
-            return ""
-        latest_candidates.sort(key=lambda item: item[0])
-        return _format_count(latest_candidates[-1][1])
-
-    def _build_metric_request_payload(self, project_id: str, spec: MetricQuerySpec) -> dict[str, object]:
+    def _build_metric_request_payload(
+        self,
+        project_id: str,
+        spec: MetricQuerySpec,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> dict[str, object]:
         """组装 direct analytics 请求体。"""
 
-        end_time = _utc_midnight_now()
-        start_time = end_time - timedelta(days=spec.lookback_days)
         query: dict[str, object] = {
             "metric": spec.metric,
             "granularity": spec.granularity,
@@ -403,34 +395,33 @@ class RobloxCreatorMetricsClient:
             query["limit"] = spec.limit
         return {"resourceType": ANALYTICS_RESOURCE_TYPE, "resourceId": project_id, "query": query}
 
-    def _extract_metric_value_from_query_result(self, payload: object, spec: MetricQuerySpec) -> str:
-        """从 queryResult 中抽取并格式化单个指标。"""
+    def _extract_metric_series_from_query_result(self, payload: object, spec: MetricQuerySpec) -> dict[str, str]:
+        """从 queryResult 中抽取并格式化按日期组织的指标序列。"""
 
         values = self._extract_query_values(payload)
+        if spec.value_type == "session_bucket_ratio":
+            return _format_series(_extract_session_bucket_retention_series(values, threshold_seconds=300), _format_ratio)
+        if spec.value_type == "breakdown_count":
+            return _format_series(_extract_breakdown_daily_counts(values, "HomeRecommendation"), _format_count)
+
         datapoints = _flatten_numeric_datapoints(values)
         if not datapoints:
-            return ""
+            return {}
         if spec.value_type == "daily_average":
-            return _format_count(_latest_day_average(datapoints))
+            return _format_series(_aggregate_daily_values(datapoints, "average"), _format_count)
         if spec.value_type == "daily_max":
-            return _format_count(_latest_day_max(datapoints))
-        if spec.value_type == "session_bucket_ratio":
-            ratio = _extract_session_bucket_retention_ratio(values, threshold_seconds=300)
-            if ratio is None:
-                return ""
-            return _format_ratio(ratio)
-        latest_value = _latest_value(datapoints)
-        if latest_value is None:
-            return ""
+            return _format_series(_aggregate_daily_values(datapoints, "max"), _format_count)
+
+        latest_values = _aggregate_daily_values(datapoints, "latest")
         if spec.value_type == "ratio":
-            return _format_ratio(latest_value)
+            return _format_series(latest_values, _format_ratio)
         if spec.value_type == "currency":
-            return _format_currency(latest_value)
+            return _format_series(latest_values, _format_currency)
         if spec.value_type == "minutes":
-            return _format_duration_from_minutes(latest_value)
+            return _format_series(latest_values, _format_duration_from_minutes)
         if spec.value_type == "seconds":
-            return _format_duration_from_seconds(latest_value)
-        return _normalize_metric_value(str(latest_value))
+            return _format_series(latest_values, _format_duration_from_seconds)
+        return _format_series(latest_values, lambda value: _normalize_metric_value(str(value)))
 
     def _extract_query_values(self, payload: object) -> list[dict[str, object]]:
         """从 analytics gateway 响应中提取 values 列表。"""
@@ -857,13 +848,6 @@ def _normalize_metric_value(value: str) -> str:
     return normalized
 
 
-def _resolve_report_date(timezone_name: str) -> str:
-    try:
-        return datetime.now(ZoneInfo(timezone_name)).date().isoformat()
-    except ZoneInfoNotFoundError:
-        return datetime.now().date().isoformat()
-
-
 def _is_retryable_exception(exc: Exception) -> bool:
     if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
         return True
@@ -1012,6 +996,70 @@ def _extract_session_bucket_seconds(breakdown_values: object) -> int | None:
         except ValueError:
             return None
     return None
+
+
+def _resolve_project_query_window(project_id: str) -> tuple[datetime, datetime] | None:
+    end_time = _utc_midnight_now()
+    end_date = (end_time - timedelta(days=1)).date()
+    start_date = end_date - timedelta(days=9)
+    project_start_date = get_project_start_date(project_id)
+    if project_start_date is not None and project_start_date > start_date:
+        start_date = project_start_date
+    if start_date > end_date:
+        return None
+    start_time = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+    return start_time, end_time
+
+
+def _aggregate_daily_values(datapoints: list[tuple[datetime, float]], mode: str) -> dict[str, float]:
+    grouped: dict[str, list[float]] = {}
+    for timestamp, value in datapoints:
+        grouped.setdefault(timestamp.date().isoformat(), []).append(value)
+    if mode == "average":
+        return {report_date: sum(values) / len(values) for report_date, values in grouped.items() if values}
+    if mode == "max":
+        return {report_date: max(values) for report_date, values in grouped.items() if values}
+    return {report_date: values[-1] for report_date, values in grouped.items() if values}
+
+
+def _format_series(series: dict[str, float], formatter) -> dict[str, str]:
+    return {report_date: formatter(value) for report_date, value in sorted(series.items())}
+
+
+def _extract_session_bucket_retention_series(values: list[dict[str, object]], threshold_seconds: int) -> dict[str, float]:
+    bucket_counts_by_date: dict[str, dict[int, float]] = {}
+    for series in values:
+        bucket_seconds = _extract_session_bucket_seconds(series.get("breakdownValue", []))
+        if bucket_seconds is None:
+            continue
+        for timestamp, value in _flatten_numeric_datapoints([series]):
+            report_date = timestamp.date().isoformat()
+            bucket_counts_by_date.setdefault(report_date, {})[bucket_seconds] = value
+
+    ratios: dict[str, float] = {}
+    for report_date, bucket_counts in bucket_counts_by_date.items():
+        if not bucket_counts:
+            continue
+        base_bucket = min(bucket_counts)
+        denominator = bucket_counts.get(base_bucket)
+        if denominator is None or denominator <= 0:
+            continue
+        retained_bucket = min(bucket_counts, key=lambda bucket: (abs(bucket - threshold_seconds), bucket))
+        numerator = bucket_counts.get(retained_bucket)
+        if numerator is None or numerator < 0:
+            continue
+        ratios[report_date] = numerator / denominator
+    return ratios
+
+
+def _extract_breakdown_daily_counts(values: list[dict[str, object]], expected_value: str) -> dict[str, float]:
+    counts: dict[str, float] = {}
+    for series in values:
+        if not _contains_breakdown_value(series.get("breakdownValue", []), expected_value):
+            continue
+        for timestamp, value in _flatten_numeric_datapoints([series]):
+            counts[timestamp.date().isoformat()] = counts.get(timestamp.date().isoformat(), 0.0) + value
+    return counts
 
 
 def _utc_midnight_now() -> datetime:
