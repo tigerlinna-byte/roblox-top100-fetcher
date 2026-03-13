@@ -530,7 +530,7 @@ class RobloxCreatorMetricsClient:
             )
         if spec.value_type == "breakdown_count":
             return _format_series(
-                _extract_breakdown_daily_counts(values, "HomeRecommendation", business_timezone),
+                _extract_breakdown_daily_counts(values, "Home Recommendation", business_timezone),
                 _format_count,
             )
         if spec.value_type == "cohort_retention_ratio":
