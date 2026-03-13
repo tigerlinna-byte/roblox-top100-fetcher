@@ -89,3 +89,14 @@ jobs:
         with:
           name: roblox-top100-data
           path: data/
+
+      - name: Upload project metrics artifacts
+        if: always() && env.RUN_REPORT_MODE == 'roblox_project_daily_metrics'
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-metrics-data
+          if-no-files-found: warn
+          path: |
+            data/project_metrics_*.json
+            data/project_metrics_*.csv
+            data/creator_overview_debug.json

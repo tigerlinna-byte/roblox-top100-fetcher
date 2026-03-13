@@ -544,6 +544,8 @@ class RobloxCreatorMetricsClient:
             return _format_series(_aggregate_daily_values(datapoints, "max", business_timezone), _format_count)
 
         latest_values = _aggregate_daily_values(datapoints, "latest", business_timezone)
+        if spec.value_type == "integer":
+            return _format_series(latest_values, _format_count)
         if spec.value_type == "ratio":
             return _format_series(latest_values, _format_ratio)
         if spec.value_type == "currency":
