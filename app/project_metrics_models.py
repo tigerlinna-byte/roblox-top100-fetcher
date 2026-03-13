@@ -1,8 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
+
+
+PROJECT_START_DATES = {
+    "9682356542": "2026-03-10",
+}
+PROJECT_METRICS_FIELD_NAMES = (
+    "average_ccu",
+    "peak_ccu",
+    "average_session_time",
+    "day1_retention",
+    "day7_retention",
+    "payer_conversion_rate",
+    "arppu",
+    "qptr",
+    "five_minute_retention",
+    "home_recommendations",
+)
 
 
 @dataclass(frozen=True)
@@ -34,3 +51,12 @@ def now_iso() -> str:
     """返回 UTC ISO 时间字符串。"""
 
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def get_project_start_date(project_id: str) -> date | None:
+    """返回指定项目的业务起始日期。"""
+
+    raw_value = PROJECT_START_DATES.get(project_id, "").strip()
+    if not raw_value:
+        return None
+    return date.fromisoformat(raw_value)
