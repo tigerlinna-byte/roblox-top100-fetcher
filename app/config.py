@@ -45,6 +45,7 @@ class Config:
     feishu_project_metrics_spreadsheet_token: str = ""
     feishu_project_metrics_sheet_id: str = ""
     feishu_project_metrics_spreadsheet_title: str = "Roblox Project Metrics Test"
+    feishu_project_metrics_reset_before_sync: bool = True
 
 
 
@@ -61,6 +62,14 @@ def _get_float(name: str, default: float) -> float:
     if not value:
         return default
     return float(value)
+
+
+
+def _get_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 
@@ -137,5 +146,9 @@ def load_config() -> Config:
         feishu_project_metrics_spreadsheet_title=os.getenv(
             "FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE",
             "Roblox Project Metrics Test",
+        ),
+        feishu_project_metrics_reset_before_sync=_get_bool(
+            "FEISHU_PROJECT_METRICS_RESET_BEFORE_SYNC",
+            True,
         ),
     )

@@ -244,12 +244,16 @@ def _sync_project_metrics_sheet(
     )
     _apply_project_metrics_sheet_presentation(variables.spreadsheet_title, feishu_client, target)
 
-    existing_rows = feishu_client.read_sheet_values(
-        target.spreadsheet_token,
-        target.sheet_id,
-        end_column=PROJECT_METRICS_SHEET_END_COLUMN,
-        end_row=PROJECT_METRICS_SHEET_MAX_ROWS,
-    )
+    existing_rows = []
+    if cfg.feishu_project_metrics_reset_before_sync:
+        logging.info("Project metrics reset switch enabled, existing rows will be ignored for this run.")
+    else:
+        existing_rows = feishu_client.read_sheet_values(
+            target.spreadsheet_token,
+            target.sheet_id,
+            end_column=PROJECT_METRICS_SHEET_END_COLUMN,
+            end_row=PROJECT_METRICS_SHEET_MAX_ROWS,
+        )
     table_state = build_project_metrics_table(existing_rows, record)
     feishu_client.write_sheet_values(
         target.spreadsheet_token,
