@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -413,6 +413,10 @@ class RobloxCreatorMetricsClient:
             return _format_series(_aggregate_daily_values(datapoints, "max"), _format_count)
 
         latest_values = _aggregate_daily_values(datapoints, "latest")
+        if spec.field_name == "day1_retention":
+            latest_values = _shift_series_dates(latest_values, days=-1)
+        if spec.field_name == "day7_retention":
+            latest_values = _shift_series_dates(latest_values, days=-7)
         if spec.value_type == "ratio":
             return _format_series(latest_values, _format_ratio)
         if spec.value_type == "currency":
@@ -1020,6 +1024,14 @@ def _aggregate_daily_values(datapoints: list[tuple[datetime, float]], mode: str)
     if mode == "max":
         return {report_date: max(values) for report_date, values in grouped.items() if values}
     return {report_date: values[-1] for report_date, values in grouped.items() if values}
+
+
+def _shift_series_dates(series: dict[str, float], days: int) -> dict[str, float]:
+    shifted: dict[str, float] = {}
+    for report_date, value in series.items():
+        shifted_date = date.fromisoformat(report_date) + timedelta(days=days)
+        shifted[shifted_date.isoformat()] = value
+    return shifted
 
 
 def _format_series(series: dict[str, float], formatter) -> dict[str, str]:
