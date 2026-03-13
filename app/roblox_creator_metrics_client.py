@@ -134,6 +134,7 @@ ANALYTICS_STATUS_CONFIG_URL_TEMPLATE = (
 ANALYTICS_FEATURE_PERMISSIONS_URL_TEMPLATE = (
     "https://apis.roblox.com/developer-analytics-aggregations/v1/feature-permissions?universeId={resource_id}"
 )
+ANALYTICS_METADATA_URL = "https://apis.roblox.com/analytics-query-gateway/v1/metrics/metadata"
 ANALYTICS_RESOURCE_TYPE = "RESOURCE_TYPE_UNIVERSE"
 MINIMUM_REQUIRED_FIELDS = ("average_ccu", "peak_ccu")
 
@@ -168,19 +169,23 @@ DIRECT_QUERY_SPECS = (
     MetricQuerySpec("average_ccu", "ConcurrentPlayers", "METRIC_GRANULARITY_ONE_HOUR", 14, "daily_average"),
     MetricQuerySpec("peak_ccu", "PeakConcurrentPlayers", "METRIC_GRANULARITY_ONE_HOUR", 14, "daily_max"),
     MetricQuerySpec("average_session_time", "AverageSessionLengthMinutes", "METRIC_GRANULARITY_ONE_DAY", 14, "minutes"),
-    MetricQuerySpec("day1_retention", "D1Retention", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
-    MetricQuerySpec("day7_retention", "D7Retention", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("payer_conversion_rate", "PayingUsersCVR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("arppu", "AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
     MetricQuerySpec("qptr", "RFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
 )
 DIRECT_QUERY_FALLBACK_SPECS = (
     MetricQuerySpec("average_session_time", "SessionDurationSecondsAvg", "METRIC_GRANULARITY_ONE_MINUTE", 1, "seconds"),
-    MetricQuerySpec("day1_retention", "L7AverageForwardD1Retention", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
-    MetricQuerySpec("day7_retention", "L7AverageForwardD7Retention", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("payer_conversion_rate", "L7AveragePayingUsersCVR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("arppu", "L7AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
     MetricQuerySpec("qptr", "L7AverageRFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+)
+COHORT_RETENTION_SPEC = MetricQuerySpec(
+    "cohort_retention",
+    "DailyCohortRetention",
+    "METRIC_GRANULARITY_ONE_DAY",
+    14,
+    "cohort_retention_ratio",
+    breakdown_dimensions=("CohortDay",),
 )
 FIVE_MINUTE_RETENTION_SPEC = MetricQuerySpec(
     "five_minute_retention",
@@ -253,13 +258,22 @@ class RobloxCreatorMetricsClient:
             raise RobloxCreatorMetricsClientError("ROBLOX_CREATOR_COOKIE 未配置")
 
         project_id = _extract_project_id(overview_url)
-        window = _resolve_project_query_window(project_id)
+        business_timezone = _resolve_business_timezone(self.config.feishu_timezone)
+        window = _resolve_project_query_window(project_id, business_timezone)
         if window is None:
             return []
 
-        start_time, end_time = window
+        start_time, end_time, start_date, end_date = window
         direct_attempts: list[QueryAttempt] = []
-        metrics_by_field = self._fetch_direct_metrics(project_id, start_time, end_time, direct_attempts)
+        metrics_by_field = self._fetch_direct_metrics(
+            project_id,
+            start_time,
+            end_time,
+            direct_attempts,
+            business_timezone,
+            start_date,
+            end_date,
+        )
         minimum_missing = [field_name for field_name in MINIMUM_REQUIRED_FIELDS if not metrics_by_field.get(field_name)]
         missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if not metrics_by_field.get(definition.field_name)]
         debug_path = ""
@@ -305,28 +319,104 @@ class RobloxCreatorMetricsClient:
         start_time: datetime,
         end_time: datetime,
         attempts: list[QueryAttempt],
+        business_timezone: timezone | ZoneInfo,
+        start_date: date,
+        end_date: date,
     ) -> dict[str, dict[str, str]]:
         """优先通过真实内部 analytics 接口抓取最近窗口内的日期序列。"""
 
         metrics: dict[str, dict[str, str]] = {}
         self._fetch_feature_permissions(project_id, attempts)
         self._fetch_status_config(project_id, attempts)
+        metadata_by_metric = self._fetch_metric_metadata(project_id, attempts)
 
         for spec in DIRECT_QUERY_SPECS:
-            series = self._query_metric_series(project_id, spec, start_time, end_time, attempts)
+            series = self._query_metric_series(
+                project_id,
+                spec,
+                start_time,
+                end_time,
+                attempts,
+                business_timezone,
+                start_date,
+                end_date,
+                metadata_by_metric,
+            )
             if series:
                 metrics[spec.field_name] = series
         for spec in DIRECT_QUERY_FALLBACK_SPECS:
             if metrics.get(spec.field_name):
                 continue
-            series = self._query_metric_series(project_id, spec, start_time, end_time, attempts)
+            series = self._query_metric_series(
+                project_id,
+                spec,
+                start_time,
+                end_time,
+                attempts,
+                business_timezone,
+                start_date,
+                end_date,
+                metadata_by_metric,
+            )
             if series:
                 metrics[spec.field_name] = series
+        cohort_retention = self._query_metric_series(
+            project_id,
+            COHORT_RETENTION_SPEC,
+            start_time,
+            end_time,
+            attempts,
+            business_timezone,
+            start_date,
+            end_date,
+            metadata_by_metric,
+        )
+        if cohort_retention:
+            metrics["day1_retention"] = _filter_metric_series(
+                _extract_cohort_retention_day(cohort_retention, 1),
+                "day1_retention",
+                project_id,
+                start_date,
+                end_date,
+                metadata_by_metric,
+                source_metric="DailyCohortRetention",
+                cohort_day=1,
+            )
+            metrics["day7_retention"] = _filter_metric_series(
+                _extract_cohort_retention_day(cohort_retention, 7),
+                "day7_retention",
+                project_id,
+                start_date,
+                end_date,
+                metadata_by_metric,
+                source_metric="DailyCohortRetention",
+                cohort_day=7,
+            )
         if not metrics.get("five_minute_retention"):
-            series = self._query_metric_series(project_id, FIVE_MINUTE_RETENTION_SPEC, start_time, end_time, attempts)
+            series = self._query_metric_series(
+                project_id,
+                FIVE_MINUTE_RETENTION_SPEC,
+                start_time,
+                end_time,
+                attempts,
+                business_timezone,
+                start_date,
+                end_date,
+                metadata_by_metric,
+            )
             if series:
                 metrics["five_minute_retention"] = series
-        home_recommendations = self._query_metric_series(project_id, HOME_RECOMMENDATIONS_SPEC, start_time, end_time, attempts)
+        home_recommendations = self._query_metric_series(
+            project_id,
+            HOME_RECOMMENDATIONS_SPEC,
+            start_time,
+            end_time,
+            attempts,
+            business_timezone,
+            start_date,
+            end_date,
+            metadata_by_metric,
+        )
         if home_recommendations:
             metrics["home_recommendations"] = home_recommendations
         return metrics
@@ -353,6 +443,20 @@ class RobloxCreatorMetricsClient:
             return
         attempts.append(QueryAttempt("status_config", url, "GET", "ok", "", _truncate_json(payload)))
 
+    def _fetch_metric_metadata(self, project_id: str, attempts: list[QueryAttempt]) -> dict[str, date]:
+        """抓取指标最新可用日期，避免把未成熟数据写进表。"""
+
+        del project_id
+        requested_metrics = sorted({spec.metric for spec in DIRECT_QUERY_SPECS + DIRECT_QUERY_FALLBACK_SPECS + (COHORT_RETENTION_SPEC, FIVE_MINUTE_RETENTION_SPEC, HOME_RECOMMENDATIONS_SPEC)})
+        request_payload = {"query": {"metrics": requested_metrics}}
+        try:
+            payload = self._request_json("POST", ANALYTICS_METADATA_URL, json_body=request_payload)
+        except RobloxCreatorMetricsClientError as exc:
+            attempts.append(QueryAttempt("metrics_metadata", ANALYTICS_METADATA_URL, "POST", f"error: {exc}", _truncate_json(request_payload), ""))
+            return {}
+        attempts.append(QueryAttempt("metrics_metadata", ANALYTICS_METADATA_URL, "POST", "ok", _truncate_json(request_payload), _truncate_json(payload)))
+        return _extract_metric_latest_dates(payload)
+
     def _query_metric_series(
         self,
         project_id: str,
@@ -360,6 +464,10 @@ class RobloxCreatorMetricsClient:
         start_time: datetime,
         end_time: datetime,
         attempts: list[QueryAttempt],
+        business_timezone: timezone | ZoneInfo,
+        start_date: date,
+        end_date: date,
+        metadata_by_metric: dict[str, date],
     ) -> dict[str, str]:
         """按指标配置请求 analytics-query-gateway，并返回按日期组织的值。"""
 
@@ -371,7 +479,18 @@ class RobloxCreatorMetricsClient:
             attempts.append(QueryAttempt(spec.metric, url, "POST", f"error: {exc}", _truncate_json(request_payload), ""))
             return {}
         attempts.append(QueryAttempt(spec.metric, url, "POST", "ok", _truncate_json(request_payload), _truncate_json(payload)))
-        return self._extract_metric_series_from_query_result(payload, spec)
+        series = self._extract_metric_series_from_query_result(payload, spec, business_timezone)
+        if spec.value_type == "cohort_retention_ratio":
+            return series
+        return _filter_metric_series(
+            series,
+            spec.field_name,
+            project_id,
+            start_date,
+            end_date,
+            metadata_by_metric,
+            source_metric=spec.metric,
+        )
 
     def _build_metric_request_payload(
         self,
@@ -395,28 +514,37 @@ class RobloxCreatorMetricsClient:
             query["limit"] = spec.limit
         return {"resourceType": ANALYTICS_RESOURCE_TYPE, "resourceId": project_id, "query": query}
 
-    def _extract_metric_series_from_query_result(self, payload: object, spec: MetricQuerySpec) -> dict[str, str]:
+    def _extract_metric_series_from_query_result(
+        self,
+        payload: object,
+        spec: MetricQuerySpec,
+        business_timezone: timezone | ZoneInfo,
+    ) -> dict[str, str]:
         """从 queryResult 中抽取并格式化按日期组织的指标序列。"""
 
         values = self._extract_query_values(payload)
         if spec.value_type == "session_bucket_ratio":
-            return _format_series(_extract_session_bucket_retention_series(values, threshold_seconds=300), _format_ratio)
+            return _format_series(
+                _extract_session_bucket_retention_series(values, threshold_seconds=300, business_timezone=business_timezone),
+                _format_ratio,
+            )
         if spec.value_type == "breakdown_count":
-            return _format_series(_extract_breakdown_daily_counts(values, "HomeRecommendation"), _format_count)
+            return _format_series(
+                _extract_breakdown_daily_counts(values, "HomeRecommendation", business_timezone),
+                _format_count,
+            )
+        if spec.value_type == "cohort_retention_ratio":
+            return _extract_cohort_retention_series(values, business_timezone)
 
         datapoints = _flatten_numeric_datapoints(values)
         if not datapoints:
             return {}
         if spec.value_type == "daily_average":
-            return _format_series(_aggregate_daily_values(datapoints, "average"), _format_count)
+            return _format_series(_aggregate_daily_values(datapoints, "average", business_timezone), _format_count)
         if spec.value_type == "daily_max":
-            return _format_series(_aggregate_daily_values(datapoints, "max"), _format_count)
+            return _format_series(_aggregate_daily_values(datapoints, "max", business_timezone), _format_count)
 
-        latest_values = _aggregate_daily_values(datapoints, "latest")
-        if spec.field_name == "day1_retention":
-            latest_values = _shift_series_dates(latest_values, days=-1)
-        if spec.field_name == "day7_retention":
-            latest_values = _shift_series_dates(latest_values, days=-7)
+        latest_values = _aggregate_daily_values(datapoints, "latest", business_timezone)
         if spec.value_type == "ratio":
             return _format_series(latest_values, _format_ratio)
         if spec.value_type == "currency":
@@ -1002,23 +1130,31 @@ def _extract_session_bucket_seconds(breakdown_values: object) -> int | None:
     return None
 
 
-def _resolve_project_query_window(project_id: str) -> tuple[datetime, datetime] | None:
-    end_time = _utc_midnight_now()
-    end_date = (end_time - timedelta(days=1)).date()
+def _resolve_project_query_window(
+    project_id: str,
+    business_timezone: timezone | ZoneInfo,
+) -> tuple[datetime, datetime, date, date] | None:
+    business_midnight = _business_midnight_now(business_timezone)
+    end_date = (business_midnight - timedelta(days=1)).date()
     start_date = end_date - timedelta(days=9)
     project_start_date = get_project_start_date(project_id)
     if project_start_date is not None and project_start_date > start_date:
         start_date = project_start_date
     if start_date > end_date:
         return None
-    start_time = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
-    return start_time, end_time
+    start_time = datetime.combine(start_date, datetime.min.time(), tzinfo=business_timezone).astimezone(timezone.utc)
+    end_time = business_midnight.astimezone(timezone.utc)
+    return start_time, end_time, start_date, end_date
 
 
-def _aggregate_daily_values(datapoints: list[tuple[datetime, float]], mode: str) -> dict[str, float]:
+def _aggregate_daily_values(
+    datapoints: list[tuple[datetime, float]],
+    mode: str,
+    business_timezone: timezone | ZoneInfo,
+) -> dict[str, float]:
     grouped: dict[str, list[float]] = {}
     for timestamp, value in datapoints:
-        grouped.setdefault(timestamp.date().isoformat(), []).append(value)
+        grouped.setdefault(_to_business_date_string(timestamp, business_timezone), []).append(value)
     if mode == "average":
         return {report_date: sum(values) / len(values) for report_date, values in grouped.items() if values}
     if mode == "max":
@@ -1026,26 +1162,151 @@ def _aggregate_daily_values(datapoints: list[tuple[datetime, float]], mode: str)
     return {report_date: values[-1] for report_date, values in grouped.items() if values}
 
 
-def _shift_series_dates(series: dict[str, float], days: int) -> dict[str, float]:
-    shifted: dict[str, float] = {}
+def _extract_cohort_retention_day(series: dict[str, str], cohort_day: int) -> dict[str, str]:
+    """从 cohort retention 展平结果中提取指定天数列。"""
+
+    prefix = f"{cohort_day}|"
+    extracted: dict[str, str] = {}
+    for composite_key, value in series.items():
+        if not composite_key.startswith(prefix):
+            continue
+        extracted[composite_key.split("|", 1)[1]] = value
+    return extracted
+
+
+def _resolve_business_timezone(timezone_name: str) -> timezone | ZoneInfo:
+    """解析项目日报使用的业务时区，失败时退回 UTC。"""
+
+    candidate = timezone_name.strip() or "UTC"
+    try:
+        return ZoneInfo(candidate)
+    except ZoneInfoNotFoundError:
+        return timezone.utc
+
+
+def _to_business_date_string(timestamp: datetime, business_timezone: timezone | ZoneInfo) -> str:
+    """将 UTC 时间戳转换为业务时区对应的日期字符串。"""
+
+    return timestamp.astimezone(business_timezone).date().isoformat()
+
+
+def _filter_metric_series(
+    series: dict[str, str],
+    field_name: str,
+    project_id: str,
+    start_date: date,
+    end_date: date,
+    metadata_by_metric: dict[str, date],
+    *,
+    source_metric: str,
+    cohort_day: int | None = None,
+) -> dict[str, str]:
+    """按项目起始日和指标成熟日过滤日期序列。"""
+
+    project_start_date = get_project_start_date(project_id)
+    minimum_date = project_start_date or start_date
+    maximum_date = end_date
+    latest_available_date = metadata_by_metric.get(source_metric)
+    if latest_available_date is not None and latest_available_date < maximum_date:
+        maximum_date = latest_available_date
+    if cohort_day is not None:
+        maximum_date = maximum_date - timedelta(days=cohort_day)
+    elif field_name == "day1_retention":
+        maximum_date = maximum_date - timedelta(days=1)
+    elif field_name == "day7_retention":
+        maximum_date = maximum_date - timedelta(days=7)
+    if maximum_date < minimum_date:
+        return {}
+
+    filtered: dict[str, str] = {}
     for report_date, value in series.items():
-        shifted_date = date.fromisoformat(report_date) + timedelta(days=days)
-        shifted[shifted_date.isoformat()] = value
-    return shifted
+        current_date = date.fromisoformat(report_date)
+        if current_date < minimum_date or current_date > maximum_date:
+            continue
+        filtered[report_date] = value
+    return filtered
 
 
 def _format_series(series: dict[str, float], formatter) -> dict[str, str]:
     return {report_date: formatter(value) for report_date, value in sorted(series.items())}
 
 
-def _extract_session_bucket_retention_series(values: list[dict[str, object]], threshold_seconds: int) -> dict[str, float]:
+def _extract_cohort_retention_series(
+    values: list[dict[str, object]],
+    business_timezone: timezone | ZoneInfo,
+) -> dict[str, str]:
+    """解析 DailyCohortRetention 的 CohortDay 分桶结果。"""
+
+    series_by_key: dict[str, str] = {}
+    for series in values:
+        cohort_day = _extract_cohort_day_value(series.get("breakdownValue", []))
+        if cohort_day is None:
+            continue
+        for timestamp, value in _flatten_numeric_datapoints([series]):
+            report_date = _to_business_date_string(timestamp, business_timezone)
+            series_by_key[f"{cohort_day}|{report_date}"] = _format_ratio(value)
+    return series_by_key
+
+
+def _extract_cohort_day_value(breakdown_values: object) -> int | None:
+    """从 CohortDay 的 breakdownValue 中提取天数。"""
+
+    if not isinstance(breakdown_values, list):
+        return None
+    for item in breakdown_values:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("dimension", "")).strip() != "CohortDay":
+            continue
+        raw_value = str(item.get("value", "")).strip()
+        if not raw_value:
+            return None
+        try:
+            return int(float(raw_value))
+        except ValueError:
+            return None
+    return None
+
+
+def _extract_metric_latest_dates(payload: object) -> dict[str, date]:
+    """从 metrics/metadata 响应中提取每个指标的最新可用日期。"""
+
+    if not isinstance(payload, dict):
+        return {}
+    operation = payload.get("operation")
+    if not isinstance(operation, dict):
+        return {}
+    result = operation.get("metricMetadataResult")
+    if not isinstance(result, dict):
+        return {}
+    metadata = result.get("metadata")
+    if not isinstance(metadata, list):
+        return {}
+
+    latest_dates: dict[str, date] = {}
+    for item in metadata:
+        if not isinstance(item, dict):
+            continue
+        metric = str(item.get("metric", "")).strip()
+        parsed = _parse_iso_datetime(str(item.get("latestAvailableTime", "")))
+        if not metric or parsed is None:
+            continue
+        latest_dates[metric] = parsed.date()
+    return latest_dates
+
+
+def _extract_session_bucket_retention_series(
+    values: list[dict[str, object]],
+    threshold_seconds: int,
+    business_timezone: timezone | ZoneInfo,
+) -> dict[str, float]:
     bucket_counts_by_date: dict[str, dict[int, float]] = {}
     for series in values:
         bucket_seconds = _extract_session_bucket_seconds(series.get("breakdownValue", []))
         if bucket_seconds is None:
             continue
         for timestamp, value in _flatten_numeric_datapoints([series]):
-            report_date = timestamp.date().isoformat()
+            report_date = _to_business_date_string(timestamp, business_timezone)
             bucket_counts_by_date.setdefault(report_date, {})[bucket_seconds] = value
 
     ratios: dict[str, float] = {}
@@ -1064,16 +1325,21 @@ def _extract_session_bucket_retention_series(values: list[dict[str, object]], th
     return ratios
 
 
-def _extract_breakdown_daily_counts(values: list[dict[str, object]], expected_value: str) -> dict[str, float]:
+def _extract_breakdown_daily_counts(
+    values: list[dict[str, object]],
+    expected_value: str,
+    business_timezone: timezone | ZoneInfo,
+) -> dict[str, float]:
     counts: dict[str, float] = {}
     for series in values:
         if not _contains_breakdown_value(series.get("breakdownValue", []), expected_value):
             continue
         for timestamp, value in _flatten_numeric_datapoints([series]):
-            counts[timestamp.date().isoformat()] = counts.get(timestamp.date().isoformat(), 0.0) + value
+            report_date = _to_business_date_string(timestamp, business_timezone)
+            counts[report_date] = counts.get(report_date, 0.0) + value
     return counts
 
 
-def _utc_midnight_now() -> datetime:
-    now = datetime.now(timezone.utc)
+def _business_midnight_now(business_timezone: timezone | ZoneInfo) -> datetime:
+    now = datetime.now(business_timezone)
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
