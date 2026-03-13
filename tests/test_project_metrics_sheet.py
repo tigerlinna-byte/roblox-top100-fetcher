@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 import unittest
+from unittest.mock import patch
 
+from app.config import Config, load_config
 from app.project_metrics_models import ProjectDailyMetricsRecord
 from app.project_metrics_sheet import (
     PROJECT_METRICS_HEADERS,
@@ -11,6 +14,18 @@ from app.project_metrics_sheet import (
 
 
 class ProjectMetricsSheetTests(unittest.TestCase):
+    def test_load_config_reads_project_metrics_reset_switch(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "FEISHU_PROJECT_METRICS_RESET_BEFORE_SYNC": "true",
+            },
+            clear=False,
+        ):
+            cfg = load_config()
+
+        self.assertTrue(cfg.feishu_project_metrics_reset_before_sync)
+
     def test_build_project_metrics_values_follows_expected_column_order(self) -> None:
         record = ProjectDailyMetricsRecord(
             report_date="2026-03-12",
