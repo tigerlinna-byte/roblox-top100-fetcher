@@ -10,7 +10,7 @@ from .github_client import GitHubClient, GitHubClientError
 from .project_metrics_models import ProjectDailyMetricsRecord
 from .project_metrics_sheet import (
     ProjectMetricsSpreadsheetTarget,
-    build_project_metrics_table,
+    build_project_metrics_rebuild_rows,
     get_saved_project_metrics_target,
     resolve_project_metrics_variables,
     save_project_metrics_target,
@@ -243,19 +243,13 @@ def _sync_project_metrics_sheet(
         keep_sheet_ids={target.sheet_id},
     )
     _apply_project_metrics_sheet_presentation(variables.spreadsheet_title, feishu_client, target)
-    feishu_client.clear_sheet_values(
-        target.spreadsheet_token,
-        target.sheet_id,
-        start_cell="A2",
-        end_column=PROJECT_METRICS_SHEET_END_COLUMN,
-        end_row=PROJECT_METRICS_SHEET_MAX_ROWS,
-    )
-
-    table_state = build_project_metrics_table([], records)
     feishu_client.write_sheet_values(
         target.spreadsheet_token,
         target.sheet_id,
-        table_state.rows,
+        build_project_metrics_rebuild_rows(
+            records,
+            total_rows=PROJECT_METRICS_SHEET_MAX_ROWS,
+        ),
     )
     return target
 

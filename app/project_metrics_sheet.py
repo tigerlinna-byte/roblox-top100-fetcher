@@ -137,6 +137,21 @@ def build_project_metrics_table(
     return ProjectMetricsTableState(rows=normalized_rows)
 
 
+def build_project_metrics_rebuild_rows(
+    records: list[ProjectDailyMetricsRecord],
+    *,
+    total_rows: int,
+) -> list[list[object]]:
+    """构建固定高度的项目日报表内容，用于整表重写并清除旧残留行。"""
+
+    table_state = build_project_metrics_table([], records)
+    normalized_rows = [list(row) for row in table_state.rows]
+    column_count = len(PROJECT_METRICS_HEADERS)
+    while len(normalized_rows) < total_rows:
+        normalized_rows.append([""] * column_count)
+    return normalized_rows[:total_rows]
+
+
 def _merge_single_record(rows: list[list[object]], record: ProjectDailyMetricsRecord) -> None:
     date_to_index = _build_date_index(rows)
     row_values = build_project_metrics_values(record)
