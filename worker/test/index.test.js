@@ -333,7 +333,7 @@ test("dispatches scheduled top_trending_sheet workflow to configured chats", asy
   };
 
   await handleScheduled(
-    { cron: "14 2 * * *" },
+    { cron: "0 1 * * *" },
     buildEnv({ SCHEDULE_CHAT_IDS: "oc_chat_a,oc_chat_b" }),
     ctx,
     fetchImpl,
@@ -346,11 +346,51 @@ test("dispatches scheduled top_trending_sheet workflow to configured chats", asy
   assert.equal(dispatchBody.inputs.chat_id, "oc_chat_a,oc_chat_b");
 });
 
-test("skips scheduled dispatch when no schedule chats configured", async () => {
+test("dispatches scheduled project metrics workflow", async () => {
+  const calls = [];
+  const ctx = buildCtx();
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (String(url).includes("/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+
+  await handleScheduled(
+    { cron: "0 19 * * *" },
+    buildEnv(),
+    ctx,
+    fetchImpl,
+  );
+
+  assert.equal(calls.length, 1);
+  const dispatchBody = JSON.parse(calls[0].init.body);
+  assert.equal(dispatchBody.inputs.report_mode, "roblox_project_daily_metrics");
+  assert.equal(dispatchBody.inputs.trigger_source, "cloudflare_cron");
+  assert.equal(dispatchBody.inputs.chat_id, "");
+});
+
+test("skips scheduled top_trending dispatch when no schedule chats configured", async () => {
   let called = false;
   await handleScheduled(
-    { cron: "14 2 * * *" },
+    { cron: "0 1 * * *" },
     buildEnv({ SCHEDULE_CHAT_IDS: "" }),
+    buildCtx(),
+    async () => {
+      called = true;
+      return new Response(null, { status: 204 });
+    },
+  );
+
+  assert.equal(called, false);
+});
+
+test("skips scheduled dispatch for unknown cron", async () => {
+  let called = false;
+  await handleScheduled(
+    { cron: "0 0 * * *" },
+    buildEnv({ SCHEDULE_CHAT_IDS: "oc_chat_a" }),
     buildCtx(),
     async () => {
       called = true;

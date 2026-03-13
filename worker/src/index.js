@@ -94,22 +94,13 @@ export async function handleRequest(request, env, ctx, fetchImpl = fetch) {
 }
 
 export async function handleScheduled(controller, env, ctx, fetchImpl = fetch) {
-  const chatIds = parseCsvList(env.SCHEDULE_CHAT_IDS);
-  if (!chatIds.length) {
-    console.warn(JSON.stringify({
-      level: "warn",
-      action: "schedule_skipped_missing_chat_ids",
-      cron: controller?.cron || "",
-    }));
+  const cron = controller?.cron || "";
+  const trigger = resolveScheduledTrigger(env, cron);
+  if (!trigger) {
     return;
   }
 
-  const task = dispatchWorkflow(fetchImpl, env, {
-    triggerSource: "cloudflare_cron",
-    triggerActor: "cloudflare-cron",
-    chatId: chatIds.join(","),
-    reportMode: "top_trending_sheet",
-  });
+  const task = dispatchWorkflow(fetchImpl, env, trigger);
 
   scheduleBackgroundTask(ctx, task);
   await task;
@@ -117,9 +108,47 @@ export async function handleScheduled(controller, env, ctx, fetchImpl = fetch) {
   console.log(JSON.stringify({
     level: "info",
     action: "schedule_dispatch_success",
-    cron: controller?.cron || "",
-    chatIds,
+    cron,
+    reportMode: trigger.reportMode,
+    chatId: trigger.chatId,
   }));
+}
+
+function resolveScheduledTrigger(env, cron) {
+  if (cron === "0 1 * * *") {
+    const chatIds = parseCsvList(env.SCHEDULE_CHAT_IDS);
+    if (!chatIds.length) {
+      console.warn(JSON.stringify({
+        level: "warn",
+        action: "schedule_skipped_missing_chat_ids",
+        cron,
+      }));
+      return null;
+    }
+
+    return {
+      triggerSource: "cloudflare_cron",
+      triggerActor: "cloudflare-cron",
+      chatId: chatIds.join(","),
+      reportMode: "top_trending_sheet",
+    };
+  }
+
+  if (cron === "0 19 * * *") {
+    return {
+      triggerSource: "cloudflare_cron",
+      triggerActor: "cloudflare-cron",
+      chatId: "",
+      reportMode: "roblox_project_daily_metrics",
+    };
+  }
+
+  console.warn(JSON.stringify({
+    level: "warn",
+    action: "schedule_skipped_unknown_cron",
+    cron,
+  }));
+  return null;
 }
 
 function safeParseJson(text) {
