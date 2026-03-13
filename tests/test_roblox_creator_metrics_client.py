@@ -43,7 +43,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "UniqueUsersWithPlaySessions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                             ]
@@ -116,7 +116,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             ]
                         )
                     )
-                if metric == "UniqueUsersWithPlaySessions":
+                if metric == "UniqueUsersWithImpressions":
                     return _build_json_response(
                         _wrap_query_result(
                             [
@@ -189,7 +189,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "UniqueUsersWithPlaySessions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                             ]
                         },

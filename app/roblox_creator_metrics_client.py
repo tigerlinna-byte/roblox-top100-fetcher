@@ -197,12 +197,11 @@ FIVE_MINUTE_RETENTION_SPEC = MetricQuerySpec(
 )
 HOME_RECOMMENDATIONS_SPEC = MetricQuerySpec(
     "home_recommendations",
-    "UniqueUsersWithPlaySessions",
+    "UniqueUsersWithImpressions",
     "METRIC_GRANULARITY_ONE_DAY",
     10,
     "breakdown_count",
     breakdown_dimensions=("AcquisitionSource",),
-    filters=({"dimension": "IsNewUser", "values": ["New"], "operation": "FILTER_OPERATION_CONTAINS"},),
     limit=5,
 )
 
@@ -530,7 +529,7 @@ class RobloxCreatorMetricsClient:
             )
         if spec.value_type == "breakdown_count":
             return _format_series(
-                _extract_breakdown_daily_counts(values, "Home Recommendation", business_timezone),
+                _extract_breakdown_daily_counts(values, "Home Recommendation", business_timezone, aliases=("HomeRecommendation",)),
                 _format_count,
             )
         if spec.value_type == "cohort_retention_ratio":
@@ -1329,10 +1328,13 @@ def _extract_breakdown_daily_counts(
     values: list[dict[str, object]],
     expected_value: str,
     business_timezone: timezone | ZoneInfo,
+    *,
+    aliases: tuple[str, ...] = (),
 ) -> dict[str, float]:
+    expected_values = (expected_value, *aliases)
     counts: dict[str, float] = {}
     for series in values:
-        if not _contains_breakdown_value(series.get("breakdownValue", []), expected_value):
+        if not any(_contains_breakdown_value(series.get("breakdownValue", []), candidate) for candidate in expected_values):
             continue
         for timestamp, value in _flatten_numeric_datapoints([series]):
             report_date = _to_business_date_string(timestamp, business_timezone)
