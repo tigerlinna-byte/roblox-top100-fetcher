@@ -30,6 +30,18 @@ PREFERRED_LOCALIZATION_CODES = (
     "zh-hans",
     "zh_cn",
 )
+ROBLOX_DISCOVER_REFERER = "https://www.roblox.com/discover"
+ROBLOX_DEFAULT_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://www.roblox.com",
+    "Referer": ROBLOX_DISCOVER_REFERER,
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/135.0.0.0 Safari/537.36"
+    ),
+}
 
 
 class RobloxClientError(RuntimeError):
@@ -300,6 +312,7 @@ class RobloxClient:
                 url=url,
                 params=params,
                 json=json_payload,
+                headers=self._build_request_headers(),
                 timeout=self.config.request_timeout_seconds,
             )
             if response.status_code >= 400:
@@ -317,6 +330,15 @@ class RobloxClient:
             )
         except Exception as exc:  # noqa: BLE001
             raise RobloxClientError(f"Request failed: {url}") from exc
+
+    def _build_request_headers(self) -> dict[str, str]:
+        """为榜单接口构造带登录态的浏览器请求头。"""
+
+        headers = dict(ROBLOX_DEFAULT_HEADERS)
+        cookie_header = _normalize_roblox_security_cookie(self.config.roblox_creator_cookie)
+        if cookie_header:
+            headers["Cookie"] = cookie_header
+        return headers
 
     @staticmethod
     def _extract_games(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -436,3 +458,12 @@ def _collect_localization_entries(payload: dict[str, Any]) -> list[dict[str, Any
     if any(key in payload for key in ("languageCode", "localeCode", "name", "displayName", "title")):
         return [payload]
     return []
+
+
+def _normalize_roblox_security_cookie(raw_cookie: str) -> str:
+    value = raw_cookie.strip()
+    if not value:
+        return ""
+    if value.startswith(".ROBLOSECURITY="):
+        return value
+    return f".ROBLOSECURITY={value}"

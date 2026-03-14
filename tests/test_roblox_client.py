@@ -338,6 +338,69 @@ class RobloxClientTests(unittest.TestCase):
         self.assertEqual(1, len(items))
         self.assertEqual("", items[0].localized_name)
 
+    def test_top_trending_requests_include_creator_cookie_headers(self) -> None:
+        session = Mock()
+
+        games_response = Mock()
+        games_response.status_code = 200
+        games_response.json.return_value = {
+            "games": [
+                {
+                    "universeId": 201,
+                    "rootPlaceId": 11,
+                    "name": "Trending B",
+                    "playerCount": 55,
+                }
+            ]
+        }
+
+        details_response = Mock()
+        details_response.status_code = 200
+        details_response.json.return_value = {
+            "data": [
+                {
+                    "id": 201,
+                    "name": "Trending B",
+                    "visits": 8888,
+                    "playing": 55,
+                    "creator": {"name": "Studio B"},
+                }
+            ]
+        }
+
+        localization_response = Mock()
+        localization_response.status_code = 200
+        localization_response.json.return_value = {"data": []}
+        thumbnail_response = Mock()
+        thumbnail_response.status_code = 200
+        thumbnail_response.json.return_value = {"data": []}
+
+        session.request.side_effect = [
+            games_response,
+            details_response,
+            localization_response,
+            thumbnail_response,
+        ]
+
+        client = RobloxClient(
+            config=Config(
+                api_limit=100,
+                roblox_top_trending_sort_id="top-trending",
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.test",
+            ),
+            session=session,
+        )
+
+        items = client.fetch_top_trending_games()
+
+        self.assertEqual(1, len(items))
+        request_headers = session.request.call_args_list[0].kwargs["headers"]
+        self.assertEqual(
+            ".ROBLOSECURITY=_|WARNING:-DO-NOT-SHARE-THIS.test",
+            request_headers["Cookie"],
+        )
+        self.assertEqual("https://www.roblox.com/discover", request_headers["Referer"])
+
 
 if __name__ == "__main__":
     unittest.main()
