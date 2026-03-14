@@ -50,7 +50,6 @@ def build_top_trending_briefing_markdown(
     else:
         lines.append("今天没有发现新上榜且首次上线未满 3 个月的重点游戏。")
 
-    lines.extend(["", f"[查看完整榜单]({spreadsheet_url})"])
     return "\n".join(lines)
 
 
@@ -117,7 +116,7 @@ def collect_top_trending_briefing_entries(
         entries.append(
             TrendingBriefingEntry(
                 place_id=place_id,
-                name=record.localized_name.strip() or record.name,
+                name=_build_briefing_display_name(record),
                 ccu=record.playing,
                 launch_date=payload["launch_date"],
                 sheet_labels=labels,
@@ -164,3 +163,11 @@ def _prefer_better_rank_record(current: GameRecord, candidate: GameRecord) -> Ga
     if candidate.rank < current.rank:
         return candidate
     return current
+
+
+def _build_briefing_display_name(record: GameRecord) -> str:
+    english_name = record.name.strip()
+    localized_name = record.localized_name.strip()
+    if english_name and localized_name and english_name != localized_name:
+        return f"{english_name} {localized_name}"
+    return localized_name or english_name
