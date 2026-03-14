@@ -22,6 +22,7 @@ from .roblox_creator_metrics_client import (
 )
 from .storage import write_outputs, write_project_metrics_output
 from .summary import build_failure_markdown, build_success_markdown
+from .top_trending_briefing import build_top_trending_briefing_markdown
 from .top_trending_sheet import (
     SheetTarget,
     SpreadsheetTarget,
@@ -119,7 +120,13 @@ def _notify_success(cfg: Config, report_payload) -> None:
     feishu_client = FeishuClient(cfg)
     if cfg.run_report_mode == "top_trending_sheet":
         target = _sync_top_trending_sheet(cfg, report_payload, feishu_client)
-        feishu_client.send_group_markdown(target.url)
+        feishu_client.send_group_markdown(
+            build_top_trending_briefing_markdown(
+                report_payload,
+                get_previous_ranks(cfg),
+                target.url,
+            )
+        )
         return
 
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
