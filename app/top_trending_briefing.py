@@ -23,7 +23,7 @@ class TrendingBriefingEntry:
     name: str
     ccu: int
     launch_date: date
-    sheet_labels: tuple[str, ...]
+    sheet_rank_labels: tuple[str, ...]
     best_rank: int
 
 
@@ -45,7 +45,7 @@ def build_top_trending_briefing_markdown(
         lines.append("")
         for entry in entries:
             lines.append(
-                f"- {entry.name}｜{'、'.join(entry.sheet_labels)}｜CCU {entry.ccu:,}｜首次上线 {entry.launch_date.isoformat()}"
+                f"- {entry.name}｜{'、'.join(entry.sheet_rank_labels)}｜CCU {entry.ccu:,}｜首次上线 {entry.launch_date.isoformat()}"
             )
     else:
         lines.append("今天没有发现新上榜且首次上线未满 3 个月的重点游戏。")
@@ -83,7 +83,7 @@ def collect_top_trending_briefing_entries(
                 {
                     "record": record,
                     "launch_date": launch_date,
-                    "labels": set(),
+                    "labels": {},
                     "new_labels": set(),
                     "best_rank": record.rank,
                 },
@@ -97,17 +97,20 @@ def collect_top_trending_briefing_entries(
                 launch_date,
             )
             aggregated_entry["best_rank"] = min(aggregated_entry["best_rank"], record.rank)
-            aggregated_entry["labels"].add(SHEET_LABELS[sheet_title])
+            label = SHEET_LABELS[sheet_title]
+            current_rank = aggregated_entry["labels"].get(label)
+            if current_rank is None or record.rank < current_rank:
+                aggregated_entry["labels"][label] = record.rank
             if is_new_to_sheet:
-                aggregated_entry["new_labels"].add(SHEET_LABELS[sheet_title])
+                aggregated_entry["new_labels"].add(label)
 
     entries: list[TrendingBriefingEntry] = []
     for place_id, payload in aggregated.items():
         if not payload["new_labels"]:
             continue
 
-        labels = tuple(
-            label
+        sheet_rank_labels = tuple(
+            f"{label} #{payload['labels'][label]}"
             for key in SHEET_ORDER
             for label in (SHEET_LABELS[key],)
             if label in payload["labels"]
@@ -119,7 +122,7 @@ def collect_top_trending_briefing_entries(
                 name=_build_briefing_display_name(record),
                 ccu=record.playing,
                 launch_date=payload["launch_date"],
-                sheet_labels=labels,
+                sheet_rank_labels=sheet_rank_labels,
                 best_rank=payload["best_rank"],
             )
         )

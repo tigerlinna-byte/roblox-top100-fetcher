@@ -79,7 +79,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
                     name="Game A 游戏A",
                     ccu=13000,
                     launch_date=date(2026, 2, 1),
-                    sheet_labels=("热门榜", "新秀榜", "在玩榜"),
+                    sheet_rank_labels=("热门榜 #5", "新秀榜 #3", "在玩榜 #2"),
                     best_rank=2,
                 ),
                 TrendingBriefingEntry(
@@ -87,7 +87,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
                     name="Existing Game",
                     ccu=3000,
                     launch_date=date(2026, 3, 1),
-                    sheet_labels=("新秀榜",),
+                    sheet_rank_labels=("新秀榜 #8",),
                     best_rank=8,
                 ),
             ],
@@ -119,7 +119,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
         )
 
         self.assertIn("## 今日关注", markdown)
-        self.assertIn("Game B｜热门榜｜CCU 6,789｜首次上线 2026-03-10", markdown)
+        self.assertIn("Game B｜热门榜 #1｜CCU 6,789｜首次上线 2026-03-10", markdown)
         self.assertNotIn("查看完整榜单", markdown)
 
     def test_build_markdown_handles_no_focus_games(self) -> None:
