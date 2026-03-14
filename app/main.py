@@ -127,6 +127,7 @@ def _notify_success(cfg: Config, report_payload) -> None:
                 target.url,
             )
         )
+        feishu_client.send_group_markdown(target.url)
         return
 
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
