@@ -125,6 +125,8 @@ This repo now includes a Cloudflare Worker in [`worker/`](./worker) that bridges
 Chinese step-by-step external platform guide:
 
 - [`docs/external-platform-setup.zh-CN.md`](./docs/external-platform-setup.zh-CN.md)
+- 长期维护上下文手册：
+  - [`docs/maintenance-context.zh-CN.md`](./docs/maintenance-context.zh-CN.md)
 
 Architecture:
 
