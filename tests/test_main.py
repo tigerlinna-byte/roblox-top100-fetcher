@@ -37,7 +37,7 @@ class MainTests(unittest.TestCase):
         self.assertEqual(1, feishu_client.send_group_markdown.call_count)
         briefing_card = feishu_client.send_group_card.call_args.args[0]
         url_text = feishu_client.send_group_markdown.call_args.args[0]
-        self.assertEqual("今日关注", briefing_card["header"]["title"]["content"])
+        self.assertEqual("今日关注（2026-03-14）", briefing_card["header"]["title"]["content"])
         self.assertEqual("https://feishu.cn/sheets/test", url_text)
 
 

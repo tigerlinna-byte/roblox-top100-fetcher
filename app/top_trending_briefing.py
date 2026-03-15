@@ -41,7 +41,8 @@ def build_top_trending_briefing_markdown(
 
     entries = collect_top_trending_briefing_entries(records_by_sheet, previous_ranks_by_sheet)
     visible_entries = entries[:MAX_BRIEFING_ENTRIES]
-    lines = ["## 今日关注", ""]
+    title = _build_briefing_title(records_by_sheet, heading_prefix="## ")
+    lines = [title, ""]
 
     if visible_entries:
         lines.append("以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：")
@@ -89,7 +90,7 @@ def build_top_trending_briefing_card(
         "header": {
             "title": {
                 "tag": "plain_text",
-                "content": "今日关注",
+                "content": _build_briefing_title(records_by_sheet),
             }
         },
         "elements": [
@@ -188,6 +189,18 @@ def _resolve_reference_date(records_by_sheet: dict[str, list[GameRecord]]) -> da
                 continue
             latest_date = parsed if latest_date is None else max(latest_date, parsed)
     return latest_date
+
+
+def _build_briefing_title(
+    records_by_sheet: dict[str, list[GameRecord]],
+    heading_prefix: str = "",
+) -> str:
+    """根据榜单抓取日期构建简报标题。"""
+
+    reference_date = _resolve_reference_date(records_by_sheet)
+    if reference_date is None:
+        return f"{heading_prefix}今日关注"
+    return f"{heading_prefix}今日关注（{reference_date.isoformat()}）"
 
 
 def _resolve_launch_date(record: GameRecord) -> date | None:

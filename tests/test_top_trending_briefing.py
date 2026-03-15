@@ -95,7 +95,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
             entries,
         )
 
-    def test_build_markdown_includes_briefing_and_sheet_link(self) -> None:
+    def test_build_markdown_includes_dated_title_and_briefing(self) -> None:
         markdown = build_top_trending_briefing_markdown(
             {
                 "top_trending_v4": [
@@ -119,7 +119,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
             "https://feishu.cn/sheets/test",
         )
 
-        self.assertIn("## 今日关注", markdown)
+        self.assertIn("## 今日关注（2026-03-14）", markdown)
         self.assertIn("Game B｜热门榜 #1｜CCU 6,789｜首次上线 2026-03-10", markdown)
         self.assertNotIn("查看完整榜单", markdown)
 
@@ -147,7 +147,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual("今日关注", card["header"]["title"]["content"])
+        self.assertEqual("今日关注（2026-03-14）", card["header"]["title"]["content"])
         content = card["elements"][0]["content"]
         self.assertIn("**以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：**", content)
         self.assertIn("<font color='blue'>Game B 游戏B</font>", content)
