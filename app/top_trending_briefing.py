@@ -7,6 +7,7 @@ from .models import GameRecord
 
 
 NEW_RELEASE_WINDOW_DAYS = 90
+MAX_BRIEFING_ENTRIES = 10
 BRIEFING_NAME_COLOR = "blue"
 SHEET_LABELS = {
     "top_trending_v4": "热门榜",
@@ -39,15 +40,18 @@ def build_top_trending_briefing_markdown(
     """
 
     entries = collect_top_trending_briefing_entries(records_by_sheet, previous_ranks_by_sheet)
+    visible_entries = entries[:MAX_BRIEFING_ENTRIES]
     lines = ["## 今日关注", ""]
 
-    if entries:
+    if visible_entries:
         lines.append("以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：")
         lines.append("")
-        for entry in entries:
+        for entry in visible_entries:
             lines.append(
                 f"- {entry.name}｜{'、'.join(entry.sheet_rank_labels)}｜CCU {entry.ccu:,}｜首次上线 {entry.launch_date.isoformat()}"
             )
+        if len(entries) > MAX_BRIEFING_ENTRIES:
+            lines.extend(["", "其余值得关注的游戏请直接查看下方表格。"])
     else:
         lines.append("今天没有发现新上榜且首次上线未满 3 个月的重点游戏。")
 
@@ -61,12 +65,13 @@ def build_top_trending_briefing_card(
     """构建 Top100 简报飞书卡片。"""
 
     entries = collect_top_trending_briefing_entries(records_by_sheet, previous_ranks_by_sheet)
-    if entries:
+    visible_entries = entries[:MAX_BRIEFING_ENTRIES]
+    if visible_entries:
         lines = [
             "**以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：**",
             "",
         ]
-        for entry in entries:
+        for entry in visible_entries:
             lines.append(
                 "- "
                 f"<font color='{BRIEFING_NAME_COLOR}'>{entry.name}</font>"
@@ -74,6 +79,8 @@ def build_top_trending_briefing_card(
                 f"｜CCU {entry.ccu:,}"
                 f"｜首次上线 {entry.launch_date.isoformat()}"
             )
+        if len(entries) > MAX_BRIEFING_ENTRIES:
+            lines.extend(["", "其余值得关注的游戏请直接查看下方表格。"])
     else:
         lines = ["今天没有发现新上榜且首次上线未满 3 个月的重点游戏。"]
 

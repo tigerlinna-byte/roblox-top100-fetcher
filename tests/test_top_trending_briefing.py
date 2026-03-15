@@ -152,6 +152,44 @@ class TopTrendingBriefingTests(unittest.TestCase):
         self.assertIn("**以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：**", content)
         self.assertIn("<font color='blue'>Game B 游戏B</font>", content)
 
+    def test_briefing_limits_visible_entries_to_ten(self) -> None:
+        records = [
+            GameRecord(
+                rank=index,
+                place_id=1000 + index,
+                name=f"Game {index}",
+                playing=1000 + index,
+                fetched_at="2026-03-14T00:00:00Z",
+                created_at="2026-03-10T00:00:00Z",
+            )
+            for index in range(1, 13)
+        ]
+        records_by_sheet = {
+            "top_trending_v4": records,
+            "up_and_coming_v4": [],
+            "top_playing_now": [],
+        }
+        previous_ranks_by_sheet = {
+            "top_trending_v4": {},
+            "up_and_coming_v4": {},
+            "top_playing_now": {},
+        }
+
+        markdown = build_top_trending_briefing_markdown(
+            records_by_sheet,
+            previous_ranks_by_sheet,
+            "https://feishu.cn/sheets/test",
+        )
+        card = build_top_trending_briefing_card(
+            records_by_sheet,
+            previous_ranks_by_sheet,
+        )
+
+        self.assertIn("Game 10", markdown)
+        self.assertNotIn("Game 11", markdown)
+        self.assertIn("其余值得关注的游戏请直接查看下方表格。", markdown)
+        self.assertIn("其余值得关注的游戏请直接查看下方表格。", card["elements"][0]["content"])
+
     def test_build_markdown_handles_no_focus_games(self) -> None:
         markdown = build_top_trending_briefing_markdown(
             {
