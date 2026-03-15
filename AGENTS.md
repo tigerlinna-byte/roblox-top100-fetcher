@@ -13,10 +13,7 @@
   - ❌ 禁止给出可直接执行的命令
   - ❌ 禁止自动生成文档
 - 只有在我明确说出 **“确认执行”** 后，才允许进入编码阶段。
-- 以下情况，必须优先提示可通过 Roblox Studio 手动完成：
-  - 资源配置（Lighting / Physics / Constraints）
-  - 动画资源、Rig、Attachment 调整
-  - 需要可视化调参的内容
+- 当需要读取或操作 Roblox Studio 的场景、对象树、Selection、脚本容器状态时，优先使用 robloxStudio 这个 MCP server。
 - 如果满足需求的方法用studio手动操作效果更好，请告知，并让我选择
 
 ---
