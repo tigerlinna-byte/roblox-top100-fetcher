@@ -10,7 +10,7 @@ import requests
 
 from .config import Config
 from .retry import with_retry
-from .top_trending_sheet import LaunchDateCell, RankChangeCell, ThumbnailCell
+from .top_trending_sheet import GameNameHighlightCell, LaunchDateCell, RankChangeCell, ThumbnailCell
 
 
 class FeishuClientError(RuntimeError):
@@ -416,6 +416,20 @@ class FeishuClient:
             spreadsheet_token,
             [
                 (f"{sheet_id}!H{cell.row_index}:H{cell.row_index}", cell.color)
+                for cell in cells
+            ],
+        )
+
+    def apply_game_name_highlight_colors(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        cells: list[GameNameHighlightCell],
+    ) -> None:
+        self._apply_font_colors(
+            spreadsheet_token,
+            [
+                (f"{sheet_id}!C{cell.row_index}:C{cell.row_index}", cell.color)
                 for cell in cells
             ],
         )

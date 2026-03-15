@@ -24,6 +24,7 @@ from .storage import write_outputs, write_project_metrics_output
 from .summary import build_failure_markdown, build_success_markdown
 from .top_trending_briefing import build_top_trending_briefing_card
 from .top_trending_sheet import (
+    build_game_name_highlight_cells,
     SheetTarget,
     SpreadsheetTarget,
     build_default_sheet_specs,
@@ -215,6 +216,15 @@ def _sync_top_trending_sheet(
             target.spreadsheet_token,
             sheet.sheet_id,
             build_launch_date_cells(sheet_records),
+        )
+        feishu_client.apply_game_name_highlight_colors(
+            target.spreadsheet_token,
+            sheet.sheet_id,
+            build_game_name_highlight_cells(
+                sheet.title,
+                records_by_sheet,
+                previous_ranks,
+            ),
         )
         if not save_previous_ranks(github_client, sheet, sheet_records):
             logging.warning("Previous ranks were not persisted for %s.", sheet.title)

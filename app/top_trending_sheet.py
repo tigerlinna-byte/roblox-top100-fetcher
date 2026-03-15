@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime
 from .config import Config
 from .github_client import GitHubClient
 from .models import GameRecord
+from .top_trending_briefing import collect_top_trending_briefing_entries
 
 
 SPREADSHEET_TOKEN_VAR = "FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN"
@@ -53,6 +54,12 @@ class RankChangeCell:
 
 @dataclass(frozen=True)
 class LaunchDateCell:
+    row_index: int
+    color: str
+
+
+@dataclass(frozen=True)
+class GameNameHighlightCell:
     row_index: int
     color: str
 
@@ -160,6 +167,27 @@ def build_launch_date_cells(records: list[GameRecord]) -> list[LaunchDateCell]:
                 color=_resolve_launch_date_color(launch_date, record),
             )
         )
+    return cells
+
+
+def build_game_name_highlight_cells(
+    sheet_title: str,
+    records_by_sheet: dict[str, list[GameRecord]],
+    previous_ranks_by_sheet: dict[str, dict[int, int]],
+) -> list[GameNameHighlightCell]:
+    """构建需要在表格中高亮游戏名的单元格。"""
+
+    focus_place_ids = {
+        entry.place_id
+        for entry in collect_top_trending_briefing_entries(records_by_sheet, previous_ranks_by_sheet)
+    }
+    if not focus_place_ids:
+        return []
+
+    cells: list[GameNameHighlightCell] = []
+    for offset, record in enumerate(records_by_sheet.get(sheet_title, []), start=2):
+        if record.place_id in focus_place_ids:
+            cells.append(GameNameHighlightCell(row_index=offset, color="red"))
     return cells
 
 
