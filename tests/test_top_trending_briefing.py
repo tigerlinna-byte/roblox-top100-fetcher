@@ -6,6 +6,7 @@ import unittest
 from app.models import GameRecord
 from app.top_trending_briefing import (
     TrendingBriefingEntry,
+    build_top_trending_briefing_card,
     build_top_trending_briefing_markdown,
     collect_top_trending_briefing_entries,
 )
@@ -121,6 +122,35 @@ class TopTrendingBriefingTests(unittest.TestCase):
         self.assertIn("## 今日关注", markdown)
         self.assertIn("Game B｜热门榜 #1｜CCU 6,789｜首次上线 2026-03-10", markdown)
         self.assertNotIn("查看完整榜单", markdown)
+
+    def test_build_card_highlights_intro_and_game_name(self) -> None:
+        card = build_top_trending_briefing_card(
+            {
+                "top_trending_v4": [
+                    GameRecord(
+                        rank=1,
+                        place_id=201,
+                        name="Game B",
+                        localized_name="游戏B",
+                        playing=6789,
+                        fetched_at="2026-03-14T00:00:00Z",
+                        created_at="2026-03-10T00:00:00Z",
+                    )
+                ],
+                "up_and_coming_v4": [],
+                "top_playing_now": [],
+            },
+            {
+                "top_trending_v4": {},
+                "up_and_coming_v4": {},
+                "top_playing_now": {},
+            },
+        )
+
+        self.assertEqual("今日关注", card["header"]["title"]["content"])
+        content = card["elements"][0]["content"]
+        self.assertIn("**以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：**", content)
+        self.assertIn("<font color='blue'>Game B 游戏B</font>", content)
 
     def test_build_markdown_handles_no_focus_games(self) -> None:
         markdown = build_top_trending_briefing_markdown(

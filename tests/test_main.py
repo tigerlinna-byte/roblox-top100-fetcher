@@ -33,10 +33,11 @@ class MainTests(unittest.TestCase):
 
         _notify_success(cfg, report_payload)
 
-        self.assertEqual(2, feishu_client.send_group_markdown.call_count)
-        briefing_text = feishu_client.send_group_markdown.call_args_list[0].args[0]
-        url_text = feishu_client.send_group_markdown.call_args_list[1].args[0]
-        self.assertIn("## 今日关注", briefing_text)
+        feishu_client.send_group_card.assert_called_once()
+        self.assertEqual(1, feishu_client.send_group_markdown.call_count)
+        briefing_card = feishu_client.send_group_card.call_args.args[0]
+        url_text = feishu_client.send_group_markdown.call_args.args[0]
+        self.assertEqual("今日关注", briefing_card["header"]["title"]["content"])
         self.assertEqual("https://feishu.cn/sheets/test", url_text)
 
 

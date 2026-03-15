@@ -7,6 +7,7 @@ from .models import GameRecord
 
 
 NEW_RELEASE_WINDOW_DAYS = 90
+BRIEFING_NAME_COLOR = "blue"
 SHEET_LABELS = {
     "top_trending_v4": "热门榜",
     "up_and_coming_v4": "新秀榜",
@@ -51,6 +52,46 @@ def build_top_trending_briefing_markdown(
         lines.append("今天没有发现新上榜且首次上线未满 3 个月的重点游戏。")
 
     return "\n".join(lines)
+
+
+def build_top_trending_briefing_card(
+    records_by_sheet: dict[str, list[GameRecord]],
+    previous_ranks_by_sheet: dict[str, dict[int, int]],
+) -> dict[str, object]:
+    """构建 Top100 简报飞书卡片。"""
+
+    entries = collect_top_trending_briefing_entries(records_by_sheet, previous_ranks_by_sheet)
+    if entries:
+        lines = [
+            "**以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：**",
+            "",
+        ]
+        for entry in entries:
+            lines.append(
+                "- "
+                f"<font color='{BRIEFING_NAME_COLOR}'>{entry.name}</font>"
+                f"｜{'、'.join(entry.sheet_rank_labels)}"
+                f"｜CCU {entry.ccu:,}"
+                f"｜首次上线 {entry.launch_date.isoformat()}"
+            )
+    else:
+        lines = ["今天没有发现新上榜且首次上线未满 3 个月的重点游戏。"]
+
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {
+                "tag": "plain_text",
+                "content": "今日关注",
+            }
+        },
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": "\n".join(lines),
+            }
+        ],
+    }
 
 
 def collect_top_trending_briefing_entries(

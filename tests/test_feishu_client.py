@@ -117,6 +117,59 @@ class FeishuClientTests(unittest.TestCase):
         self.assertEqual("oc_test_chat_a", send_kwargs_a["json"]["receive_id"])
         self.assertEqual("oc_test_chat_b", send_kwargs_b["json"]["receive_id"])
 
+    def test_send_group_card_uses_webhook_interactive_payload(self) -> None:
+        session = Mock()
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"StatusCode": 0}
+        session.request.return_value = response
+
+        cfg = Config(
+            feishu_bot_webhook="https://open.feishu.cn/open-apis/bot/v2/hook/test",
+            request_timeout_seconds=3,
+            retry_max_attempts=1,
+        )
+        client = FeishuClient(cfg, session=session)
+
+        client.send_group_card({"header": {"title": {"tag": "plain_text", "content": "今日关注"}}})
+
+        kwargs = session.request.call_args.kwargs
+        self.assertEqual("interactive", kwargs["json"]["msg_type"])
+        self.assertIn("card", kwargs["json"])
+
+    def test_send_group_card_prefers_app_bot_for_chat_id(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        send_response = Mock()
+        send_response.status_code = 200
+        send_response.json.return_value = {"code": 0, "data": {"message_id": "om_test"}}
+
+        session.request.side_effect = [auth_response, send_response]
+
+        cfg = Config(
+            feishu_app_id="cli_xxx",
+            feishu_app_secret="secret",
+            run_chat_id="oc_test_chat",
+            request_timeout_seconds=3,
+            retry_max_attempts=1,
+        )
+        client = FeishuClient(cfg, session=session)
+
+        client.send_group_card({"header": {"title": {"tag": "plain_text", "content": "今日关注"}}})
+
+        send_kwargs = session.request.call_args_list[1].kwargs
+        self.assertEqual("interactive", send_kwargs["json"]["msg_type"])
+        self.assertIsInstance(send_kwargs["json"]["content"], str)
+        content = json.loads(send_kwargs["json"]["content"])
+        self.assertEqual("今日关注", content["header"]["title"]["content"])
+
     def test_update_spreadsheet_title_calls_patch_endpoint(self) -> None:
         session = Mock()
 

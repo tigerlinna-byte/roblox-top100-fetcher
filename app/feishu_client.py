@@ -58,6 +58,27 @@ class FeishuClient:
             requires_feishu_code=False,
         )
 
+    def send_group_card(self, card_payload: dict[str, object]) -> None:
+        """发送飞书卡片消息。"""
+
+        chat_ids = _split_chat_ids(self.config.run_chat_id)
+        if chat_ids and self._has_app_credentials():
+            self._send_group_card_via_app(card_payload, chat_ids)
+            return
+
+        if not self.config.feishu_bot_webhook:
+            return
+
+        self._request_json(
+            "POST",
+            self.config.feishu_bot_webhook,
+            json_payload={
+                "msg_type": "interactive",
+                "card": card_payload,
+            },
+            requires_feishu_code=False,
+        )
+
     def _has_app_credentials(self) -> bool:
         return bool(self.config.feishu_app_id and self.config.feishu_app_secret)
 
@@ -71,6 +92,25 @@ class FeishuClient:
                     "receive_id": chat_id,
                     "msg_type": "text",
                     "content": {"text": markdown_text},
+                },
+                headers={"Authorization": f"Bearer {access_token}"},
+                json_transform=_stringify_feishu_content,
+            )
+
+    def _send_group_card_via_app(
+        self,
+        card_payload: dict[str, object],
+        chat_ids: tuple[str, ...],
+    ) -> None:
+        access_token = self._fetch_tenant_access_token()
+        for chat_id in chat_ids:
+            self._request_json(
+                "POST",
+                "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+                json_payload={
+                    "receive_id": chat_id,
+                    "msg_type": "interactive",
+                    "content": card_payload,
                 },
                 headers={"Authorization": f"Bearer {access_token}"},
                 json_transform=_stringify_feishu_content,
