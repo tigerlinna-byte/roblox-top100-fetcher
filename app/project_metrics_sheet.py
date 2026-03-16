@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from .config import Config
 from .github_client import GitHubClient
@@ -110,7 +111,7 @@ def build_project_metrics_values(record: ProjectDailyMetricsRecord) -> list[obje
     """将单日指标记录转成飞书表格一行。"""
 
     return [
-        record.report_date,
+        _format_report_date_display(record.report_date),
         record.peak_ccu,
         record.average_session_time,
         record.day1_retention,
@@ -172,8 +173,8 @@ def _merge_single_record(rows: list[list[object]], record: ProjectDailyMetricsRe
 
 def _resolve_insert_index(rows: list[list[object]], report_date: str) -> int:
     for index, row in enumerate(rows[1:], start=1):
-        current_date = str(row[0]).strip()
-        if not _is_iso_date_string(current_date):
+        current_date = _extract_report_date(str(row[0]).strip())
+        if current_date is None:
             continue
         if report_date > current_date:
             return index
@@ -192,9 +193,10 @@ def _normalize_existing_rows(existing_rows: list[list[object]]) -> list[list[obj
 
 def _build_date_index(rows: list[list[object]]) -> dict[str, int]:
     return {
-        str(row[0]).strip(): index
+        report_date: index
         for index, row in enumerate(rows[1:], start=1)
-        if _is_iso_date_string(str(row[0]).strip())
+        for report_date in [_extract_report_date(str(row[0]).strip())]
+        if report_date is not None
     }
 
 
@@ -203,3 +205,20 @@ def _is_iso_date_string(value: str) -> bool:
     if len(parts) != 3:
         return False
     return all(part.isdigit() for part in parts) and len(parts[0]) == 4 and len(parts[1]) == 2 and len(parts[2]) == 2
+
+
+def _extract_report_date(value: str) -> str | None:
+    raw_value = value.strip()
+    if not raw_value:
+        return None
+
+    date_part = raw_value.split("（", 1)[0].strip()
+    if _is_iso_date_string(date_part):
+        return date_part
+    return None
+
+
+def _format_report_date_display(report_date: str) -> str:
+    parsed = date.fromisoformat(report_date)
+    weekday_labels = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+    return f"{report_date}（{weekday_labels[parsed.weekday()]}）"

@@ -32,7 +32,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
 
         row = build_project_metrics_values(record)
 
-        self.assertEqual("2026-03-12", row[0])
+        self.assertEqual("2026-03-12（周四）", row[0])
         self.assertEqual("2,345", row[1])
         self.assertEqual("18m 30s", row[2])
         self.assertEqual("0.12%", row[10])
@@ -77,7 +77,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         table_state = build_project_metrics_table([], records)
 
         self.assertEqual(PROJECT_METRICS_HEADERS, table_state.rows[0])
-        self.assertEqual(["2026-03-12", "2026-03-10"], [row[0] for row in table_state.rows[1:]])
+        self.assertEqual(["2026-03-12（周四）", "2026-03-10（周二）"], [row[0] for row in table_state.rows[1:]])
 
     def test_build_project_metrics_table_merges_existing_rows_without_clearing_history(self) -> None:
         existing_rows = [
@@ -122,7 +122,10 @@ class ProjectMetricsSheetTests(unittest.TestCase):
 
         table_state = build_project_metrics_table(existing_rows, records)
 
-        self.assertEqual(["2026-03-12", "2026-03-11", "2026-03-10"], [row[0] for row in table_state.rows[1:]])
+        self.assertEqual(
+            ["2026-03-12（周四）", "2026-03-11（周三）", "2026-03-10"],
+            [row[0] for row in table_state.rows[1:]],
+        )
         self.assertEqual("230", table_state.rows[2][1])
         self.assertEqual("13m", table_state.rows[2][2])
         self.assertEqual("180", table_state.rows[3][1])
@@ -153,6 +156,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
 
         table_state = build_project_metrics_table(existing_rows, records)
 
+        self.assertEqual("2026-03-11（周三）", table_state.rows[1][0])
         self.assertEqual("230", table_state.rows[1][1])
         self.assertEqual("", table_state.rows[1][2])
         self.assertEqual("", table_state.rows[1][3])
@@ -181,8 +185,38 @@ class ProjectMetricsSheetTests(unittest.TestCase):
 
         self.assertEqual(5, len(rows))
         self.assertEqual(PROJECT_METRICS_HEADERS, rows[0])
-        self.assertEqual("2026-03-12", rows[1][0])
+        self.assertEqual("2026-03-12（周四）", rows[1][0])
         self.assertEqual([""] * len(PROJECT_METRICS_HEADERS), rows[-1])
+
+    def test_build_project_metrics_table_updates_existing_rows_with_weekday_suffix(self) -> None:
+        existing_rows = [
+            PROJECT_METRICS_HEADERS.copy(),
+            ["2026-03-11（周三）", "200", "", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
+        ]
+        records = [
+            ProjectDailyMetricsRecord(
+                report_date="2026-03-11",
+                peak_ccu="230",
+                average_session_time="13m",
+                day1_retention="33%",
+                day7_retention="13%",
+                payer_conversion_rate="2.3%",
+                arppu="$6.50",
+                qptr="4.5%",
+                five_minute_retention="38%",
+                home_recommendations="61",
+                client_crash_rate="0.09%",
+                project_id="9682356542",
+                source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                fetched_at="2026-03-12T01:02:03Z",
+            ),
+        ]
+
+        table_state = build_project_metrics_table(existing_rows, records)
+
+        self.assertEqual("2026-03-11（周三）", table_state.rows[1][0])
+        self.assertEqual("230", table_state.rows[1][1])
+        self.assertEqual("13m", table_state.rows[1][2])
 
 
 if __name__ == "__main__":
