@@ -6,4 +6,5 @@ data/
 .tmp/
 tmp*/
 .wrangler/
+worker/node_modules/
 worker/.dev.vars
