@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime
 from .config import Config
 from .github_client import GitHubClient
 from .models import GameRecord
-from .top_trending_briefing import collect_top_trending_briefing_entries
+from .top_trending_briefing import collect_top_trending_focus_place_ids_by_sheet
 
 
 SPREADSHEET_TOKEN_VAR = "FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN"
@@ -177,10 +177,10 @@ def build_game_name_highlight_cells(
 ) -> list[GameNameHighlightCell]:
     """构建需要在表格中高亮游戏名的单元格。"""
 
-    focus_place_ids = {
-        entry.place_id
-        for entry in collect_top_trending_briefing_entries(records_by_sheet, previous_ranks_by_sheet)
-    }
+    focus_place_ids = collect_top_trending_focus_place_ids_by_sheet(
+        records_by_sheet,
+        previous_ranks_by_sheet,
+    ).get(sheet_title, set())
     if not focus_place_ids:
         return []
 

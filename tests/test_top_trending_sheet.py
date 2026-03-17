@@ -245,18 +245,80 @@ class TopTrendingSheetTests(unittest.TestCase):
                         created_at="2025-10-01T00:00:00Z",
                     ),
                 ],
-                "up_and_coming_v4": [],
-                "top_playing_now": [],
+                "up_and_coming_v4": [
+                    GameRecord(
+                        rank=1,
+                        place_id=101,
+                        name="Game A",
+                        playing=5000,
+                        fetched_at="2026-03-14T00:00:00Z",
+                        created_at="2026-03-10T00:00:00Z",
+                    )
+                ],
+                "top_playing_now": [
+                    GameRecord(
+                        rank=1,
+                        place_id=101,
+                        name="Game A",
+                        playing=5000,
+                        fetched_at="2026-03-14T00:00:00Z",
+                        created_at="2026-03-10T00:00:00Z",
+                    )
+                ],
             },
             {
                 "top_trending_v4": {},
                 "up_and_coming_v4": {},
-                "top_playing_now": {},
+                "top_playing_now": {101: 5},
             },
         )
 
         self.assertEqual(1, len(cells))
         self.assertEqual((2, "red"), (cells[0].row_index, cells[0].color))
+
+    def test_build_game_name_highlight_cells_does_not_mark_existing_sheet_rows(self) -> None:
+        cells = build_game_name_highlight_cells(
+            "top_playing_now",
+            {
+                "top_trending_v4": [
+                    GameRecord(
+                        rank=1,
+                        place_id=101,
+                        name="Game A",
+                        playing=5000,
+                        fetched_at="2026-03-14T00:00:00Z",
+                        created_at="2026-03-10T00:00:00Z",
+                    )
+                ],
+                "up_and_coming_v4": [
+                    GameRecord(
+                        rank=1,
+                        place_id=101,
+                        name="Game A",
+                        playing=5000,
+                        fetched_at="2026-03-14T00:00:00Z",
+                        created_at="2026-03-10T00:00:00Z",
+                    )
+                ],
+                "top_playing_now": [
+                    GameRecord(
+                        rank=1,
+                        place_id=101,
+                        name="Game A",
+                        playing=5000,
+                        fetched_at="2026-03-14T00:00:00Z",
+                        created_at="2026-03-10T00:00:00Z",
+                    )
+                ],
+            },
+            {
+                "top_trending_v4": {},
+                "up_and_coming_v4": {},
+                "top_playing_now": {101: 5},
+            },
+        )
+
+        self.assertEqual([], cells)
 
     def test_default_sheet_specs_follow_requested_order(self) -> None:
         specs = build_default_sheet_specs()

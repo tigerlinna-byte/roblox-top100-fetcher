@@ -8,7 +8,8 @@ from .models import GameRecord
 
 NEW_RELEASE_WINDOW_DAYS = 90
 MAX_BRIEFING_ENTRIES = 10
-BRIEFING_NAME_COLOR = "blue"
+BRIEFING_NAME_COLOR = "red"
+BRIEFING_SHEET_LABEL_COLOR = "red"
 SHEET_LABELS = {
     "top_trending_v4": "热门榜",
     "up_and_coming_v4": "新秀榜",
@@ -76,7 +77,7 @@ def build_top_trending_briefing_card(
             lines.append(
                 "- "
                 f"<font color='{BRIEFING_NAME_COLOR}'>{entry.name}</font>"
-                f"｜{'、'.join(entry.sheet_rank_labels)}"
+                f"｜<font color='{BRIEFING_SHEET_LABEL_COLOR}'>{'、'.join(entry.sheet_rank_labels)}</font>"
                 f"｜CCU {entry.ccu:,}"
                 f"｜首次上线 {entry.launch_date.isoformat()}"
             )
@@ -108,6 +109,11 @@ def collect_top_trending_briefing_entries(
 ) -> list[TrendingBriefingEntry]:
     """收集需要进入 Top100 简报的重点游戏。"""
 
+    focus_place_ids_by_sheet = collect_top_trending_focus_place_ids_by_sheet(
+        records_by_sheet,
+        previous_ranks_by_sheet,
+    )
+
     reference_date = _resolve_reference_date(records_by_sheet)
     if reference_date is None:
         return []
@@ -126,14 +132,13 @@ def collect_top_trending_briefing_entries(
             if launch_date is None or launch_date < launch_deadline:
                 continue
 
-            is_new_to_sheet = record.place_id not in previous_ranks
+            is_new_to_sheet = record.place_id in focus_place_ids_by_sheet.get(sheet_title, set())
             aggregated_entry = aggregated.setdefault(
                 record.place_id,
                 {
                     "record": record,
                     "launch_date": launch_date,
-                    "labels": {},
-                    "new_labels": set(),
+                    "new_labels_by_sheet": {},
                     "best_rank": record.rank,
                 },
             )
@@ -146,23 +151,22 @@ def collect_top_trending_briefing_entries(
                 launch_date,
             )
             aggregated_entry["best_rank"] = min(aggregated_entry["best_rank"], record.rank)
-            label = SHEET_LABELS[sheet_title]
-            current_rank = aggregated_entry["labels"].get(label)
-            if current_rank is None or record.rank < current_rank:
-                aggregated_entry["labels"][label] = record.rank
             if is_new_to_sheet:
-                aggregated_entry["new_labels"].add(label)
+                label = SHEET_LABELS[sheet_title]
+                current_rank = aggregated_entry["new_labels_by_sheet"].get(label)
+                if current_rank is None or record.rank < current_rank:
+                    aggregated_entry["new_labels_by_sheet"][label] = record.rank
 
     entries: list[TrendingBriefingEntry] = []
     for place_id, payload in aggregated.items():
-        if not payload["new_labels"]:
+        if not payload["new_labels_by_sheet"]:
             continue
 
         sheet_rank_labels = tuple(
-            f"{label} #{payload['labels'][label]}"
+            f"{label} #{payload['new_labels_by_sheet'][label]}"
             for key in SHEET_ORDER
             for label in (SHEET_LABELS[key],)
-            if label in payload["labels"]
+            if label in payload["new_labels_by_sheet"]
         )
         record = payload["record"]
         entries.append(
@@ -178,6 +182,37 @@ def collect_top_trending_briefing_entries(
 
     entries.sort(key=lambda item: (item.best_rank, item.name.casefold()))
     return entries
+
+
+def collect_top_trending_focus_place_ids_by_sheet(
+    records_by_sheet: dict[str, list[GameRecord]],
+    previous_ranks_by_sheet: dict[str, dict[int, int]],
+) -> dict[str, set[int]]:
+    """收集每个榜单中今天刚上榜且需要高亮的游戏。"""
+
+    reference_date = _resolve_reference_date(records_by_sheet)
+    if reference_date is None:
+        return {}
+
+    launch_deadline = reference_date - timedelta(days=NEW_RELEASE_WINDOW_DAYS)
+    focus_place_ids_by_sheet: dict[str, set[int]] = {}
+
+    for sheet_title in SHEET_ORDER:
+        previous_ranks = previous_ranks_by_sheet.get(sheet_title, {})
+        for record in records_by_sheet.get(sheet_title, []):
+            if record.place_id is None:
+                continue
+
+            launch_date = _resolve_launch_date(record)
+            if launch_date is None or launch_date < launch_deadline:
+                continue
+
+            if record.place_id in previous_ranks:
+                continue
+
+            focus_place_ids_by_sheet.setdefault(sheet_title, set()).add(record.place_id)
+
+    return focus_place_ids_by_sheet
 
 
 def _resolve_reference_date(records_by_sheet: dict[str, list[GameRecord]]) -> date | None:
