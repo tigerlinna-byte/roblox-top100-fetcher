@@ -8,7 +8,7 @@ from .models import GameRecord
 
 NEW_RELEASE_WINDOW_DAYS = 90
 MAX_BRIEFING_ENTRIES = 10
-BRIEFING_NAME_COLOR = "red"
+BRIEFING_NAME_COLOR = "blue"
 BRIEFING_SHEET_LABEL_COLOR = "red"
 SHEET_LABELS = {
     "top_trending_v4": "热门榜",

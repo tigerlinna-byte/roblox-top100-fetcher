@@ -196,7 +196,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
         self.assertEqual("今日关注（2026-03-14）", card["header"]["title"]["content"])
         content = card["elements"][0]["content"]
         self.assertIn("**以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：**", content)
-        self.assertIn("<font color='red'>Game B 游戏B</font>", content)
+        self.assertIn("<font color='blue'>Game B 游戏B</font>", content)
         self.assertIn("<font color='red'>热门榜 #1</font>", content)
 
     def test_briefing_limits_visible_entries_to_ten(self) -> None:
