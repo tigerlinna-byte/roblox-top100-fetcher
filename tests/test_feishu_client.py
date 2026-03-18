@@ -463,7 +463,7 @@ class FeishuClientTests(unittest.TestCase):
             row_height_kwargs["json"]["dimension"]["majorDimension"],
         )
 
-    def test_reset_sheet_font_colors_clears_old_columns_to_black(self) -> None:
+    def test_reset_sheet_font_colors_clears_game_name_and_data_columns_to_black(self) -> None:
         session = Mock()
 
         auth_response = Mock()
@@ -493,7 +493,7 @@ class FeishuClientTests(unittest.TestCase):
 
         style_kwargs = session.request.call_args_list[1].kwargs
         self.assertEqual(
-            ["sheet001!D2:H140"],
+            ["sheet001!C2:H140"],
             style_kwargs["json"]["data"][0]["ranges"],
         )
         self.assertEqual("#000000", style_kwargs["json"]["data"][0]["style"]["foreColor"])

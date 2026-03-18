@@ -389,7 +389,7 @@ class FeishuClient:
             return
         self._apply_font_colors(
             spreadsheet_token,
-            [(f"{sheet_id}!D2:H{row_count}", "black")],
+            [(f"{sheet_id}!C2:H{row_count}", "black")],
         )
 
     def apply_rank_change_colors(
