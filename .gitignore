@@ -8,3 +8,5 @@ tmp*/
 .wrangler/
 worker/node_modules/
 worker/.dev.vars
+.DS_Store
+.test-output/
