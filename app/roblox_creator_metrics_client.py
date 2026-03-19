@@ -247,16 +247,16 @@ class RobloxCreatorMetricsClient:
         if self.session is None:
             self.session = requests.Session()
 
-    def fetch_project_daily_metrics(self) -> list[ProjectDailyMetricsRecord]:
+    def fetch_project_daily_metrics(self, overview_url: str | None = None) -> list[ProjectDailyMetricsRecord]:
         """抓取项目最近窗口内的真实日期指标序列。"""
 
-        overview_url = self.config.roblox_creator_overview_url.strip()
-        if not overview_url:
+        resolved_overview_url = (overview_url or self.config.roblox_creator_overview_url).strip()
+        if not resolved_overview_url:
             raise RobloxCreatorMetricsClientError("ROBLOX_CREATOR_OVERVIEW_URL 未配置")
         if not self.config.roblox_creator_cookie.strip():
             raise RobloxCreatorMetricsClientError("ROBLOX_CREATOR_COOKIE 未配置")
 
-        project_id = _extract_project_id(overview_url)
+        project_id = _extract_project_id(resolved_overview_url)
         business_timezone = _resolve_business_timezone(self.config.feishu_timezone)
         window = _resolve_project_query_window(project_id, business_timezone)
         if window is None:
@@ -306,7 +306,7 @@ class RobloxCreatorMetricsClient:
                     home_recommendations=metrics_by_field.get("home_recommendations", {}).get(report_date, ""),
                     client_crash_rate=metrics_by_field.get("client_crash_rate", {}).get(report_date, ""),
                     project_id=project_id,
-                    source_url=overview_url,
+                    source_url=resolved_overview_url,
                     fetched_at=fetched_at,
                 )
             )

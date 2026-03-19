@@ -14,6 +14,7 @@ class Config:
     roblox_sort_id: str = "top-playing-now"
     roblox_top_trending_sort_id: str = ""
     roblox_creator_overview_url: str = ""
+    roblox_creator_overview_url_2: str = ""
     roblox_creator_cookie: str = ""
     feishu_bot_webhook: str = ""
     feishu_app_id: str = ""
@@ -45,6 +46,9 @@ class Config:
     feishu_project_metrics_spreadsheet_token: str = ""
     feishu_project_metrics_sheet_id: str = ""
     feishu_project_metrics_spreadsheet_title: str = "Shoot Or Shot"
+    feishu_project_metrics_2_spreadsheet_token: str = ""
+    feishu_project_metrics_2_sheet_id: str = ""
+    feishu_project_metrics_2_spreadsheet_title: str = "项目 9707829514"
 
 
 
@@ -89,6 +93,7 @@ def load_config() -> Config:
         roblox_sort_id=os.getenv("ROBLOX_SORT_ID", "top-playing-now"),
         roblox_top_trending_sort_id=os.getenv("ROBLOX_TOP_TRENDING_SORT_ID", ""),
         roblox_creator_overview_url=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL", ""),
+        roblox_creator_overview_url_2=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL_2", ""),
         roblox_creator_cookie=os.getenv("ROBLOX_CREATOR_COOKIE", ""),
         feishu_bot_webhook=os.getenv("FEISHU_BOT_WEBHOOK", ""),
         feishu_app_id=os.getenv("FEISHU_APP_ID", ""),
@@ -137,5 +142,14 @@ def load_config() -> Config:
         feishu_project_metrics_spreadsheet_title=os.getenv(
             "FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE",
             "Shoot Or Shot",
+        ),
+        feishu_project_metrics_2_spreadsheet_token=os.getenv(
+            "FEISHU_PROJECT_METRICS_2_SPREADSHEET_TOKEN",
+            "",
+        ),
+        feishu_project_metrics_2_sheet_id=os.getenv("FEISHU_PROJECT_METRICS_2_SHEET_ID", ""),
+        feishu_project_metrics_2_spreadsheet_title=os.getenv(
+            "FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE",
+            "项目 9707829514",
         ),
     )

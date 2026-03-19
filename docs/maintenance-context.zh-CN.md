@@ -79,18 +79,27 @@
 - `up_and_coming_v4`
 - `top_playing_now`
 
-### 3.2 Shoot Or Shot 项目日报链路
+### 3.2 项目日报链路
 
 用途：
 
 - 手动触发 `/roblox-project-metrics`
 - Cloudflare 定时自动触发
-- 更新 `Shoot Or Shot` 飞书表
-- 在群里发送表格链接
+- 更新每个项目各自的飞书表
+- 在群里分别发送各项目表格链接
+
+当前已接入项目：
+
+- `Shoot Or Shot`
+  - 项目 ID：`9682356542`
+  - 起始日期：`2026-03-09`
+- `9707829514`
+  - overview URL：`https://create.roblox.com/dashboard/creations/experiences/9707829514/overview`
+  - 起始日期：`2026-03-17`
 
 当前数据口径重点：
 
-- 起始日期从 `2026-03-09` 开始
+- 每个项目按各自配置的起始日期开始补数
 - 按真实数据日期写入表格
 - 保留历史数据
 - 每次重建数据区时会覆盖固定范围，避免旧残留数据
@@ -135,7 +144,7 @@
 - `0 1 * * *`
   - Top100 / Trending
 - `25 19 * * *`
-  - Shoot Or Shot 项目日报
+  - 项目日报链路（当前会顺序跑所有已配置项目）
   - 北京时间 `03:25`
 
 Worker 分流位置：
@@ -192,7 +201,7 @@ Artifacts：
 当前复用范围：
 
 - Top100 / Trending 榜单抓取
-- Shoot Or Shot 项目日报抓取
+- 所有项目日报抓取
 
 这两条链路当前都复用同一份 `ROBLOX_CREATOR_COOKIE`。
 
@@ -222,6 +231,7 @@ Artifacts：
 主要包含可公开配置：
 
 - `ROBLOX_CREATOR_OVERVIEW_URL`
+- `ROBLOX_CREATOR_OVERVIEW_URL_2`
 - `FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN`
 - `FEISHU_TOP_TRENDING_SHEET_ID`
 - `FEISHU_UP_AND_COMING_SHEET_ID`
@@ -241,6 +251,9 @@ Artifacts：
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE`
+- `FEISHU_PROJECT_METRICS_2_SPREADSHEET_TOKEN`
+- `FEISHU_PROJECT_METRICS_2_SHEET_ID`
+- `FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE`
 
 ### 6.3 Cloudflare Worker Secrets
 
@@ -261,8 +274,8 @@ Cloudflare 里维护：
 `SCHEDULE_CHAT_IDS` 很重要：
 
 - Top100 定时发送依赖它
-- Shoot Or Shot 定时也复用它
-- 两条定时消息发送到同一个飞书群
+- 项目日报链路定时也复用它
+- Top100 和所有项目日报定时消息都会发到同一个飞书群
 
 ## 7. 核心文件索引
 
@@ -291,12 +304,15 @@ Cloudflare 里维护：
 
 - [app/roblox_creator_metrics_client.py](C:/Users/41539/Desktop/roblox-top100-fetcher/app/roblox_creator_metrics_client.py)
   - Creator Analytics 指标抓取
+  - 当前支持按多个项目配置顺序抓取
 
 - [app/project_metrics_models.py](C:/Users/41539/Desktop/roblox-top100-fetcher/app/project_metrics_models.py)
   - 项目日报模型
+  - 项目起始日期
 
 - [app/project_metrics_sheet.py](C:/Users/41539/Desktop/roblox-top100-fetcher/app/project_metrics_sheet.py)
   - 项目日报表头和重建逻辑
+  - 多项目飞书表目标解析
 
 ### 飞书和 GitHub
 

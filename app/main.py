@@ -9,6 +9,7 @@ from .feishu_client import FeishuClient, FeishuClientError
 from .github_client import GitHubClient, GitHubClientError
 from .project_metrics_models import ProjectDailyMetricsRecord
 from .project_metrics_sheet import (
+    ProjectMetricsSheetVariables,
     ProjectMetricsSpreadsheetTarget,
     build_project_metrics_rebuild_rows,
     get_saved_project_metrics_target,
@@ -104,7 +105,18 @@ def _notify_failure(cfg: Config, reason: str) -> None:
 
 def _fetch_report_payload(cfg: Config):
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
-        return RobloxCreatorMetricsClient(cfg).fetch_project_daily_metrics()
+        variables_by_project_id = {
+            variables.project_id: variables
+            for variables in resolve_project_metrics_variables(cfg)
+        }
+        if not variables_by_project_id:
+            raise RobloxCreatorMetricsClientError("未配置任何项目日报 overview 地址")
+
+        client = RobloxCreatorMetricsClient(cfg)
+        return {
+            project_id: client.fetch_project_daily_metrics(variables.overview_url)
+            for project_id, variables in variables_by_project_id.items()
+        }
 
     client = RobloxClient(cfg)
     if cfg.run_report_mode == "top_trending_sheet":
@@ -131,8 +143,14 @@ def _notify_success(cfg: Config, report_payload) -> None:
         return
 
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
-        target = _sync_project_metrics_sheet(cfg, report_payload, feishu_client)
-        feishu_client.send_group_markdown(target.url)
+        for variables in resolve_project_metrics_variables(cfg):
+            target = _sync_project_metrics_sheet(
+                cfg,
+                report_payload.get(variables.project_id, []),
+                feishu_client,
+                variables,
+            )
+            feishu_client.send_group_markdown(target.url)
         return
 
     feishu_client.send_group_markdown(build_success_markdown(cfg, report_payload))
@@ -236,8 +254,8 @@ def _sync_project_metrics_sheet(
     cfg: Config,
     records: list[ProjectDailyMetricsRecord],
     feishu_client: FeishuClient,
+    variables: ProjectMetricsSheetVariables,
 ):
-    variables = resolve_project_metrics_variables(cfg)
     github_client = GitHubClient(cfg)
     target = get_saved_project_metrics_target(cfg, variables)
     if target is None:
@@ -351,7 +369,11 @@ def _write_report_outputs(cfg: Config, report_payload):
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
         return write_project_metrics_output(
             cfg.output_dir,
-            report_payload,
+            [
+                record
+                for variables in resolve_project_metrics_variables(cfg)
+                for record in report_payload.get(variables.project_id, [])
+            ],
             prefix=_output_prefix(cfg),
         )
     return write_outputs(

@@ -2,16 +2,34 @@ from __future__ import annotations
 
 import unittest
 
+from app.config import Config
 from app.project_metrics_models import ProjectDailyMetricsRecord
 from app.project_metrics_sheet import (
     PROJECT_METRICS_HEADERS,
     build_project_metrics_rebuild_rows,
     build_project_metrics_table,
     build_project_metrics_values,
+    resolve_project_metrics_variables,
 )
 
 
 class ProjectMetricsSheetTests(unittest.TestCase):
+    def test_resolve_project_metrics_variables_returns_each_configured_project(self) -> None:
+        variables = resolve_project_metrics_variables(
+            Config(
+                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+                feishu_project_metrics_spreadsheet_title="Shoot Or Shot",
+                feishu_project_metrics_2_spreadsheet_title="项目 9707829514",
+            )
+        )
+
+        self.assertEqual(["9682356542", "9707829514"], [item.project_id for item in variables])
+        self.assertEqual(
+            ["Shoot Or Shot", "项目 9707829514"],
+            [item.spreadsheet_title for item in variables],
+        )
+
     def test_build_project_metrics_values_follows_expected_column_order(self) -> None:
         record = ProjectDailyMetricsRecord(
             report_date="2026-03-12",

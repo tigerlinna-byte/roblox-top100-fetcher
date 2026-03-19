@@ -7,6 +7,7 @@ from typing import Any
 
 PROJECT_START_DATES = {
     "9682356542": "2026-03-09",
+    "9707829514": "2026-03-17",
 }
 PROJECT_METRICS_FIELD_NAMES = (
     "peak_ccu",

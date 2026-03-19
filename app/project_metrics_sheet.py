@@ -10,6 +10,8 @@ from .project_metrics_models import ProjectDailyMetricsRecord
 
 PROJECT_METRICS_SPREADSHEET_TOKEN_VAR = "FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN"
 PROJECT_METRICS_SHEET_ID_VAR = "FEISHU_PROJECT_METRICS_SHEET_ID"
+PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR = "FEISHU_PROJECT_METRICS_2_SPREADSHEET_TOKEN"
+PROJECT_METRICS_2_SHEET_ID_VAR = "FEISHU_PROJECT_METRICS_2_SHEET_ID"
 DEFAULT_PROJECT_METRICS_SHEET_TITLE = "daily_metrics"
 PROJECT_METRICS_HEADERS = [
     "日期",
@@ -31,6 +33,8 @@ PROJECT_METRICS_HEADERS = [
 class ProjectMetricsSheetVariables:
     """描述项目日报表使用的 GitHub Variables 配置。"""
 
+    project_id: str
+    overview_url: str
     spreadsheet_token_variable_name: str
     sheet_id_variable_name: str
     spreadsheet_token: str
@@ -55,16 +59,40 @@ class ProjectMetricsTableState:
     rows: list[list[object]]
 
 
-def resolve_project_metrics_variables(cfg: Config) -> ProjectMetricsSheetVariables:
-    """根据运行配置解析项目日报表变量。"""
+def resolve_project_metrics_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
+    """根据运行配置解析所有启用的项目日报表变量。"""
 
-    return ProjectMetricsSheetVariables(
-        spreadsheet_token_variable_name=PROJECT_METRICS_SPREADSHEET_TOKEN_VAR,
-        sheet_id_variable_name=PROJECT_METRICS_SHEET_ID_VAR,
-        spreadsheet_token=cfg.feishu_project_metrics_spreadsheet_token,
-        sheet_id=cfg.feishu_project_metrics_sheet_id,
-        spreadsheet_title=cfg.feishu_project_metrics_spreadsheet_title,
-    )
+    resolved: list[ProjectMetricsSheetVariables] = []
+
+    primary_project_id = _extract_project_id(cfg.roblox_creator_overview_url)
+    if primary_project_id:
+        resolved.append(
+            ProjectMetricsSheetVariables(
+                project_id=primary_project_id,
+                overview_url=cfg.roblox_creator_overview_url,
+                spreadsheet_token_variable_name=PROJECT_METRICS_SPREADSHEET_TOKEN_VAR,
+                sheet_id_variable_name=PROJECT_METRICS_SHEET_ID_VAR,
+                spreadsheet_token=cfg.feishu_project_metrics_spreadsheet_token,
+                sheet_id=cfg.feishu_project_metrics_sheet_id,
+                spreadsheet_title=cfg.feishu_project_metrics_spreadsheet_title,
+            )
+        )
+
+    secondary_project_id = _extract_project_id(cfg.roblox_creator_overview_url_2)
+    if secondary_project_id:
+        resolved.append(
+            ProjectMetricsSheetVariables(
+                project_id=secondary_project_id,
+                overview_url=cfg.roblox_creator_overview_url_2,
+                spreadsheet_token_variable_name=PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR,
+                sheet_id_variable_name=PROJECT_METRICS_2_SHEET_ID_VAR,
+                spreadsheet_token=cfg.feishu_project_metrics_2_spreadsheet_token,
+                sheet_id=cfg.feishu_project_metrics_2_sheet_id,
+                spreadsheet_title=cfg.feishu_project_metrics_2_spreadsheet_title,
+            )
+        )
+
+    return tuple(resolved)
 
 
 def build_project_metrics_spreadsheet_url(spreadsheet_token: str) -> str:
@@ -75,17 +103,17 @@ def build_project_metrics_spreadsheet_url(spreadsheet_token: str) -> str:
 
 def get_saved_project_metrics_target(
     cfg: Config,
-    variables: ProjectMetricsSheetVariables | None = None,
+    variables: ProjectMetricsSheetVariables,
 ) -> ProjectMetricsSpreadsheetTarget | None:
     """读取已保存的项目日报表目标。"""
 
-    resolved_variables = variables or resolve_project_metrics_variables(cfg)
-    if not resolved_variables.spreadsheet_token or not resolved_variables.sheet_id:
+    del cfg
+    if not variables.spreadsheet_token or not variables.sheet_id:
         return None
     return ProjectMetricsSpreadsheetTarget(
-        spreadsheet_token=resolved_variables.spreadsheet_token,
-        sheet_id=resolved_variables.sheet_id,
-        url=build_project_metrics_spreadsheet_url(resolved_variables.spreadsheet_token),
+        spreadsheet_token=variables.spreadsheet_token,
+        sheet_id=variables.sheet_id,
+        url=build_project_metrics_spreadsheet_url(variables.spreadsheet_token),
     )
 
 
@@ -222,3 +250,11 @@ def _format_report_date_display(report_date: str) -> str:
     parsed = date.fromisoformat(report_date)
     weekday_labels = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
     return f"{report_date}（{weekday_labels[parsed.weekday()]}）"
+
+
+def _extract_project_id(overview_url: str) -> str:
+    parts = [part for part in overview_url.strip().split("/") if part]
+    for index, part in enumerate(parts):
+        if part == "experiences" and index + 1 < len(parts) and parts[index + 1].isdigit():
+            return parts[index + 1]
+    return ""
