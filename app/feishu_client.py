@@ -340,6 +340,7 @@ class FeishuClient:
         rank_width: int,
         thumbnail_width: int,
         game_name_width: int,
+        genre_width: int,
         online_width: int,
         rank_change_width: int,
         developer_width: int,
@@ -351,6 +352,7 @@ class FeishuClient:
                 rank_width,
                 thumbnail_width,
                 game_name_width,
+                genre_width,
                 online_width,
                 rank_change_width,
                 None,
@@ -389,7 +391,7 @@ class FeishuClient:
             return
         self._apply_font_colors(
             spreadsheet_token,
-            [(f"{sheet_id}!C2:H{row_count}", "black")],
+            [(f"{sheet_id}!C2:I{row_count}", "black")],
         )
 
     def apply_rank_change_colors(
@@ -401,7 +403,7 @@ class FeishuClient:
         self._apply_font_colors(
             spreadsheet_token,
             [
-                (f"{sheet_id}!E{cell.row_index}:E{cell.row_index}", cell.color)
+                (f"{sheet_id}!F{cell.row_index}:F{cell.row_index}", cell.color)
                 for cell in cells
             ],
         )
@@ -415,7 +417,7 @@ class FeishuClient:
         self._apply_font_colors(
             spreadsheet_token,
             [
-                (f"{sheet_id}!H{cell.row_index}:H{cell.row_index}", cell.color)
+                (f"{sheet_id}!I{cell.row_index}:I{cell.row_index}", cell.color)
                 for cell in cells
             ],
         )

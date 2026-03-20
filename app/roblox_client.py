@@ -113,6 +113,7 @@ class RobloxClient:
                     ),
                     name=str(_pick(raw, "name", "title", default=_pick(details, "name", default=""))),
                     localized_name=localized_names.get(universe_id, ""),
+                    genre=str(_pick(details, "genre", "genre_l1", default=_pick(raw, "genre", default=""))),
                     thumbnail_url=thumbnail_urls.get(universe_id, ""),
                     creator=creator_name,
                     playing=_as_int(

@@ -12,6 +12,7 @@ class GameRecord:
     universe_id: int | None = None
     place_id: int | None = None
     localized_name: str = ""
+    genre: str = ""
     thumbnail_url: str = ""
     creator: str = ""
     playing: int = 0

@@ -31,8 +31,8 @@ class RobloxClientTests(unittest.TestCase):
         }
         details_payload = {
             "data": [
-                {"id": 101, "name": "A", "visits": 1234, "playing": 99, "creator": {"name": "C1"}},
-                {"id": 102, "name": "B", "visits": 4567, "playing": 77, "creator": {"name": "C2"}},
+                {"id": 101, "name": "A", "visits": 1234, "playing": 99, "creator": {"name": "C1"}, "genre": "Adventure"},
+                {"id": 102, "name": "B", "visits": 4567, "playing": 77, "creator": {"name": "C2"}, "genre": "Roleplay"},
             ]
         }
         localization_payload_a = {
@@ -82,11 +82,13 @@ class RobloxClientTests(unittest.TestCase):
         self.assertEqual(1, items[0].place_id)
         self.assertEqual("A", items[0].name)
         self.assertEqual("游戏A", items[0].localized_name)
+        self.assertEqual("Adventure", items[0].genre)
         self.assertEqual("C1", items[0].creator)
         self.assertEqual(99, items[0].playing)
         self.assertEqual(1234, items[0].visits)
         self.assertEqual("https://t1.example/icon-a.png", items[0].thumbnail_url)
         self.assertEqual("", items[1].localized_name)
+        self.assertEqual("Roleplay", items[1].genre)
         self.assertEqual("https://t1.example/icon-b.png", items[1].thumbnail_url)
 
     def test_respects_api_limit(self) -> None:

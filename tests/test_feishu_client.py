@@ -493,7 +493,7 @@ class FeishuClientTests(unittest.TestCase):
 
         style_kwargs = session.request.call_args_list[1].kwargs
         self.assertEqual(
-            ["sheet001!C2:H140"],
+            ["sheet001!C2:I140"],
             style_kwargs["json"]["data"][0]["ranges"],
         )
         self.assertEqual("#000000", style_kwargs["json"]["data"][0]["style"]["foreColor"])
@@ -542,7 +542,7 @@ class FeishuClientTests(unittest.TestCase):
             style_kwargs["url"],
         )
         self.assertEqual(
-            ["sheet001!E2:E2"],
+            ["sheet001!F2:F2"],
             style_kwargs["json"]["data"][0]["ranges"],
         )
         self.assertEqual("#f54a45", style_kwargs["json"]["data"][0]["style"]["foreColor"])
@@ -591,7 +591,7 @@ class FeishuClientTests(unittest.TestCase):
             style_kwargs["url"],
         )
         self.assertEqual(
-            ["sheet001!H2:H2"],
+            ["sheet001!I2:I2"],
             style_kwargs["json"]["data"][0]["ranges"],
         )
 
