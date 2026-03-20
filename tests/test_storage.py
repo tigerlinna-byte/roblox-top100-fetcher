@@ -28,6 +28,7 @@ class StorageTests(unittest.TestCase):
                 place_id=123,
                 name="Game A",
                 localized_name="游戏A",
+                genre="Adventure",
                 thumbnail_url="https://t1.example/game-a.png",
                 creator="Creator A",
                 playing=1000,
@@ -47,6 +48,13 @@ class StorageTests(unittest.TestCase):
         payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
         self.assertEqual(1, len(payload))
         self.assertEqual("Game A", payload[0]["name"])
+        self.assertEqual("Adventure", payload[0]["genre"])
+
+        with Path(csv_path).open("r", newline="", encoding="utf-8") as fp:
+            rows = list(csv.DictReader(fp))
+
+        self.assertEqual(1, len(rows))
+        self.assertEqual("Adventure", rows[0]["genre"])
 
     def test_writes_project_metrics_json_and_csv(self) -> None:
         sample = [

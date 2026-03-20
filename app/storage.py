@@ -35,6 +35,7 @@ def write_outputs(
                 "place_id",
                 "name",
                 "localized_name",
+                "genre",
                 "thumbnail_url",
                 "creator",
                 "playing",
