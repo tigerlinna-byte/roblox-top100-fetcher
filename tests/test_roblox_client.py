@@ -91,6 +91,105 @@ class RobloxClientTests(unittest.TestCase):
         self.assertEqual("Roleplay", items[1].genre)
         self.assertEqual("https://t1.example/icon-b.png", items[1].thumbnail_url)
 
+    def test_prefers_specific_genre_over_all(self) -> None:
+        response_payload = {
+            "games": [
+                {
+                    "universeId": 101,
+                    "rootPlaceId": 1,
+                    "name": "A",
+                    "playerCount": 99,
+                    "genre": "All",
+                }
+            ]
+        }
+        details_payload = {
+            "data": [
+                {
+                    "id": 101,
+                    "name": "A",
+                    "visits": 1234,
+                    "playing": 99,
+                    "creator": {"name": "C1"},
+                    "genre": "All",
+                    "genre_l1": "Adventure",
+                    "genre_l2": "Survival",
+                }
+            ]
+        }
+
+        session = Mock()
+        response_a = Mock()
+        response_a.status_code = 200
+        response_a.json.return_value = response_payload
+        response_b = Mock()
+        response_b.status_code = 200
+        response_b.json.return_value = details_payload
+        response_c = Mock()
+        response_c.status_code = 200
+        response_c.json.return_value = {"data": []}
+        response_d = Mock()
+        response_d.status_code = 200
+        response_d.json.return_value = {"data": []}
+        session.request.side_effect = [response_a, response_b, response_c, response_d]
+
+        client = RobloxClient(
+            config=Config(api_limit=100, roblox_sort_id="top-playing-now"),
+            session=session,
+        )
+
+        items = client.fetch_top_games()
+
+        self.assertEqual("Survival", items[0].genre)
+
+    def test_falls_back_to_all_when_no_more_specific_genre_exists(self) -> None:
+        response_payload = {
+            "games": [
+                {
+                    "universeId": 101,
+                    "rootPlaceId": 1,
+                    "name": "A",
+                    "playerCount": 99,
+                }
+            ]
+        }
+        details_payload = {
+            "data": [
+                {
+                    "id": 101,
+                    "name": "A",
+                    "visits": 1234,
+                    "playing": 99,
+                    "creator": {"name": "C1"},
+                    "genre": "All",
+                }
+            ]
+        }
+
+        session = Mock()
+        response_a = Mock()
+        response_a.status_code = 200
+        response_a.json.return_value = response_payload
+        response_b = Mock()
+        response_b.status_code = 200
+        response_b.json.return_value = details_payload
+        response_c = Mock()
+        response_c.status_code = 200
+        response_c.json.return_value = {"data": []}
+        response_d = Mock()
+        response_d.status_code = 200
+        response_d.json.return_value = {"data": []}
+        session.request.side_effect = [response_a, response_b, response_c, response_d]
+
+        client = RobloxClient(
+            config=Config(api_limit=100, roblox_sort_id="top-playing-now"),
+            session=session,
+        )
+
+        items = client.fetch_top_games()
+
+        self.assertEqual("All", items[0].genre)
+
     def test_respects_api_limit(self) -> None:
         many = [{"universeId": i, "rootPlaceId": i, "name": f"g{i}", "playerCount": i} for i in range(1, 150)]
         session = Mock()

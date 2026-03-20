@@ -113,7 +113,7 @@ class RobloxClient:
                     ),
                     name=str(_pick(raw, "name", "title", default=_pick(details, "name", default=""))),
                     localized_name=localized_names.get(universe_id, ""),
-                    genre=str(_pick(details, "genre", "genre_l1", default=_pick(raw, "genre", default=""))),
+                    genre=_resolve_game_genre(raw, details),
                     thumbnail_url=thumbnail_urls.get(universe_id, ""),
                     creator=creator_name,
                     playing=_as_int(
@@ -407,6 +407,29 @@ def _extract_list(data: dict[str, Any], *keys: str) -> list[dict[str, Any]]:
 
 def _chunked(items: list[str], *, size: int) -> list[list[str]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _resolve_game_genre(raw: dict[str, Any], details: dict[str, Any]) -> str:
+    """优先返回更具体的游戏类型，避免把泛化的 All 写进表格。"""
+
+    candidates = [
+        _pick(details, "genre_l2", default=""),
+        _pick(raw, "genre_l2", default=""),
+        _pick(details, "genre", default=""),
+        _pick(raw, "genre", default=""),
+        _pick(details, "genre_l1", default=""),
+        _pick(raw, "genre_l1", default=""),
+    ]
+    fallback = ""
+    for candidate in candidates:
+        text = str(candidate).strip()
+        if not text:
+            continue
+        if not fallback:
+            fallback = text
+        if text.casefold() != "all":
+            return text
+    return fallback
 
 
 def _extract_sort_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
