@@ -24,6 +24,7 @@ class TrendingBriefingEntry:
 
     place_id: int
     name: str
+    genre: str
     ccu: int
     launch_date: date
     sheet_rank_labels: tuple[str, ...]
@@ -50,7 +51,7 @@ def build_top_trending_briefing_markdown(
         lines.append("")
         for entry in visible_entries:
             lines.append(
-                f"- {entry.name}｜{'、'.join(entry.sheet_rank_labels)}｜CCU {entry.ccu:,}｜首次上线 {entry.launch_date.isoformat()}"
+                f"- {entry.name}｜{entry.genre or '-'}｜{'、'.join(entry.sheet_rank_labels)}｜CCU {entry.ccu:,}｜首次上线 {entry.launch_date.isoformat()}"
             )
         if len(entries) > MAX_BRIEFING_ENTRIES:
             lines.extend(["", "其余值得关注的游戏请直接查看下方表格。"])
@@ -77,6 +78,7 @@ def build_top_trending_briefing_card(
             lines.append(
                 "- "
                 f"<font color='{BRIEFING_NAME_COLOR}'>{entry.name}</font>"
+                f"｜{entry.genre or '-'}"
                 f"｜<font color='{BRIEFING_SHEET_LABEL_COLOR}'>{'、'.join(entry.sheet_rank_labels)}</font>"
                 f"｜CCU {entry.ccu:,}"
                 f"｜首次上线 {entry.launch_date.isoformat()}"
@@ -173,6 +175,7 @@ def collect_top_trending_briefing_entries(
             TrendingBriefingEntry(
                 place_id=place_id,
                 name=_build_briefing_display_name(record),
+                genre=record.genre.strip(),
                 ccu=record.playing,
                 launch_date=payload["launch_date"],
                 sheet_rank_labels=sheet_rank_labels,

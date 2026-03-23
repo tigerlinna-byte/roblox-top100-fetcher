@@ -79,6 +79,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
                 TrendingBriefingEntry(
                     place_id=101,
                     name="Game A 游戏A",
+                    genre="",
                     ccu=13000,
                     launch_date=date(2026, 2, 1),
                     sheet_rank_labels=("热门榜 #5", "新秀榜 #3"),
@@ -87,6 +88,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
                 TrendingBriefingEntry(
                     place_id=103,
                     name="Existing Game",
+                    genre="",
                     ccu=3000,
                     launch_date=date(2026, 3, 1),
                     sheet_rank_labels=("新秀榜 #8",),
@@ -149,6 +151,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
                         rank=1,
                         place_id=201,
                         name="Game B",
+                        genre="Survival",
                         playing=6789,
                         fetched_at="2026-03-14T00:00:00Z",
                         created_at="2026-03-10T00:00:00Z",
@@ -166,7 +169,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
         )
 
         self.assertIn("## 今日关注（2026-03-14）", markdown)
-        self.assertIn("Game B｜热门榜 #1｜CCU 6,789｜首次上线 2026-03-10", markdown)
+        self.assertIn("Game B｜Survival｜热门榜 #1｜CCU 6,789｜首次上线 2026-03-10", markdown)
         self.assertNotIn("查看完整榜单", markdown)
 
     def test_build_card_highlights_intro_and_game_name(self) -> None:
@@ -178,6 +181,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
                         place_id=201,
                         name="Game B",
                         localized_name="游戏B",
+                        genre="Survival",
                         playing=6789,
                         fetched_at="2026-03-14T00:00:00Z",
                         created_at="2026-03-10T00:00:00Z",
@@ -197,6 +201,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
         content = card["elements"][0]["content"]
         self.assertIn("**以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：**", content)
         self.assertIn("<font color='blue'>Game B 游戏B</font>", content)
+        self.assertIn("｜Survival｜", content)
         self.assertIn("<font color='red'>热门榜 #1</font>", content)
 
     def test_briefing_limits_visible_entries_to_ten(self) -> None:
