@@ -116,7 +116,7 @@ export async function handleScheduled(controller, env, ctx, fetchImpl = fetch) {
 
 function resolveScheduledTrigger(env, cron) {
   const chatIds = parseCsvList(env.SCHEDULE_CHAT_IDS);
-  if ((cron === "0 1 * * *" || cron === "10 2 * * *") && !chatIds.length) {
+  if ((cron === "0 1 * * *" || cron === "10 1 * * *") && !chatIds.length) {
     console.warn(JSON.stringify({
       level: "warn",
       action: "schedule_skipped_missing_chat_ids",
@@ -134,7 +134,7 @@ function resolveScheduledTrigger(env, cron) {
     };
   }
 
-  if (cron === "10 2 * * *") {
+  if (cron === "10 1 * * *") {
     return {
       triggerSource: "cloudflare_cron",
       triggerActor: "cloudflare-cron",

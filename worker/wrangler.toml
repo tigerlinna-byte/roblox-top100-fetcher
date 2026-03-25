@@ -8,4 +8,4 @@ binding = "EVENT_DEDUP_KV"
 id = "47978031c7e748fe8bb2a8285f0b7476"
 
 [triggers]
-crons = ["0 1 * * *", "10 2 * * *"]
+crons = ["0 1 * * *", "10 1 * * *"]
