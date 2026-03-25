@@ -33,7 +33,7 @@ class TrendingBriefingEntry:
 
 def build_top_trending_briefing_markdown(
     records_by_sheet: dict[str, list[GameRecord]],
-    previous_ranks_by_sheet: dict[str, dict[int, int]],
+    recent_place_ids_by_sheet: dict[str, set[int]],
     spreadsheet_url: str,
 ) -> str:
     """构建 Top100 飞书消息简报。
@@ -41,7 +41,7 @@ def build_top_trending_briefing_markdown(
     简报只关注“新上榜且首次上线在 3 个月以内”的游戏，并在末尾附完整榜单链接。
     """
 
-    entries = collect_top_trending_briefing_entries(records_by_sheet, previous_ranks_by_sheet)
+    entries = collect_top_trending_briefing_entries(records_by_sheet, recent_place_ids_by_sheet)
     visible_entries = entries[:MAX_BRIEFING_ENTRIES]
     title = _build_briefing_title(records_by_sheet, heading_prefix="## ")
     lines = [title, ""]
@@ -63,11 +63,11 @@ def build_top_trending_briefing_markdown(
 
 def build_top_trending_briefing_card(
     records_by_sheet: dict[str, list[GameRecord]],
-    previous_ranks_by_sheet: dict[str, dict[int, int]],
+    recent_place_ids_by_sheet: dict[str, set[int]],
 ) -> dict[str, object]:
     """构建 Top100 简报飞书卡片。"""
 
-    entries = collect_top_trending_briefing_entries(records_by_sheet, previous_ranks_by_sheet)
+    entries = collect_top_trending_briefing_entries(records_by_sheet, recent_place_ids_by_sheet)
     visible_entries = entries[:MAX_BRIEFING_ENTRIES]
     if visible_entries:
         lines = [
@@ -107,13 +107,13 @@ def build_top_trending_briefing_card(
 
 def collect_top_trending_briefing_entries(
     records_by_sheet: dict[str, list[GameRecord]],
-    previous_ranks_by_sheet: dict[str, dict[int, int]],
+    recent_place_ids_by_sheet: dict[str, set[int]],
 ) -> list[TrendingBriefingEntry]:
     """收集需要进入 Top100 简报的重点游戏。"""
 
     focus_place_ids_by_sheet = collect_top_trending_focus_place_ids_by_sheet(
         records_by_sheet,
-        previous_ranks_by_sheet,
+        recent_place_ids_by_sheet,
     )
 
     reference_date = _resolve_reference_date(records_by_sheet)
@@ -125,7 +125,6 @@ def collect_top_trending_briefing_entries(
 
     for sheet_title in SHEET_ORDER:
         records = records_by_sheet.get(sheet_title, [])
-        previous_ranks = previous_ranks_by_sheet.get(sheet_title, {})
         for record in records:
             if record.place_id is None:
                 continue
@@ -189,7 +188,7 @@ def collect_top_trending_briefing_entries(
 
 def collect_top_trending_focus_place_ids_by_sheet(
     records_by_sheet: dict[str, list[GameRecord]],
-    previous_ranks_by_sheet: dict[str, dict[int, int]],
+    recent_place_ids_by_sheet: dict[str, set[int]],
 ) -> dict[str, set[int]]:
     """收集每个榜单中今天刚上榜且需要高亮的游戏。"""
 
@@ -201,7 +200,7 @@ def collect_top_trending_focus_place_ids_by_sheet(
     focus_place_ids_by_sheet: dict[str, set[int]] = {}
 
     for sheet_title in SHEET_ORDER:
-        previous_ranks = previous_ranks_by_sheet.get(sheet_title, {})
+        recent_place_ids = recent_place_ids_by_sheet.get(sheet_title, set())
         for record in records_by_sheet.get(sheet_title, []):
             if record.place_id is None:
                 continue
@@ -210,7 +209,7 @@ def collect_top_trending_focus_place_ids_by_sheet(
             if launch_date is None or launch_date < launch_deadline:
                 continue
 
-            if record.place_id in previous_ranks:
+            if record.place_id in recent_place_ids:
                 continue
 
             focus_place_ids_by_sheet.setdefault(sheet_title, set()).add(record.place_id)

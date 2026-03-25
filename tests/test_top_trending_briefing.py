@@ -67,9 +67,9 @@ class TopTrendingBriefingTests(unittest.TestCase):
             ],
         }
         previous_ranks_by_sheet = {
-            "top_trending_v4": {},
-            "up_and_coming_v4": {},
-            "top_playing_now": {101: 7},
+            "top_trending_v4": set(),
+            "up_and_coming_v4": set(),
+            "top_playing_now": {101},
         }
 
         entries = collect_top_trending_briefing_entries(records_by_sheet, previous_ranks_by_sheet)
@@ -133,9 +133,9 @@ class TopTrendingBriefingTests(unittest.TestCase):
                 ],
             },
             {
-                "top_trending_v4": {},
-                "up_and_coming_v4": {},
-                "top_playing_now": {101: 7},
+                "top_trending_v4": set(),
+                "up_and_coming_v4": set(),
+                "top_playing_now": {101},
             },
         )
 
@@ -161,9 +161,9 @@ class TopTrendingBriefingTests(unittest.TestCase):
                 "top_playing_now": [],
             },
             {
-                "top_trending_v4": {},
-                "up_and_coming_v4": {},
-                "top_playing_now": {},
+                "top_trending_v4": set(),
+                "up_and_coming_v4": set(),
+                "top_playing_now": set(),
             },
             "https://feishu.cn/sheets/test",
         )
@@ -191,9 +191,9 @@ class TopTrendingBriefingTests(unittest.TestCase):
                 "top_playing_now": [],
             },
             {
-                "top_trending_v4": {},
-                "up_and_coming_v4": {},
-                "top_playing_now": {},
+                "top_trending_v4": set(),
+                "up_and_coming_v4": set(),
+                "top_playing_now": set(),
             },
         )
 
@@ -222,9 +222,9 @@ class TopTrendingBriefingTests(unittest.TestCase):
             "top_playing_now": [],
         }
         previous_ranks_by_sheet = {
-            "top_trending_v4": {},
-            "up_and_coming_v4": {},
-            "top_playing_now": {},
+            "top_trending_v4": set(),
+            "up_and_coming_v4": set(),
+            "top_playing_now": set(),
         }
 
         markdown = build_top_trending_briefing_markdown(
@@ -259,14 +259,39 @@ class TopTrendingBriefingTests(unittest.TestCase):
                 "top_playing_now": [],
             },
             {
-                "top_trending_v4": {301: 2},
-                "up_and_coming_v4": {},
-                "top_playing_now": {},
+                "top_trending_v4": {301},
+                "up_and_coming_v4": set(),
+                "top_playing_now": set(),
             },
             "https://feishu.cn/sheets/test",
         )
 
         self.assertIn("今天没有发现新上榜且首次上线未满 3 个月的重点游戏。", markdown)
+
+    def test_collect_entries_excludes_games_seen_within_last_week(self) -> None:
+        entries = collect_top_trending_briefing_entries(
+            {
+                "top_trending_v4": [
+                    GameRecord(
+                        rank=1,
+                        place_id=401,
+                        name="Recent Return",
+                        playing=5000,
+                        fetched_at="2026-03-14T00:00:00Z",
+                        created_at="2026-03-10T00:00:00Z",
+                    )
+                ],
+                "up_and_coming_v4": [],
+                "top_playing_now": [],
+            },
+            {
+                "top_trending_v4": {401},
+                "up_and_coming_v4": set(),
+                "top_playing_now": set(),
+            },
+        )
+
+        self.assertEqual([], entries)
 
 
 if __name__ == "__main__":

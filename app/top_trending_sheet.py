@@ -27,6 +27,7 @@ TEST_UP_AND_COMING_PREV_RANKS_VAR = "FEISHU_UP_AND_COMING_TEST_PREV_RANKS"
 TEST_TOP_PLAYING_NOW_PREV_RANKS_VAR = "FEISHU_TOP_PLAYING_NOW_TEST_PREV_RANKS"
 
 MIN_RENDER_ROWS = 140
+RECENT_NEW_ENTRY_LOOKBACK_DAYS = 7
 
 
 @dataclass(frozen=True)
@@ -173,13 +174,13 @@ def build_launch_date_cells(records: list[GameRecord]) -> list[LaunchDateCell]:
 def build_game_name_highlight_cells(
     sheet_title: str,
     records_by_sheet: dict[str, list[GameRecord]],
-    previous_ranks_by_sheet: dict[str, dict[int, int]],
+    recent_place_ids_by_sheet: dict[str, set[int]],
 ) -> list[GameNameHighlightCell]:
     """构建需要在表格中高亮游戏名的单元格。"""
 
     focus_place_ids = collect_top_trending_focus_place_ids_by_sheet(
         records_by_sheet,
-        previous_ranks_by_sheet,
+        recent_place_ids_by_sheet,
     ).get(sheet_title, set())
     if not focus_place_ids:
         return []
@@ -278,11 +279,26 @@ def save_previous_ranks(
     github_client: GitHubClient,
     sheet: SheetTarget,
     records: list[GameRecord],
+    existing_raw: str = "",
 ) -> bool:
+    existing_history = _parse_previous_ranks_history(existing_raw)
+    today_payload = {
+        "place_ids": sorted(
+            {
+                int(record.place_id)
+                for record in records
+                if record.place_id
+            }
+        ),
+        "ranks": {
+            str(record.place_id): record.rank
+            for record in records
+            if record.place_id
+        },
+    }
+    history = [today_payload, *existing_history]
     payload = {
-        str(record.place_id): record.rank
-        for record in records
-        if record.place_id
+        "history": history[:RECENT_NEW_ENTRY_LOOKBACK_DAYS],
     }
     return github_client.upsert_repository_variable(
         sheet.previous_ranks_variable_name,
@@ -295,6 +311,17 @@ def get_previous_ranks(cfg: Config, variables: SpreadsheetVariableSet | None = N
     result: dict[str, dict[int, int]] = {}
     for _, title, _, variable_name in resolved_variables.sort_sheets:
         result[title] = _parse_previous_ranks(resolved_variables.previous_ranks_by_var.get(variable_name, ""))
+    return result
+
+
+def get_recent_place_ids_by_sheet(
+    cfg: Config,
+    variables: SpreadsheetVariableSet | None = None,
+) -> dict[str, set[int]]:
+    resolved_variables = variables or resolve_spreadsheet_variables(cfg)
+    result: dict[str, set[int]] = {}
+    for _, title, _, variable_name in resolved_variables.sort_sheets:
+        result[title] = _parse_recent_place_ids(resolved_variables.previous_ranks_by_var.get(variable_name, ""))
     return result
 
 
@@ -396,6 +423,18 @@ def _parse_previous_ranks(raw: str) -> dict[int, int]:
         payload = json.loads(raw)
     except json.JSONDecodeError:
         return {}
+    if isinstance(payload, dict) and isinstance(payload.get("history"), list):
+        history = _parse_previous_ranks_history(raw)
+        if not history:
+            return {}
+        first_entry_ranks = history[0].get("ranks", {})
+        if not isinstance(first_entry_ranks, dict):
+            return {}
+        return {
+            int(key): int(value)
+            for key, value in first_entry_ranks.items()
+            if str(key).isdigit() and isinstance(value, int)
+        }
     if not isinstance(payload, dict):
         return {}
     result: dict[int, int] = {}
@@ -405,6 +444,61 @@ def _parse_previous_ranks(raw: str) -> dict[int, int]:
         except (TypeError, ValueError):
             continue
     return result
+
+
+def _parse_recent_place_ids(raw: str) -> set[int]:
+    history = _parse_previous_ranks_history(raw)
+    if history:
+        return {
+            int(place_id)
+            for entry in history
+            for place_id in entry.get("place_ids", [])
+            if isinstance(place_id, int) or str(place_id).isdigit()
+        }
+
+    legacy_previous_ranks = _parse_previous_ranks(raw)
+    return set(legacy_previous_ranks.keys())
+
+
+def _parse_previous_ranks_history(raw: str) -> list[dict[str, object]]:
+    if not raw:
+        return []
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, dict):
+        return []
+
+    history = payload.get("history")
+    if not isinstance(history, list):
+        return []
+
+    normalized: list[dict[str, object]] = []
+    for entry in history[:RECENT_NEW_ENTRY_LOOKBACK_DAYS]:
+        if not isinstance(entry, dict):
+            continue
+        place_ids = [
+            int(place_id)
+            for place_id in entry.get("place_ids", [])
+            if isinstance(place_id, int) or str(place_id).isdigit()
+        ]
+        ranks = entry.get("ranks", {})
+        if not isinstance(ranks, dict):
+            ranks = {}
+        normalized.append(
+            {
+                "place_ids": place_ids,
+                "ranks": {
+                    str(key): int(value)
+                    for key, value in ranks.items()
+                    if str(key).isdigit() and (
+                        isinstance(value, int) or str(value).isdigit()
+                    )
+                },
+            }
+        )
+    return normalized
 
 
 def _measure_text_units(text: str) -> float:

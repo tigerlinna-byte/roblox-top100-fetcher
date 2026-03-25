@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 import unittest
 from unittest.mock import Mock
+import json
 
 from app.config import Config
 from app.models import GameRecord
@@ -18,8 +19,10 @@ from app.top_trending_sheet import (
     build_display_name,
     build_top_trending_values,
     get_previous_ranks,
+    get_recent_place_ids_by_sheet,
     get_saved_spreadsheet_target,
     resolve_spreadsheet_variables,
+    save_previous_ranks,
     save_spreadsheet_target,
 )
 
@@ -268,9 +271,9 @@ class TopTrendingSheetTests(unittest.TestCase):
                 ],
             },
             {
-                "top_trending_v4": {},
-                "up_and_coming_v4": {},
-                "top_playing_now": {101: 5},
+                "top_trending_v4": set(),
+                "up_and_coming_v4": set(),
+                "top_playing_now": {101},
             },
         )
 
@@ -313,9 +316,9 @@ class TopTrendingSheetTests(unittest.TestCase):
                 ],
             },
             {
-                "top_trending_v4": {},
-                "up_and_coming_v4": {},
-                "top_playing_now": {101: 5},
+                "top_trending_v4": set(),
+                "up_and_coming_v4": set(),
+                "top_playing_now": {101},
             },
         )
 
@@ -345,6 +348,19 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertEqual({101: 1, 102: 2}, previous_ranks["top_trending_v4"])
         self.assertEqual({201: 5}, previous_ranks["up_and_coming_v4"])
         self.assertEqual({301: 7}, previous_ranks["top_playing_now"])
+
+    def test_get_recent_place_ids_by_sheet_supports_new_history_payload(self) -> None:
+        cfg = Config(
+            feishu_top_trending_prev_ranks='{"history":[{"place_ids":[101,102],"ranks":{"101":1,"102":2}},{"place_ids":[103],"ranks":{"103":5}}]}',
+            feishu_up_and_coming_prev_ranks='{"history":[{"place_ids":[201],"ranks":{"201":5}}]}',
+            feishu_top_playing_now_prev_ranks='{"301":7}',
+        )
+
+        recent_place_ids = get_recent_place_ids_by_sheet(cfg)
+
+        self.assertEqual({101, 102, 103}, recent_place_ids["top_trending_v4"])
+        self.assertEqual({201}, recent_place_ids["up_and_coming_v4"])
+        self.assertEqual({301}, recent_place_ids["top_playing_now"])
 
     def test_data_rows_keep_same_column_representation(self) -> None:
         cfg = Config()
@@ -554,6 +570,35 @@ class TopTrendingSheetTests(unittest.TestCase):
             ("FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN", "shtcn_test"),
             first_call,
         )
+
+    def test_save_previous_ranks_persists_recent_history_payload(self) -> None:
+        github_client = Mock()
+        github_client.upsert_repository_variable.return_value = True
+        sheet = build_default_sheet_specs()[0]
+
+        from app.top_trending_sheet import SheetTarget
+
+        saved = save_previous_ranks(
+            github_client,
+            SheetTarget(
+                sort_id=sheet["sort_id"],
+                title=sheet["title"],
+                variable_name=sheet["variable_name"],
+                previous_ranks_variable_name=sheet["previous_ranks_variable_name"],
+                sheet_id="sheet001",
+            ),
+            [
+                GameRecord(rank=1, place_id=101, name="Game A"),
+                GameRecord(rank=2, place_id=102, name="Game B"),
+            ],
+            '{"history":[{"place_ids":[201],"ranks":{"201":5}}]}',
+        )
+
+        self.assertTrue(saved)
+        payload = json.loads(github_client.upsert_repository_variable.call_args.args[1])
+        self.assertEqual([101, 102], payload["history"][0]["place_ids"])
+        self.assertEqual({"101": 1, "102": 2}, payload["history"][0]["ranks"])
+        self.assertEqual([201], payload["history"][1]["place_ids"])
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ from .top_trending_sheet import (
     build_thumbnail_cells,
     build_top_trending_values,
     get_previous_ranks,
+    get_recent_place_ids_by_sheet,
     get_saved_spreadsheet_target,
     resolve_spreadsheet_variables,
     save_previous_ranks,
@@ -132,11 +133,12 @@ def _fetch_report_payload(cfg: Config):
 def _notify_success(cfg: Config, report_payload) -> None:
     feishu_client = FeishuClient(cfg)
     if cfg.run_report_mode == "top_trending_sheet":
+        recent_place_ids_by_sheet = get_recent_place_ids_by_sheet(cfg)
         target = _sync_top_trending_sheet(cfg, report_payload, feishu_client)
         feishu_client.send_group_card(
             build_top_trending_briefing_card(
                 report_payload,
-                get_previous_ranks(cfg),
+                recent_place_ids_by_sheet,
             )
         )
         feishu_client.send_group_markdown(target.url)
@@ -164,6 +166,7 @@ def _sync_top_trending_sheet(
 ) -> SpreadsheetTarget:
     variables = resolve_spreadsheet_variables(cfg)
     previous_ranks = get_previous_ranks(cfg, variables)
+    recent_place_ids_by_sheet = get_recent_place_ids_by_sheet(cfg, variables)
     github_client = GitHubClient(cfg)
     target = get_saved_spreadsheet_target(cfg, variables)
     if target is None:
@@ -241,10 +244,15 @@ def _sync_top_trending_sheet(
             build_game_name_highlight_cells(
                 sheet.title,
                 records_by_sheet,
-                previous_ranks,
+                recent_place_ids_by_sheet,
             ),
         )
-        if not save_previous_ranks(github_client, sheet, sheet_records):
+        if not save_previous_ranks(
+            github_client,
+            sheet,
+            sheet_records,
+            variables.previous_ranks_by_var.get(sheet.previous_ranks_variable_name, ""),
+        ):
             logging.warning("Previous ranks were not persisted for %s.", sheet.title)
     return target
 
