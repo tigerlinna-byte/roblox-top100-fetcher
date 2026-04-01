@@ -14,7 +14,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import requests
 
 from .config import Config
-from .project_metrics_models import ProjectDailyMetricsRecord, get_project_start_date, now_iso
+from .project_metrics_models import (
+    ProjectDailyMetricsRecord,
+    get_project_required_fields,
+    get_project_start_date,
+    now_iso,
+)
 from .retry import with_retry
 
 
@@ -137,7 +142,6 @@ ANALYTICS_FEATURE_PERMISSIONS_URL_TEMPLATE = (
 )
 ANALYTICS_METADATA_URL = "https://apis.roblox.com/analytics-query-gateway/v1/metrics/metadata"
 ANALYTICS_RESOURCE_TYPE = "RESOURCE_TYPE_UNIVERSE"
-MINIMUM_REQUIRED_FIELDS = ("peak_ccu",)
 
 
 @dataclass(frozen=True)
@@ -273,10 +277,11 @@ class RobloxCreatorMetricsClient:
             start_date,
             end_date,
         )
-        minimum_missing = [field_name for field_name in MINIMUM_REQUIRED_FIELDS if not metrics_by_field.get(field_name)]
+        required_fields = get_project_required_fields(project_id)
+        minimum_missing = [field_name for field_name in required_fields if not metrics_by_field.get(field_name)]
         missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if not metrics_by_field.get(definition.field_name)]
         debug_path = ""
-        if missing_fields:
+        if minimum_missing:
             debug_path = self._write_debug_snapshot("", metrics_by_field, missing_fields, direct_attempts)
         if minimum_missing:
             raise RobloxCreatorMetricsClientError(

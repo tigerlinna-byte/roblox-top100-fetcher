@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from app.config import Config
+from app.project_metrics_models import get_project_required_fields
 from app.roblox_creator_metrics_client import RobloxCreatorMetricsClient, RobloxCreatorMetricsClientError
 
 
@@ -24,6 +25,10 @@ def _wrap_query_result(value: dict | list[dict]) -> dict:
 
 
 class RobloxCreatorMetricsClientTests(unittest.TestCase):
+    def test_get_project_required_fields_returns_project_specific_override(self) -> None:
+        self.assertEqual(("peak_ccu",), get_project_required_fields("9682356542"))
+        self.assertEqual((), get_project_required_fields("9707829514"))
+
     def test_fetch_project_daily_metrics_extracts_recent_series(self) -> None:
         session = Mock()
 
@@ -323,6 +328,90 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             client.fetch_project_daily_metrics()
 
         self.assertTrue(debug_path.exists())
+
+    def test_fetch_project_daily_metrics_allows_project_without_required_peak_ccu(self) -> None:
+        session = Mock()
+
+        def request(method: str, url: str, **kwargs):
+            if method == "GET" and "feature-permissions" in url:
+                return _build_json_response({"userCanViewAnalyticsForUniverse": True})
+            if method == "GET" and "status-config" in url:
+                return _build_json_response({"annotationConfigurations": []})
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({
+                    "operation": {
+                        "done": True,
+                        "metricMetadataResult": {
+                            "metadata": [
+                                {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-30T00:00:00Z"},
+                                {"metric": "PayingUsersCVR", "latestAvailableTime": "2026-03-30T00:00:00Z"},
+                                {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-30T00:00:00Z"},
+                                {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-30T00:00:00Z"},
+                            ]
+                        },
+                    }
+                })
+            if method == "POST" and "analytics-query-gateway" in url:
+                metric = kwargs["json"]["query"]["metric"]
+                if metric == "PeakConcurrentPlayers":
+                    return _build_json_response({"operation": {"done": True, "queryResult": {"values": []}}})
+                if metric == "AveragePlayTimeMinutesPerDAU":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-29T00:00:00Z", "value": 8.4},
+                        {"time": "2026-03-30T00:00:00Z", "value": 5.2},
+                    ]}))
+                if metric == "PayingUsersCVR":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-29T00:00:00Z", "value": 0.1428571492433548},
+                        {"time": "2026-03-30T00:00:00Z", "value": 0.0},
+                    ]}))
+                if metric == "DailyCohortRetention":
+                    return _build_json_response(_wrap_query_result([
+                        {
+                            "breakdownValue": [{"dimension": "CohortDay", "value": "1"}],
+                            "dataPoints": [
+                                {"time": "2026-03-28T00:00:00Z", "value": 0.1818181872367859},
+                                {"time": "2026-03-29T00:00:00Z", "value": 0.1428571492433548},
+                            ],
+                        }
+                    ]))
+                if metric == "TotalSessionsEndedInBucket":
+                    return _build_json_response(_wrap_query_result([
+                        {
+                            "breakdownValue": [{"dimension": "SessionTimeBucket", "value": "0"}],
+                            "dataPoints": [
+                                {"time": "2026-03-29T00:00:00Z", "value": 14},
+                                {"time": "2026-03-30T00:00:00Z", "value": 7},
+                            ],
+                        },
+                        {
+                            "breakdownValue": [{"dimension": "SessionTimeBucket", "value": "300"}],
+                            "dataPoints": [
+                                {"time": "2026-03-29T00:00:00Z", "value": 4},
+                                {"time": "2026-03-30T00:00:00Z", "value": 2},
+                            ],
+                        },
+                    ]))
+                return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=1,
+                feishu_timezone="Asia/Shanghai",
+            ),
+            session=session,
+        )
+
+        records = client.fetch_project_daily_metrics()
+
+        self.assertEqual(["2026-03-30", "2026-03-29", "2026-03-28"], [record.report_date for record in records])
+        self.assertEqual("", records[0].peak_ccu)
+        self.assertEqual("5m 12s", records[0].average_session_time)
+        self.assertEqual("0%", records[0].payer_conversion_rate)
 
 
 if __name__ == "__main__":
