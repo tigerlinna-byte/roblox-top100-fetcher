@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import sys
 import time
@@ -22,7 +23,11 @@ from .roblox_creator_metrics_client import (
     RobloxCreatorMetricsClientError,
 )
 from .storage import write_outputs, write_project_metrics_output
-from .summary import build_failure_markdown, build_success_markdown
+from .summary import (
+    build_failure_markdown,
+    build_project_metrics_partial_failure_markdown,
+    build_success_markdown,
+)
 from .top_trending_briefing import build_top_trending_briefing_card
 from .top_trending_sheet import (
     build_game_name_highlight_cells,
@@ -47,6 +52,23 @@ PROJECT_METRICS_SHEET_MAX_ROWS = 365
 PROJECT_METRICS_SHEET_END_COLUMN = "L"
 
 
+@dataclass(frozen=True)
+class ProjectMetricsFetchFailure:
+    """描述单个项目日报抓取失败的原因。"""
+
+    project_id: str
+    overview_url: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class ProjectMetricsReportPayload:
+    """聚合项目日报抓取结果，允许部分项目失败。"""
+
+    records_by_project_id: dict[str, list[ProjectDailyMetricsRecord]]
+    failures: tuple[ProjectMetricsFetchFailure, ...]
+
+
 def configure_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -64,9 +86,9 @@ def run_once() -> int:
     try:
         report_payload = _fetch_report_payload(cfg)
         json_path, csv_path = _write_report_outputs(cfg, report_payload)
-    except (RobloxClientError, RobloxCreatorMetricsClientError):
+    except (RobloxClientError, RobloxCreatorMetricsClientError) as exc:
         logging.exception("Fetch failed.")
-        _notify_failure(cfg, _resolve_fetch_failure_reason(cfg))
+        _notify_failure(cfg, _resolve_fetch_failure_reason(cfg, exc))
         return 1
     except Exception:  # noqa: BLE001
         logging.exception("Unexpected error.")
@@ -106,18 +128,49 @@ def _notify_failure(cfg: Config, reason: str) -> None:
 
 def _fetch_report_payload(cfg: Config):
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
-        variables_by_project_id = {
-            variables.project_id: variables
-            for variables in resolve_project_metrics_variables(cfg)
-        }
-        if not variables_by_project_id:
+        variables_list = resolve_project_metrics_variables(cfg)
+        if not variables_list:
             raise RobloxCreatorMetricsClientError("未配置任何项目日报 overview 地址")
 
         client = RobloxCreatorMetricsClient(cfg)
-        return {
-            project_id: client.fetch_project_daily_metrics(variables.overview_url)
-            for project_id, variables in variables_by_project_id.items()
-        }
+        records_by_project_id: dict[str, list[ProjectDailyMetricsRecord]] = {}
+        failures: list[ProjectMetricsFetchFailure] = []
+        for variables in variables_list:
+            try:
+                records_by_project_id[variables.project_id] = client.fetch_project_daily_metrics(
+                    variables.overview_url
+                )
+            except RobloxCreatorMetricsClientError as exc:
+                logging.exception("Failed to fetch project metrics for %s.", variables.project_id)
+                failures.append(
+                    ProjectMetricsFetchFailure(
+                        project_id=variables.project_id,
+                        overview_url=variables.overview_url,
+                        reason=str(exc),
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                logging.exception(
+                    "Unexpected error while fetching project metrics for %s.",
+                    variables.project_id,
+                )
+                failures.append(
+                    ProjectMetricsFetchFailure(
+                        project_id=variables.project_id,
+                        overview_url=variables.overview_url,
+                        reason=f"未预期异常: {exc}",
+                    )
+                )
+
+        if not records_by_project_id:
+            raise RobloxCreatorMetricsClientError(
+                _build_project_metrics_fetch_failure_summary(failures)
+            )
+
+        return ProjectMetricsReportPayload(
+            records_by_project_id=records_by_project_id,
+            failures=tuple(failures),
+        )
 
     client = RobloxClient(cfg)
     if cfg.run_report_mode == "top_trending_sheet":
@@ -146,13 +199,22 @@ def _notify_success(cfg: Config, report_payload) -> None:
 
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
         for variables in resolve_project_metrics_variables(cfg):
+            if variables.project_id not in report_payload.records_by_project_id:
+                continue
             target = _sync_project_metrics_sheet(
                 cfg,
-                report_payload.get(variables.project_id, []),
+                report_payload.records_by_project_id.get(variables.project_id, []),
                 feishu_client,
                 variables,
             )
             feishu_client.send_group_markdown(target.url)
+        if report_payload.failures:
+            feishu_client.send_group_markdown(
+                build_project_metrics_partial_failure_markdown(
+                    cfg,
+                    [(failure.project_id, failure.reason) for failure in report_payload.failures],
+                )
+            )
         return
 
     feishu_client.send_group_markdown(build_success_markdown(cfg, report_payload))
@@ -345,10 +407,32 @@ def _apply_project_metrics_sheet_presentation(spreadsheet_title: str, feishu_cli
 
 
 
-def _resolve_fetch_failure_reason(cfg: Config) -> str:
+def _build_project_metrics_fetch_failure_summary(
+    failures: list[ProjectMetricsFetchFailure],
+) -> str:
+    """汇总全部项目日报抓取失败原因，便于失败通知直出根因。"""
+
+    if not failures:
+        return "未获取到任何项目日报数据"
+    summary = "；".join(
+        f"项目 {failure.project_id}: {failure.reason}" for failure in failures
+    )
+    return f"全部项目抓取失败：{summary}"
+
+
+def _resolve_fetch_failure_reason(cfg: Config, exc: Exception | None = None) -> str:
+    """为抓取失败通知补齐尽量具体的原因。"""
+
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
-        return "抓取 Roblox 项目数据失败"
-    return "抓取Roblox排行榜失败"
+        base_reason = "抓取 Roblox 项目数据失败"
+    else:
+        base_reason = "抓取Roblox排行榜失败"
+    detail = str(exc).strip() if exc else ""
+    if not detail:
+        return base_reason
+    if detail.startswith(base_reason):
+        return detail
+    return f"{base_reason}：{detail}"
 
 
 
@@ -381,7 +465,7 @@ def _write_report_outputs(cfg: Config, report_payload):
             [
                 record
                 for variables in resolve_project_metrics_variables(cfg)
-                for record in report_payload.get(variables.project_id, [])
+                for record in report_payload.records_by_project_id.get(variables.project_id, [])
             ],
             prefix=_output_prefix(cfg),
         )

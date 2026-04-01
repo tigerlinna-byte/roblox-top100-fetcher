@@ -41,6 +41,27 @@ def build_failure_markdown(cfg: Config, reason: str) -> str:
     )
 
 
+def build_project_metrics_partial_failure_markdown(
+    cfg: Config,
+    failed_projects: list[tuple[str, str]],
+) -> str:
+    """构造项目日报部分项目抓取失败的通知文案。"""
+
+    now = _format_now(cfg.feishu_timezone)
+    lines = [
+        "# Roblox 项目日报部分项目抓取失败",
+        "",
+        f"- 时间: {now} ({cfg.feishu_timezone})",
+        f"- 触发: {_format_trigger(cfg)}",
+        f"- 失败项目数: {len(failed_projects)}",
+        "",
+        "## 失败明细",
+    ]
+    for project_id, reason in failed_projects:
+        lines.append(f"- 项目 {project_id}: {reason}")
+    return "\n".join(lines)
+
+
 def _format_trigger(cfg: Config) -> str:
     actor = cfg.run_trigger_actor.strip()
     if actor:
