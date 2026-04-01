@@ -176,8 +176,9 @@ class ProjectMetricsSheetTests(unittest.TestCase):
 
         self.assertEqual("2026-03-11（周三）", table_state.rows[1][0])
         self.assertEqual("230", table_state.rows[1][1])
-        self.assertEqual("", table_state.rows[1][2])
-        self.assertEqual("", table_state.rows[1][3])
+        self.assertEqual("15m", table_state.rows[1][2])
+        self.assertEqual("31%", table_state.rows[1][3])
+        self.assertEqual("2026-03-12T01:02:03Z", table_state.rows[1][11])
 
     def test_build_project_metrics_rebuild_rows_pads_blank_rows_to_fixed_height(self) -> None:
         records = [
@@ -199,12 +200,46 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             ),
         ]
 
-        rows = build_project_metrics_rebuild_rows(records, total_rows=5)
+        rows = build_project_metrics_rebuild_rows([], records, total_rows=5)
 
         self.assertEqual(5, len(rows))
         self.assertEqual(PROJECT_METRICS_HEADERS, rows[0])
         self.assertEqual("2026-03-12（周四）", rows[1][0])
         self.assertEqual([""] * len(PROJECT_METRICS_HEADERS), rows[-1])
+
+    def test_build_project_metrics_rebuild_rows_preserves_existing_non_empty_cells(self) -> None:
+        existing_rows = [
+            PROJECT_METRICS_HEADERS.copy(),
+            ["2026-03-11（周三）", "200", "15m", "31%", "", "", "", "4.5%", "", "88", "0.10%", "2026-03-11T01:02:03Z"],
+        ]
+        records = [
+            ProjectDailyMetricsRecord(
+                report_date="2026-03-11",
+                peak_ccu="",
+                average_session_time="",
+                day1_retention="",
+                day7_retention="",
+                payer_conversion_rate="",
+                arppu="",
+                qptr="",
+                five_minute_retention="",
+                home_recommendations="",
+                client_crash_rate="",
+                project_id="9682356542",
+                source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                fetched_at="2026-03-12T01:02:03Z",
+            ),
+        ]
+
+        rows = build_project_metrics_rebuild_rows(existing_rows, records, total_rows=3)
+
+        self.assertEqual("2026-03-11（周三）", rows[1][0])
+        self.assertEqual("200", rows[1][1])
+        self.assertEqual("15m", rows[1][2])
+        self.assertEqual("4.5%", rows[1][7])
+        self.assertEqual("88", rows[1][9])
+        self.assertEqual("0.10%", rows[1][10])
+        self.assertEqual("2026-03-12T01:02:03Z", rows[1][11])
 
     def test_build_project_metrics_table_updates_existing_rows_with_weekday_suffix(self) -> None:
         existing_rows = [
