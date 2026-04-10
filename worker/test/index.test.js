@@ -415,3 +415,36 @@ test("skips scheduled dispatch for unknown cron", async () => {
 
   assert.equal(called, false);
 });
+
+test("logs and rethrows when scheduled dispatch to GitHub fails", async () => {
+  const ctx = buildCtx();
+  const originalConsoleError = console.error;
+  const errorLogs = [];
+
+  console.error = (message) => {
+    errorLogs.push(String(message));
+  };
+
+  try {
+    await assert.rejects(
+      handleScheduled(
+        { cron: "0 1 * * *" },
+        buildEnv({ SCHEDULE_CHAT_IDS: "oc_chat_a,oc_chat_b" }),
+        ctx,
+        async (url) => {
+          if (String(url).includes("/dispatches")) {
+            return new Response("bad credentials", { status: 401 });
+          }
+          throw new Error(`Unexpected fetch ${url}`);
+        },
+      ),
+      /GitHub dispatch failed: 401 bad credentials/,
+    );
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.equal(errorLogs.length >= 2, true);
+  assert.match(errorLogs[0], /github_dispatch_failed/);
+  assert.match(errorLogs[1], /schedule_dispatch_failed/);
+});

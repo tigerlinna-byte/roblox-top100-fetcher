@@ -96,7 +96,7 @@ Workflow file:
 - `.github/workflows/roblox_rank_sync.yml`
 
 Daily scheduling is handled by the Cloudflare Worker cron trigger.
-Current default schedule is daily `10:14` Beijing time (`cron: 14 2 * * *` in UTC).
+Current default schedule is daily `09:00` and `09:10` Beijing time (`cron: 0 1 * * *` and `10 1 * * *` in UTC).
 
 Set these repository secrets before enabling workflow:
 

@@ -161,7 +161,7 @@ npx wrangler deploy
 当前默认定时任务行为：
 
 - 由 Cloudflare Cron Trigger 触发
-- 每天北京时间 `10:14`
+- 每天北京时间 `09:00` 与 `09:10`
 - 自动运行 `/roblox-top-day` 对应链路
 - 将飞书普通表格链接发送到 `SCHEDULE_CHAT_IDS` 对应的群
 

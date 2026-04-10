@@ -95,23 +95,50 @@ export async function handleRequest(request, env, ctx, fetchImpl = fetch) {
 
 export async function handleScheduled(controller, env, ctx, fetchImpl = fetch) {
   const cron = controller?.cron || "";
+  console.log(JSON.stringify({
+    level: "info",
+    action: "schedule_trigger_received",
+    cron,
+    hasScheduleChatIds: parseCsvList(env.SCHEDULE_CHAT_IDS).length > 0,
+  }));
+
   const trigger = resolveScheduledTrigger(env, cron);
   if (!trigger) {
     return;
   }
 
-  const task = dispatchWorkflow(fetchImpl, env, trigger);
-
-  scheduleBackgroundTask(ctx, task);
-  await task;
-
   console.log(JSON.stringify({
     level: "info",
-    action: "schedule_dispatch_success",
+    action: "schedule_dispatch_start",
     cron,
     reportMode: trigger.reportMode,
     chatId: trigger.chatId,
   }));
+
+  const task = dispatchWorkflow(fetchImpl, env, trigger, { cron });
+
+  try {
+    scheduleBackgroundTask(ctx, task);
+    await task;
+
+    console.log(JSON.stringify({
+      level: "info",
+      action: "schedule_dispatch_success",
+      cron,
+      reportMode: trigger.reportMode,
+      chatId: trigger.chatId,
+    }));
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: "error",
+      action: "schedule_dispatch_failed",
+      cron,
+      reportMode: trigger.reportMode,
+      chatId: trigger.chatId,
+      message: error instanceof Error ? error.message : String(error),
+    }));
+    throw error;
+  }
 }
 
 function resolveScheduledTrigger(env, cron) {
@@ -356,7 +383,7 @@ async function processCommandEvent(fetchImpl, env, event) {
   }
 }
 
-async function dispatchWorkflow(fetchImpl, env, trigger) {
+async function dispatchWorkflow(fetchImpl, env, trigger, metadata = {}) {
   const workflowFile = env.GH_WORKFLOW_FILE || "roblox_rank_sync.yml";
   const ref = env.GH_REF || "main";
   const url =
@@ -384,6 +411,18 @@ async function dispatchWorkflow(fetchImpl, env, trigger) {
 
   if (!response.ok) {
     const text = await response.text();
+    console.error(JSON.stringify({
+      level: "error",
+      action: "github_dispatch_failed",
+      workflowFile,
+      ref,
+      triggerSource: trigger.triggerSource,
+      reportMode: trigger.reportMode,
+      chatId: trigger.chatId,
+      cron: metadata.cron || "",
+      status: response.status,
+      responseText: text.slice(0, 300),
+    }));
     throw new Error(`GitHub dispatch failed: ${response.status} ${text.slice(0, 300)}`);
   }
 }
