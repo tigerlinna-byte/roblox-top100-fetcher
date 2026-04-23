@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import json
 from pathlib import Path
 
@@ -8,10 +7,9 @@ import requests
 
 from .config import Config
 from .roblox_creator_metrics_client import (
-    BROWSER_HEADERS,
-    _extract_assignment_payloads,
-    _extract_json_payloads_from_script,
-    _extract_metric_rank_series_from_html,
+    ANALYTICS_BENCHMARK_SCORECARD_URL_TEMPLATE,
+    ANALYTICS_HEADERS,
+    BENCHMARK_SCORECARD_SPECS,
     _extract_project_id,
     _extract_script_contents,
     _resolve_business_timezone,
@@ -28,6 +26,16 @@ PROBE_KEYWORDS = (
     "session",
     "duration",
 )
+PROBE_PAGE_HEADERS = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+    ),
+}
 
 
 def run_creator_metrics_probe(cfg: Config) -> tuple[str, ...]:
@@ -46,7 +54,7 @@ def run_creator_metrics_probe(cfg: Config) -> tuple[str, ...]:
             continue
         response = requests.get(
             overview_url,
-            headers=BROWSER_HEADERS,
+            headers=PROBE_PAGE_HEADERS,
             cookies={".ROBLOSECURITY": cfg.roblox_creator_cookie},
             timeout=cfg.request_timeout_seconds,
             allow_redirects=True,
@@ -59,39 +67,33 @@ def run_creator_metrics_probe(cfg: Config) -> tuple[str, ...]:
         outputs.append(str(html_path))
 
         matched_scripts: list[dict[str, object]] = []
-        matched_payloads: list[dict[str, object]] = []
         for index, script_content in enumerate(_extract_script_contents(response.text)):
-            decoded = html.unescape(script_content)
-            lower_content = decoded.lower()
+            lower_content = script_content.lower()
             matched_keywords = [keyword for keyword in PROBE_KEYWORDS if keyword in lower_content]
             if matched_keywords:
                 matched_scripts.append(
                     {
                         "index": index,
                         "matched_keywords": matched_keywords,
-                        "content_excerpt": decoded[:30000],
+                        "content_excerpt": script_content[:30000],
                     }
                 )
 
-            payloads = [
-                *_extract_json_payloads_from_script(decoded),
-                *_extract_assignment_payloads(decoded),
-            ]
-            for payload_index, payload in enumerate(payloads):
-                payload_text = json.dumps(payload, ensure_ascii=False, default=str)
-                matched_payload_keywords = [
-                    keyword for keyword in PROBE_KEYWORDS if keyword in payload_text.lower()
-                ]
-                if not matched_payload_keywords:
-                    continue
-                matched_payloads.append(
-                    {
-                        "script_index": index,
-                        "payload_index": payload_index,
-                        "matched_keywords": matched_payload_keywords,
-                        "payload_excerpt": payload_text[:30000],
-                    }
-                )
+        benchmark_scorecards: dict[str, object] = {}
+        for spec in BENCHMARK_SCORECARD_SPECS:
+            scorecard_url = ANALYTICS_BENCHMARK_SCORECARD_URL_TEMPLATE.format(
+                resource_id=project_id,
+                metric=spec.metric,
+            )
+            scorecard_response = requests.get(
+                scorecard_url,
+                headers=ANALYTICS_HEADERS,
+                cookies={".ROBLOSECURITY": cfg.roblox_creator_cookie},
+                timeout=cfg.request_timeout_seconds,
+                allow_redirects=True,
+            )
+            scorecard_response.raise_for_status()
+            benchmark_scorecards[spec.metric] = scorecard_response.json()
 
         summary_path = probe_dir / f"{label}_{project_id}_summary.json"
         summary_path.write_text(
@@ -100,12 +102,9 @@ def run_creator_metrics_probe(cfg: Config) -> tuple[str, ...]:
                     "overview_url": overview_url,
                     "final_url": response.url,
                     "status_code": response.status_code,
-                    "html_rank_extract_result": _extract_metric_rank_series_from_html(
-                        response.text,
-                        timezone_info,
-                    ),
+                    "timezone": str(timezone_info),
                     "matched_scripts": matched_scripts,
-                    "matched_payloads": matched_payloads,
+                    "benchmark_scorecards": benchmark_scorecards,
                 },
                 ensure_ascii=False,
                 indent=2,
