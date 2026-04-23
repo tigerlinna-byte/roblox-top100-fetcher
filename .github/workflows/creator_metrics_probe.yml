@@ -1,0 +1,118 @@
+name: Creator Metrics Probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Capture HTML and network payloads
+        env:
+          ROBLOX_CREATOR_COOKIE: ${{ secrets.ROBLOX_CREATOR_COOKIE }}
+          ROBLOX_CREATOR_OVERVIEW_URL: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL }}
+          ROBLOX_CREATOR_OVERVIEW_URL_2: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL_2 }}
+        run: |
+          set -euo pipefail
+          mkdir -p probe
+          export PROBE_DIR="$PWD/probe"
+          python - <<'PY'
+          import html
+          import json
+          import os
+          from pathlib import Path
+          import requests
+
+          KEYWORDS = ("percentile", "benchmark", "peer", "retention", "payer", "arppu", "session", "duration")
+          headers = {
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Cache-Control": "no-cache",
+              "Pragma": "no-cache",
+              "User-Agent": (
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+              ),
+          }
+          probe_dir = Path(os.environ["PROBE_DIR"])
+          cookie = os.environ["ROBLOX_CREATOR_COOKIE"]
+          urls = [
+              ("primary", os.environ.get("ROBLOX_CREATOR_OVERVIEW_URL", "").strip()),
+              ("secondary", os.environ.get("ROBLOX_CREATOR_OVERVIEW_URL_2", "").strip()),
+          ]
+          for label, url in urls:
+              if not url:
+                  continue
+              response = requests.get(
+                  url,
+                  headers=headers,
+                  cookies={".ROBLOSECURITY": cookie},
+                  timeout=30,
+                  allow_redirects=True,
+              )
+              response.raise_for_status()
+              project_id = url.rstrip("/").split("/")[-2]
+              html_path = probe_dir / f"{label}_{project_id}_overview.html"
+              html_path.write_text(response.text, encoding="utf-8")
+              scripts = []
+              lower_text = response.text.lower()
+              for keyword in KEYWORDS:
+                  if keyword not in lower_text:
+                      continue
+              for index, chunk in enumerate(response.text.split("<script")):
+                  if index == 0:
+                      continue
+                  snippet = "<script" + chunk
+                  lower_snippet = snippet.lower()
+                  matched = [keyword for keyword in KEYWORDS if keyword in lower_snippet]
+                  if not matched:
+                      continue
+                  scripts.append(
+                      {
+                          "index": index,
+                          "matched_keywords": matched,
+                          "content_excerpt": html.unescape(snippet)[:30000],
+                      }
+                  )
+              (probe_dir / f"{label}_{project_id}_html_matches.json").write_text(
+                  json.dumps(
+                      {
+                          "url": url,
+                          "final_url": response.url,
+                          "script_match_count": len(scripts),
+                          "scripts": scripts,
+                      },
+                      ensure_ascii=False,
+                      indent=2,
+                  ),
+                  encoding="utf-8",
+              )
+          PY
+
+          ROBLOX_CREATOR_OVERVIEW_URL="$ROBLOX_CREATOR_OVERVIEW_URL" python scripts/discover_creator_metrics_with_playwright.py
+          mv data/creator_metrics_network_debug.json "probe/primary_network_debug.json"
+          mv data/creator_metrics_candidate_endpoints.json "probe/primary_candidate_endpoints.json"
+
+          ROBLOX_CREATOR_OVERVIEW_URL="$ROBLOX_CREATOR_OVERVIEW_URL_2" python scripts/discover_creator_metrics_with_playwright.py
+          mv data/creator_metrics_network_debug.json "probe/secondary_network_debug.json"
+          mv data/creator_metrics_candidate_endpoints.json "probe/secondary_candidate_endpoints.json"
+
+      - name: Upload probe artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: creator-metrics-probe
+          path: probe/
