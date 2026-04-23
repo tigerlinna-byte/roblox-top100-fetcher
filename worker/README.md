@@ -1,18 +1,38 @@
 # Feishu Trigger Worker
 
-This Cloudflare Worker receives a Feishu bot event, validates the sender, triggers the GitHub Actions workflow, and posts an acknowledgement back to the same group chat.
-It also supports Cloudflare Cron Triggers for both the daily Top100 trending sheet and the Shoot Or Shot project metrics sheet.
+这个 Worker 负责把飞书群命令和 Cloudflare Cron 转成 GitHub Actions `workflow_dispatch`。
 
-## Routes
+它的角色只有两个：
+
+1. 接飞书事件并转发到 GitHub Actions
+2. 接定时任务并转发到 GitHub Actions
+
+项目整体维护说明请优先看：
+
+- [`../docs/maintenance-context.zh-CN.md`](../docs/maintenance-context.zh-CN.md)
+
+## 路由
 
 - `GET /health`
 - `POST /feishu/events`
 
-## Accepted command
+## 默认命令映射
 
-- `/roblox-top100`
+| 命令 | report mode |
+| --- | --- |
+| `/roblox-top100` | `top100_message` |
+| `/roblox-top-day` | `top_trending_sheet` |
+| `/roblox-project-metrics` | `roblox_project_daily_metrics` |
 
-## Required secrets
+命令文本可以通过这些 Worker 环境变量覆盖：
+
+- `COMMAND_TEXT`
+- `TOP_DAY_COMMAND_TEXT`
+- `PROJECT_METRICS_COMMAND_TEXT`
+
+## 必需配置
+
+### 必需 secrets
 
 - `GH_TOKEN`
 - `GH_OWNER`
@@ -23,34 +43,64 @@ It also supports Cloudflare Cron Triggers for both the daily Top100 trending she
 - `FEISHU_APP_SECRET`
 - `FEISHU_VERIFICATION_TOKEN`
 
-## Optional secrets
+### 常用可选配置
 
 - `ALLOWED_CHAT_IDS`
 - `ALLOWED_OPEN_IDS`
-- `COMMAND_TEXT`
-- `TOP_DAY_COMMAND_TEXT`
 - `SCHEDULE_CHAT_IDS`
+- `EVENT_DEDUP_TTL_SECONDS`
+- `EVENT_DEDUP_KV_BINDING`
 
-## Scheduled trigger
+## 事件去重
 
-`worker/wrangler.toml` currently configures two daily cron triggers:
+当前默认使用 Cloudflare KV 做飞书事件去重：
 
-- Top100 trending sheet: UTC `01:00` (`0 1 * * *`)
-- Shoot Or Shot project metrics: UTC `01:10` / Beijing `09:10` (`10 1 * * *`)
+- 默认绑定名：`EVENT_DEDUP_KV`
+- 默认 TTL：`600` 秒
 
-Top100 scheduled dispatch still requires `SCHEDULE_CHAT_IDS` and sends the final result back to those chats.
-Shoot Or Shot scheduled dispatch also reuses `SCHEDULE_CHAT_IDS`, so it sends to the same Feishu chats as the existing Top100 schedule.
+如果 KV 未配置，代码会退回进程内 `Map`，只能做弱去重，不适合作为正式环境方案。
 
-## Local test
+## 当前定时任务
+
+[`worker/wrangler.toml`](./wrangler.toml) 当前配置了两个 cron：
+
+| Cron | 北京时间 | report mode |
+| --- | --- | --- |
+| `0 1 * * *` | `09:00` | `top_trending_sheet` |
+| `10 1 * * *` | `09:10` | `roblox_project_daily_metrics` |
+
+注意：
+
+- 两个定时任务都依赖 `SCHEDULE_CHAT_IDS`
+- 如果 `SCHEDULE_CHAT_IDS` 为空，定时任务会被跳过
+
+## 本地测试
 
 ```bash
 cd worker
 node --test
 ```
 
-## Deploy
+## 本地调试
 
-1. Install Wrangler if needed: `npm install -D wrangler`
-2. Copy `.dev.vars.example` to `.dev.vars` for local dev
-3. Set production secrets with `wrangler secret put ...` or run `powershell -ExecutionPolicy Bypass -File .\set-secrets.ps1`
-4. Deploy with `npx wrangler deploy`
+```bash
+cd worker
+cp .dev.vars.example .dev.vars
+```
+
+然后补齐 `.dev.vars` 中的值。
+
+## 部署
+
+```bash
+cd worker
+npm install
+npx wrangler login
+npx wrangler deploy
+```
+
+部署前请确认：
+
+- `wrangler.toml` 里的 `EVENT_DEDUP_KV` namespace id 是当前 Cloudflare 账号可用值
+- 必需 secrets 已写入
+- 飞书回调地址已指向线上 Worker 域名

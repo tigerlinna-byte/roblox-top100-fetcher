@@ -1,119 +1,169 @@
 # 外部平台配置实操手册
 
-这份手册对应当前仓库的实现，目标是完成两件事：
+这份手册面向“从零把 GitHub Actions、Cloudflare Worker、飞书三端接起来”的场景。
 
-1. Cloudflare 定时触发 GitHub Actions，每天自动生成 Roblox 榜单飞书表格并回传到群里
-2. 飞书群内发送 `/roblox-top100` 可手动触发一次 Top 100 抓取
-3. 飞书群内发送 `/roblox-top-day` 可手动生成 Top Trending 前 100 飞书普通表格
+如果你先想理解项目整体架构和运行方式，先读：
 
-整套链路如下：
+- [`docs/maintenance-context.zh-CN.md`](./maintenance-context.zh-CN.md)
 
-1. 飞书群消息进入自建应用机器人
-2. Cloudflare Worker 校验消息并调用 GitHub Actions
-3. GitHub Actions 执行 `python -m app.main`
-4. Python 程序通过飞书自建应用机器人接口回传结果
+本文只关注“怎么把外部平台配置通”。
 
-## 准备信息
+## 1. 你最终会搭出什么
 
-开始前先准备好这些值：
+配置完成后，链路会是这样：
 
+1. 飞书群发送命令
+2. Cloudflare Worker 接收飞书事件并校验
+3. Worker 调 GitHub Actions `workflow_dispatch`
+4. GitHub Actions 执行 `python -m app.main`
+5. Python 程序抓取 Roblox 数据，更新飞书表格并回消息
+
+同时，Cloudflare Cron 还会每天自动触发两条任务：
+
+- `0 1 * * *` UTC：`top_trending_sheet`
+- `10 1 * * *` UTC：`roblox_project_daily_metrics`
+
+## 2. 准备信息
+
+开始前先准备这些值：
+
+- GitHub 仓库 owner
 - GitHub 仓库名
-- GitHub 用户名或组织名
-- 飞书群自定义机器人 `webhook`
-- 飞书开放平台自建应用的 `App ID`
-- 飞书开放平台自建应用的 `App Secret`
+- GitHub fine-grained token
+- 飞书自建应用 `App ID`
+- 飞书自建应用 `App Secret`
 - 飞书事件订阅里的 `Verification Token`
+- 目标飞书群 `chat_id`
+- 可选的触发用户 `open_id`
+- Roblox 登录态 `.ROBLOSECURITY`
 
-## 第 1 步：配置 GitHub Actions
+## 3. 先验证 GitHub Actions 能独立跑通
 
-### 1.1 推送代码
+不要一上来就连飞书和 Worker。先把 GitHub Actions 单独跑通。
 
-把当前项目推到 GitHub 仓库，默认分支建议使用 `main`。
+### 3.1 推送代码
 
-仓库里必须包含：
+确认仓库里至少包含：
 
-- `.github/workflows/roblox_rank_sync.yml`
-- `worker/`
+- [`/.github/workflows/roblox_rank_sync.yml`](../.github/workflows/roblox_rank_sync.yml)
+- [`/worker`](../worker)
 
-### 1.2 配置飞书结果通知 Secret
+### 3.2 配置 GitHub Secrets
 
-进入 GitHub 仓库页面：
+进入：
 
-`Settings -> Secrets and variables -> Actions -> New repository secret`
+`Settings -> Secrets and variables -> Actions`
 
-新增：
+新增这些 Secrets：
 
+- `ROBLOX_CREATOR_COOKIE`
 - `FEISHU_APP_ID`
 - `FEISHU_APP_SECRET`
-- `FEISHU_BOT_WEBHOOK`（可选兜底）
-- `GH_TOKEN`（如需让 `/roblox-top-day` 复用同一张飞书表格，必须配置到 GitHub Actions secrets）
+- `FEISHU_BOT_WEBHOOK`
+- `GH_TOKEN`
 
-值填写：
+说明：
 
-- `FEISHU_APP_ID`：飞书自建应用 App ID
-- `FEISHU_APP_SECRET`：飞书自建应用 App Secret
-- `FEISHU_BOT_WEBHOOK`：如需保留自定义机器人兜底回传时再填写
+- `ROBLOX_CREATOR_COOKIE`：填 `.ROBLOSECURITY`
+- `FEISHU_BOT_WEBHOOK`：可选，用作消息兜底
+- `GH_TOKEN`：给 Python 更新 GitHub Variables 用
 
-### 1.3 先验证 GitHub 可以独立运行
+### 3.3 配置 GitHub Variables
+
+至少按你要启用的模式配置对应变量。
+
+如果你要跑 Top Trending：
+
+- `FEISHU_TOP_TRENDING_SPREADSHEET_TITLE`
+- `FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TITLE`
+
+如果你要跑项目日报：
+
+- `ROBLOX_CREATOR_OVERVIEW_URL`
+- 可选：`ROBLOX_CREATOR_OVERVIEW_URL_2`
+- `FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE`
+- 可选：`FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE`
+
+其余飞书表格 token / sheet id 可以留空，首次运行后由程序自动创建并回写。
+
+### 3.4 手动跑一次工作流
 
 进入：
 
 `Actions -> Roblox Rank Sync -> Run workflow`
 
-执行一次手动任务。成功标准：
+建议先试两个模式：
 
-- 工作流状态是绿色
-- 飞书群收到排行榜成功消息
+- `report_mode=top100_message`
+- `report_mode=top_trending_sheet`
 
-如果这一步不通，先不要继续配置 Worker 和飞书事件。
+成功标准：
 
-### 1.4 创建给 Worker 使用的 GitHub Token
+- 工作流状态为绿色
+- 飞书能收到结果消息
+- 如果是 `top_trending_sheet`，能创建或复用飞书表格
 
-进入：
+如果这一步没通，不要继续配置 Worker。
 
-`GitHub -> Settings -> Developer settings -> Personal access tokens -> Fine-grained tokens`
+## 4. 配置 Cloudflare Worker
 
-创建 token，限制到当前仓库，权限最少给：
+### 4.1 先处理 KV namespace
 
-- `Actions: Read and write`
-- `Contents: Read`
-- `Metadata: Read`
+当前 [`worker/wrangler.toml`](../worker/wrangler.toml) 已经声明了：
 
-保存这串 token，后面 Cloudflare 里会用到。
+- 绑定名：`EVENT_DEDUP_KV`
 
-## 第 2 步：配置 Cloudflare Worker
+但其中的 namespace id 是当前环境值，不适合直接照搬到新账号。
 
-### 2.1 安装和登录 Wrangler
+新环境必须先在 Cloudflare 创建自己的 KV namespace，然后把 `worker/wrangler.toml` 里的 `id` 改成你的 namespace id。
 
-在仓库根目录打开终端，执行：
+不做这一步，事件去重很可能失效，甚至部署本身就会出问题。
 
-```powershell
+### 4.2 安装并登录 Wrangler
+
+```bash
 cd worker
-npm install -D wrangler
+npm install
 npx wrangler login
 ```
 
-### 2.2 创建 Worker
+### 4.3 本地开发变量
 
-登录 Cloudflare 后，进入 `Workers & Pages`，创建一个 Worker。
+如需本地调试 Worker，可以复制：
 
-名称建议：
+- [`worker/.dev.vars.example`](../worker/.dev.vars.example)
 
-- `roblox-top100-feishu-trigger`
+```bash
+cd worker
+cp .dev.vars.example .dev.vars
+```
 
-当前仓库中的配置文件是：
+### 4.4 配置 Worker secrets
 
-- `worker/wrangler.toml`
+必需 secrets：
 
-默认可直接使用。
+- `GH_TOKEN`
+- `GH_OWNER`
+- `GH_REPO`
+- `GH_WORKFLOW_FILE`
+- `GH_REF`
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+- `FEISHU_VERIFICATION_TOKEN`
 
-### 2.3 写入 Worker secrets
+常用可选值：
 
-你有两种方式：
+- `ALLOWED_CHAT_IDS`
+- `ALLOWED_OPEN_IDS`
+- `SCHEDULE_CHAT_IDS`
+- `COMMAND_TEXT`
+- `TOP_DAY_COMMAND_TEXT`
+- `PROJECT_METRICS_COMMAND_TEXT`
 
-方式 A：手动一条条执行
+### 方式 A：逐条执行
 
-```powershell
+```bash
+cd worker
 npx wrangler secret put GH_TOKEN
 npx wrangler secret put GH_OWNER
 npx wrangler secret put GH_REPO
@@ -124,147 +174,166 @@ npx wrangler secret put FEISHU_APP_SECRET
 npx wrangler secret put FEISHU_VERIFICATION_TOKEN
 npx wrangler secret put ALLOWED_CHAT_IDS
 npx wrangler secret put ALLOWED_OPEN_IDS
+npx wrangler secret put SCHEDULE_CHAT_IDS
 ```
 
-方式 B：使用仓库自带脚本批量提示输入
+### 方式 B：使用仓库脚本
 
-```powershell
+```bash
 cd worker
 powershell -ExecutionPolicy Bypass -File .\set-secrets.ps1
 ```
 
-各 secret 填值如下：
+注意：
 
-- `GH_TOKEN`：GitHub fine-grained token
-- `GH_OWNER`：GitHub 用户名或组织名
-- `GH_REPO`：仓库名
-- `GH_WORKFLOW_FILE`：`roblox_rank_sync.yml`
-- `GH_REF`：`main`
-- `FEISHU_APP_ID`：飞书应用 App ID
-- `FEISHU_APP_SECRET`：飞书应用 App Secret
-- `FEISHU_VERIFICATION_TOKEN`：飞书事件订阅 Verification Token
-- `ALLOWED_CHAT_IDS`：允许触发的群 ID，多个用英文逗号分隔
-- `ALLOWED_OPEN_IDS`：允许触发的用户 open_id，多个用英文逗号分隔；如暂不限制可留空
-- `SCHEDULE_CHAT_IDS`：Cloudflare 定时任务回发表格链接的目标群 chat_id，多个群用英文逗号分隔
+- 脚本不会设置 `SCHEDULE_CHAT_IDS`
+- 所以如果要启用定时，脚本跑完后还要手动执行一次 `npx wrangler secret put SCHEDULE_CHAT_IDS`
 
-### 2.4 部署 Worker
+### 4.5 部署 Worker
 
-```powershell
+```bash
 cd worker
 npx wrangler deploy
 ```
 
-部署成功后记下域名，例如：
+部署成功后记下你的域名，例如：
 
 `https://roblox-top100-feishu-trigger.<subdomain>.workers.dev`
 
-当前默认定时任务行为：
+### 4.6 健康检查
 
-- 由 Cloudflare Cron Trigger 触发
-- 每天北京时间 `10:14`
-- 自动运行 `/roblox-top-day` 对应链路
-- 将飞书普通表格链接发送到 `SCHEDULE_CHAT_IDS` 对应的群
+打开：
 
-### 2.5 健康检查
+`https://你的-worker-域名/health`
 
-浏览器访问：
-
-`https://你的worker域名/health`
-
-应返回 JSON，包含：
+预期返回：
 
 ```json
 {"ok":true,"service":"feishu-gh-dispatch"}
 ```
 
-## 第 3 步：配置飞书开放平台
+## 5. 配置飞书自建应用
 
-### 3.1 创建自建应用
- 
-打开：
+### 5.1 创建应用并开启机器人能力
 
-https://open.feishu.cn/
+在飞书开放平台创建“自建应用”，并启用机器人能力。
 
-创建一个“自建应用”。
+### 5.2 配置事件订阅
 
-### 3.2 开启机器人能力
+回调地址填：
 
-在应用能力里启用机器人，使其可以被拉入群聊。
+`https://你的-worker-域名/feishu/events`
 
-### 3.3 开启事件订阅
-
-在事件订阅中配置回调地址：
-
-`https://你的worker域名/feishu/events`
-
-同时记录：
+然后记录：
 
 - `Verification Token`
 
-这个值必须与 Worker secret `FEISHU_VERIFICATION_TOKEN` 一致。
+这个值必须和 Worker 里的 `FEISHU_VERIFICATION_TOKEN` 一致。
 
-### 3.4 订阅群文本消息事件
+### 5.3 订阅群文本消息相关事件
 
-订阅“接收消息”相关事件，确保群内文本消息会投递到 Worker。
+确保群内文本消息能投递到 Worker。
 
-### 3.5 开启发消息权限
+### 5.4 开通发消息和电子表格所需权限
 
-为应用开通给群会话发消息的权限，目的只有一个：收到命令后回一条“已提交任务”。
+至少要保证应用可以：
 
-### 3.6 发布应用版本
+- 向群会话发消息
+- 调用飞书电子表格 API
 
-如果未发布，事件和权限常常不会真正生效。
+如果只配了 webhook，没有可用的飞书应用身份，那么：
 
-### 3.7 将应用机器人加入目标飞书群
+- `top100_message` 还有机会通过 webhook 发摘要
+- `top_trending_sheet` 和 `roblox_project_daily_metrics` 将无法创建或更新飞书表格
 
-加入后，你的群里会有两类机器人：
+### 5.5 发布应用版本
 
-- 自建应用机器人：负责响应 `/roblox-top100` 和 `/roblox-top-day`
-- `/roblox-top-day` 会把 Top Trending 前 100 写入飞书普通表格，并回传表格链接
+不发布时，很多事件和权限不会真正生效。
 
-## 第 4 步：拿到群 ID 和用户 open_id
+### 5.6 把应用机器人拉进目标群
 
-第一次打通链路时，建议先把这两个限制留空：
+拉入后，它才能收到命令并回发结果。
+
+## 6. 获取 `chat_id` 和 `open_id`
+
+第一次联调时，建议先把下面两个限制留空：
 
 - `ALLOWED_CHAT_IDS`
 - `ALLOWED_OPEN_IDS`
 
-重新部署 Worker 后，在目标群发送：
-
-```text
-/roblox-top100
-/roblox-top-day
-```
-
-如果没有成功触发，去 Cloudflare Worker 日志里查看请求体，提取：
+然后在目标群发送命令，去 Worker 日志里取值：
 
 - `chat_id`
 - `open_id`
 
-然后把这些值重新写回 Worker secrets，再部署一次。
+拿到后再回填限制，最后重新部署 Worker。
 
-## 第 5 步：完整联调
+## 7. 联调命令
 
-在飞书群发送：
+当前默认支持 3 条命令：
 
 ```text
 /roblox-top100
+/roblox-top-day
+/roblox-project-metrics
 ```
 
-正确结果应按顺序出现：
+它们分别对应：
 
-1. 群里立即收到“已提交 Roblox 排行榜抓取任务，稍后会回传结果。”
-2. GitHub Actions 出现新的 workflow run
-3. 运行结束后，飞书群收到最终排行榜结果
+- `/roblox-top100` -> `top100_message`
+- `/roblox-top-day` -> `top_trending_sheet`
+- `/roblox-project-metrics` -> `roblox_project_daily_metrics`
 
-## 排障顺序
+联调时建议按这个顺序：
 
-如果失败，按这个顺序排查：
+1. 先测 `/roblox-top100`
+2. 再测 `/roblox-top-day`
+3. 最后测 `/roblox-project-metrics`
 
-1. GitHub 手动 `Run workflow` 是否成功
+### `/roblox-top-day` 特别注意
+
+手动触发 `/roblox-top-day` 默认写测试表，不写正式表。
+
+这是当前代码设计，不是异常。
+
+## 8. 定时任务配置结果
+
+当前定时由 Cloudflare Worker 负责，不使用 GitHub Actions 自带 `schedule`。
+
+Worker 会按 [`worker/wrangler.toml`](../worker/wrangler.toml) 里的 cron 触发：
+
+- `0 1 * * *` UTC：Top Trending
+- `10 1 * * *` UTC：项目日报
+
+两条定时任务都复用同一个：
+
+- `SCHEDULE_CHAT_IDS`
+
+如果 `SCHEDULE_CHAT_IDS` 为空：
+
+- 这两个定时任务都会被 Worker 跳过
+
+## 9. 推荐的完整验收顺序
+
+1. GitHub 手动 `Run workflow` 成功
+2. Worker `/health` 正常
+3. 飞书事件 URL 校验成功
+4. 飞书群发送 `/roblox-top100` 能触发并回结果
+5. 飞书群发送 `/roblox-top-day` 能创建测试表并回链接
+6. 飞书群发送 `/roblox-project-metrics` 能写项目日报表并回链接
+7. 确认 `SCHEDULE_CHAT_IDS` 已配置
+8. 等待或手动验证 cron 分支是否能触发
+
+## 10. 排障顺序
+
+如果外部平台没打通，按这个顺序查：
+
+1. GitHub Actions 单独运行是否成功
 2. Worker `/health` 是否正常
-3. 飞书事件订阅 URL 校验是否成功
+3. `worker/wrangler.toml` 中的 KV namespace id 是否是当前账号可用值
 4. Worker secrets 是否完整
-5. GitHub token 是否有 `Actions: Read and write`
-6. 飞书应用是否已发布且机器人已入群
-7. `ALLOWED_CHAT_IDS` / `ALLOWED_OPEN_IDS` 是否误填
+5. GitHub token 权限是否足够
+6. 飞书应用是否已发布
+7. 飞书机器人是否已入群
+8. `ALLOWED_CHAT_IDS` / `ALLOWED_OPEN_IDS` 是否误填
+9. `SCHEDULE_CHAT_IDS` 是否为空

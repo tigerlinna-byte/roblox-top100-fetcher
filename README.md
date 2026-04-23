@@ -1,267 +1,78 @@
-# Roblox Top 100 Fetcher
+# Roblox Top100 Fetcher
 
-A Python project that fetches Roblox top games once per run, writes JSON/CSV locally, and sends a Markdown-style summary to a Feishu group bot.
+这个仓库当前不是单一的 Top100 抓取脚本，而是一套将 Roblox 榜单和项目指标同步到飞书的自动化系统。
 
-## Features
+## 当前支持的运行模式
 
-- One-shot run: execute once, fetch once, then exit
-- Auto retry with exponential backoff for transient API failures
-- Output both JSON and CSV for each run
-- Send Feishu group message on success/failure
-- Cloudflare Worker cron trigger for daily sheet delivery
-- Feishu chat command trigger via Cloudflare Worker
+| `RUN_REPORT_MODE` | 典型触发方式 | 主要行为 | 主要输出 |
+| --- | --- | --- | --- |
+| `top100_message` | 手动本地运行、GitHub Actions 手动触发、飞书 `/roblox-top100` | 抓取 `top-playing-now` 榜单并发送文本摘要 | `data/top100_YYYY-MM-DD.json/csv` + 飞书摘要消息 |
+| `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron | 抓取 `Top_Trending_V4`、`Up_And_Coming_V4`、`top-playing-now`，更新飞书多 Sheet 表格并发送 `今日关注` 卡片 | `data/top_trending_YYYY-MM-DD.json/csv` + 飞书卡片 + 飞书表格链接 |
+| `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron | 抓取 Roblox Creator Analytics 项目日报，更新每个项目各自的飞书表格 | `data/project_metrics_YYYY-MM-DD.json/csv` + 每个项目的飞书表格链接 |
 
-## Requirements
+## 系统结构
 
-- Python 3.10+
+1. 飞书群命令或 Cloudflare Cron 进入 [worker/src/index.js](./worker/src/index.js)。
+2. Worker 校验来源、做事件去重，然后调用 GitHub Actions `workflow_dispatch`。
+3. GitHub Actions 执行 [app/main.py](./app/main.py)。
+4. Python 主程序根据 `RUN_REPORT_MODE` 分流，抓取 Roblox 数据、更新飞书、写本地产物。
+5. GitHub Variables 持久化飞书表格 token、sheet id 和 Top Trending 历史排名。
 
-## Quick Start
+## 需要先知道的几个关键事实
 
-1. Create virtual env and activate it.
-2. Install dependencies:
+- `top_trending_sheet` 模式在主流程里使用的是固定 sort id，分别是 `Top_Trending_V4`、`Up_And_Coming_V4`、`top-playing-now`。
+- `ROBLOX_TOP_TRENDING_SORT_ID` 这个环境变量目前没有被主流程消费，不要把它当作 `/roblox-top-day` 的真实开关。
+- `/roblox-top-day` 的手动触发默认写“测试表”，只有 `trigger_source=cloudflare_cron` 时才会写“正式表”。
+- 项目日报当前只支持两个项目入口：`ROBLOX_CREATOR_OVERVIEW_URL` 和 `ROBLOX_CREATOR_OVERVIEW_URL_2`。如果要接第三个项目，需要改代码和工作流，不是只加变量就够。
+- `ROBLOX_CREATOR_COOKIE` 对项目日报是必需项；对榜单链路虽然不是硬性必需，但没有它时容易漏掉需要登录态才能看到的游戏。
 
-```bash
-py -m pip install -r requirements.txt
-```
+## 本地快速开始
 
-3. Configure `.env` (or environment variables):
-
-```bash
-copy .env.example .env
-```
-
-4. Run once:
-
-```bash
-py -m app.main
-```
-
-## Run tests
+1. 创建并激活虚拟环境。
+2. 安装依赖：
 
 ```bash
-py -m unittest discover -s tests
+python -m pip install -r requirements.txt
 ```
 
-## Output
+3. 复制环境变量模板：
 
-By default files are written into `./data`:
+```bash
+cp .env.example .env
+```
 
-- `top100_YYYY-MM-DD.json`
-- `top100_YYYY-MM-DD.csv`
+4. 根据要运行的模式补齐环境变量。
+5. 执行一次主程序：
 
-Each row/object includes:
+```bash
+python -m app.main
+```
 
-- `rank`
-- `place_id`
-- `name`
-- `creator`
-- `playing`
-- `visits`
-- `up_votes`
-- `down_votes`
-- `fetched_at`
+## 运行测试
 
-## Configuration
+Python 测试：
 
-Environment variables (defaults shown):
+```bash
+python -m unittest discover -s tests
+```
 
-- `OUTPUT_DIR=./data`
-- `RETRY_MAX_ATTEMPTS=3`
-- `RETRY_BACKOFF_SECONDS=2`
-- `REQUEST_TIMEOUT_SECONDS=15`
-- `API_LIMIT=100`
-- `ROBLOX_SORT_ID=top-playing-now`
-- `FEISHU_BOT_WEBHOOK=...`
-- `FEISHU_APP_ID=...`
-- `FEISHU_APP_SECRET=...`
-- `FEISHU_TIMEZONE=Asia/Shanghai`
-- `RUN_TRIGGER_SOURCE=manual`
-- `RUN_TRIGGER_ACTOR=`
-- `RUN_CHAT_ID=`
-- `RUN_REPORT_MODE=top100_message`
-- `ROBLOX_TOP_TRENDING_SORT_ID=` (optional override for `/roblox-top-day`)
-
-## Feishu bot setup
-
-1. Add a custom bot to your target Feishu group.
-2. Use keyword verification, for example `Roblox`.
-3. Copy the bot webhook URL.
-4. Put `FEISHU_BOT_WEBHOOK` into local environment variables or GitHub Secrets if you want webhook fallback delivery.
-5. Put `FEISHU_APP_ID` and `FEISHU_APP_SECRET` into local environment variables or GitHub Secrets for app-bot delivery back to the triggering chat.
-
-## Cloudflare Scheduled Delivery
-
-Workflow file:
-
-- `.github/workflows/roblox_rank_sync.yml`
-
-Daily scheduling is handled by the Cloudflare Worker cron trigger.
-Current default schedule is daily `10:14` Beijing time (`cron: 14 2 * * *` in UTC).
-
-Set these repository secrets before enabling workflow:
-
-- `FEISHU_APP_ID`
-- `FEISHU_APP_SECRET`
-- `FEISHU_BOT_WEBHOOK` (optional fallback)
-- `GH_TOKEN` (required if `/roblox-top-day` should persist the spreadsheet token/sheet id for reuse)
-
-Optional repository variables for spreadsheet reuse:
-
-- `FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN`
-- `FEISHU_TOP_TRENDING_SHEET_ID`
-
-Manual runs also support workflow inputs:
-
-- `trigger_source`
-- `trigger_actor`
-- `chat_id`
-
-`chat_id` is still optional for manual runs.
-
-## Feishu manual trigger in group chat
-
-This repo now includes a Cloudflare Worker in [`worker/`](./worker) that bridges Feishu group messages to GitHub Actions.
-
-Chinese step-by-step external platform guide:
-
-- [`docs/external-platform-setup.zh-CN.md`](./docs/external-platform-setup.zh-CN.md)
-- 长期维护上下文手册：
-  - [`docs/maintenance-context.zh-CN.md`](./docs/maintenance-context.zh-CN.md)
-
-Architecture:
-
-1. Feishu self-built app bot receives `/roblox-top100` or `/roblox-top-day`
-2. Cloudflare Worker validates chat/user and dispatches GitHub Actions with a report mode
-3. GitHub Actions runs `python -m app.main`
-4. `/roblox-top100` sends the final leaderboard back to the triggering chat
-5. `/roblox-top-day` writes Top Trending top 100 into a Feishu spreadsheet, reuses it on later runs, and sends the sheet link back to the triggering chat
-
-### 1. Verify GitHub Actions first
-
-Before connecting Feishu, make sure the workflow can already run from GitHub:
-
-1. Push this repo to GitHub
-2. Add repository secrets `FEISHU_APP_ID` and `FEISHU_APP_SECRET`
-3. Optional fallback: add repository secret `FEISHU_BOT_WEBHOOK`
-4. Open `Actions -> Roblox Rank Sync`
-5. Click `Run workflow`
-6. Confirm the job succeeds and the Feishu group receives a success message
-
-### 2. Create GitHub token for the Worker
-
-Create a fine-grained personal access token limited to this repository.
-
-Recommended permissions:
-
-- `Actions: Read and write`
-- `Contents: Read`
-- `Metadata: Read`
-
-The Worker uses this token only to call the GitHub workflow dispatch API.
-
-### 3. Deploy the Cloudflare Worker
-
-Worker files:
-
-- [`worker/src/index.js`](./worker/src/index.js)
-- [`worker/wrangler.toml`](./worker/wrangler.toml)
-- [`worker/.dev.vars.example`](./worker/.dev.vars.example)
-
-Local test:
+Worker 测试：
 
 ```bash
 cd worker
 node --test
 ```
 
-Deploy steps:
+## 部署入口
 
-1. Install Wrangler if needed:
+- GitHub Actions 工作流：[`/.github/workflows/roblox_rank_sync.yml`](./.github/workflows/roblox_rank_sync.yml)
+- Cloudflare Worker：[`/worker`](./worker)
+- 主维护手册：[`/docs/maintenance-context.zh-CN.md`](./docs/maintenance-context.zh-CN.md)
+- 外部平台接入手册：[`/docs/external-platform-setup.zh-CN.md`](./docs/external-platform-setup.zh-CN.md)
+- Worker 说明：[`/worker/README.md`](./worker/README.md)
 
-```bash
-cd worker
-npm install -D wrangler
-```
+## 推荐阅读顺序
 
-2. Configure secrets in Cloudflare:
-
-- `GH_TOKEN`
-- `GH_OWNER`
-- `GH_REPO`
-- `GH_WORKFLOW_FILE=roblox_rank_sync.yml`
-- `GH_REF=main`
-- `FEISHU_APP_ID`
-- `FEISHU_APP_SECRET`
-- `FEISHU_VERIFICATION_TOKEN`
-- `ALLOWED_CHAT_IDS`
-- `ALLOWED_OPEN_IDS`
-- `SCHEDULE_CHAT_IDS` (required for scheduled delivery; use comma-separated chat ids for multiple groups)
-
-3. Deploy:
-
-```bash
-cd worker
-npx wrangler deploy
-```
-
-Routes exposed by the Worker:
-
-- `GET /health`
-- `POST /feishu/events`
-
-Cloudflare cron behavior:
-
-- Cron dispatches `top_trending_sheet` through the existing workflow
-- Scheduled target groups come from `SCHEDULE_CHAT_IDS`
-- Multiple groups use comma-separated Feishu `chat_id` values
-
-### 4. Configure Feishu self-built app
-
-In Feishu Open Platform:
-
-1. Create a self-built app
-2. Enable bot capability
-3. Enable event subscription
-4. Subscribe to group text message receive events
-5. Set the callback URL to:
-
-```text
-https://<your-worker-domain>/feishu/events
-```
-
-6. Finish the Feishu event URL verification
-7. Add the app bot to your target group
-
-### 5. Manual trigger command
-
-Send this exact text in the allowed Feishu group:
-
-```text
-/roblox-top100
-/roblox-top-day
-```
-
-Expected behavior:
-
-1. The Worker immediately acknowledges the request in the same group
-2. GitHub Actions starts a new workflow run
-3. The Python job posts the final success or failure summary back to the group
-
-## Security defaults
-
-- The Worker only accepts the exact command `/roblox-top100`
-- The Worker also accepts the exact command `/roblox-top-day`
-- `ALLOWED_CHAT_IDS` can restrict which groups may trigger the workflow
-- `ALLOWED_OPEN_IDS` can restrict which users may trigger the workflow
-- `FEISHU_VERIFICATION_TOKEN` is checked on incoming Feishu events
-
-## Notes about Roblox endpoint
-
-Roblox public game list endpoints have changed over time. This project uses:
-
-- `GET https://apis.roblox.com/explore-api/v1/get-sort-content`
-- `GET https://games.roblox.com/v1/games?universeIds=...`
-
-with sort id `top-playing-now`.
-
-If Roblox changes response shape again, adjust parser logic in `app/roblox_client.py`.
+1. 先读 [`docs/maintenance-context.zh-CN.md`](./docs/maintenance-context.zh-CN.md)，理解项目整体运作方式。
+2. 再读 [`docs/external-platform-setup.zh-CN.md`](./docs/external-platform-setup.zh-CN.md)，按步骤接入 GitHub / Cloudflare / 飞书。
+3. 最后根据需要查看 [`worker/README.md`](./worker/README.md) 和具体代码模块。
