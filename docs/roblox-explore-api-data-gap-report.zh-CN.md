@@ -223,11 +223,10 @@ GET https://apis.roblox.com/explore-api/v1/get-sort-content?sessionId=<uuid>&sor
 
 如需对照实现，可参考：
 
-- [app/roblox_client.py](/C:/Users/41539/Desktop/roblox-top100-fetcher/app/roblox_client.py)
+- [app/roblox_client.py](../app/roblox_client.py)
 
 其中关键位置包括：
 
 - 排行接口定义：`GET_SORT_CONTENT_URL`
 - 请求参数：`device=all`、`country=all`
 - sort 拉取逻辑：`fetch_games_by_sort_id(...)`
-
