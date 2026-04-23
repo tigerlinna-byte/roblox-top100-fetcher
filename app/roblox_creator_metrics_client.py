@@ -208,6 +208,31 @@ HOME_RECOMMENDATIONS_SPEC = MetricQuerySpec(
     "breakdown_count",
     breakdown_dimensions=("AcquisitionSource",),
 )
+PROJECT_METRIC_RANK_FIELDS = (
+    "average_session_time",
+    "day1_retention",
+    "day7_retention",
+    "payer_conversion_rate",
+    "arppu",
+)
+PERCENTILE_KEYWORDS = (
+    "percentile",
+    "peer percentile",
+    "benchmark percentile",
+    "peer group percentile",
+    "experience percentile",
+    "game percentile",
+    "genre percentile",
+    "similar experience percentile",
+)
+PERCENTILE_CONTAINER_KEYWORDS = (
+    "benchmark",
+    "comparison",
+    "peer",
+    "genre",
+    "similar",
+    "percentile",
+)
 
 
 class _VisibleTextParser(HTMLParser):
@@ -239,6 +264,14 @@ class _VisibleTextParser(HTMLParser):
             self._segments.append(normalized)
 
 
+@dataclass(frozen=True)
+class MetricSeriesResult:
+    """描述某个指标的每日值序列与同类百分位序列。"""
+
+    values: dict[str, str]
+    ranks: dict[str, str]
+
+
 @dataclass
 class RobloxCreatorMetricsClient:
     """负责抓取 Roblox Creator 后台项目 overview 指标。"""
@@ -268,7 +301,7 @@ class RobloxCreatorMetricsClient:
 
         start_time, end_time, start_date, end_date = window
         direct_attempts: list[QueryAttempt] = []
-        metrics_by_field = self._fetch_direct_metrics(
+        metrics_by_field, metric_ranks_by_field = self._fetch_direct_metrics(
             project_id,
             start_time,
             end_time,
@@ -277,6 +310,22 @@ class RobloxCreatorMetricsClient:
             start_date,
             end_date,
         )
+        missing_rank_fields = [
+            field_name
+            for field_name in PROJECT_METRIC_RANK_FIELDS
+            if metrics_by_field.get(field_name) and not metric_ranks_by_field.get(field_name)
+        ]
+        if missing_rank_fields:
+            overview_metric_ranks = self._fetch_overview_metric_ranks(
+                resolved_overview_url,
+                business_timezone,
+                start_date,
+                end_date,
+            )
+            for field_name in missing_rank_fields:
+                fallback_series = overview_metric_ranks.get(field_name, {})
+                if fallback_series:
+                    metric_ranks_by_field[field_name] = fallback_series
         required_fields = get_project_required_fields(project_id)
         minimum_missing = [field_name for field_name in required_fields if not metrics_by_field.get(field_name)]
         missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if not metrics_by_field.get(definition.field_name)]
@@ -302,10 +351,15 @@ class RobloxCreatorMetricsClient:
                     report_date=report_date,
                     peak_ccu=metrics_by_field.get("peak_ccu", {}).get(report_date, ""),
                     average_session_time=metrics_by_field.get("average_session_time", {}).get(report_date, ""),
+                    average_session_time_rank=metric_ranks_by_field.get("average_session_time", {}).get(report_date, ""),
                     day1_retention=metrics_by_field.get("day1_retention", {}).get(report_date, ""),
+                    day1_retention_rank=metric_ranks_by_field.get("day1_retention", {}).get(report_date, ""),
                     day7_retention=metrics_by_field.get("day7_retention", {}).get(report_date, ""),
+                    day7_retention_rank=metric_ranks_by_field.get("day7_retention", {}).get(report_date, ""),
                     payer_conversion_rate=metrics_by_field.get("payer_conversion_rate", {}).get(report_date, ""),
+                    payer_conversion_rate_rank=metric_ranks_by_field.get("payer_conversion_rate", {}).get(report_date, ""),
                     arppu=metrics_by_field.get("arppu", {}).get(report_date, ""),
+                    arppu_rank=metric_ranks_by_field.get("arppu", {}).get(report_date, ""),
                     qptr=metrics_by_field.get("qptr", {}).get(report_date, ""),
                     five_minute_retention=metrics_by_field.get("five_minute_retention", {}).get(report_date, ""),
                     home_recommendations=metrics_by_field.get("home_recommendations", {}).get(report_date, ""),
@@ -326,10 +380,11 @@ class RobloxCreatorMetricsClient:
         business_timezone: timezone | ZoneInfo,
         start_date: date,
         end_date: date,
-    ) -> dict[str, dict[str, str]]:
+    ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
         """优先通过真实内部 analytics 接口抓取最近窗口内的日期序列。"""
 
         metrics: dict[str, dict[str, str]] = {}
+        metric_ranks: dict[str, dict[str, str]] = {}
         self._fetch_feature_permissions(project_id, attempts)
         self._fetch_status_config(project_id, attempts)
         metadata_by_metric = self._fetch_metric_metadata(project_id, attempts)
@@ -346,8 +401,10 @@ class RobloxCreatorMetricsClient:
                 end_date,
                 metadata_by_metric,
             )
-            if series:
-                metrics[spec.field_name] = series
+            if series.values:
+                metrics[spec.field_name] = series.values
+            if spec.field_name in PROJECT_METRIC_RANK_FIELDS and series.ranks:
+                metric_ranks[spec.field_name] = series.ranks
         for spec in DIRECT_QUERY_FALLBACK_SPECS:
             if metrics.get(spec.field_name):
                 continue
@@ -362,8 +419,10 @@ class RobloxCreatorMetricsClient:
                 end_date,
                 metadata_by_metric,
             )
-            if series:
-                metrics[spec.field_name] = series
+            if series.values:
+                metrics[spec.field_name] = series.values
+            if spec.field_name in PROJECT_METRIC_RANK_FIELDS and series.ranks:
+                metric_ranks[spec.field_name] = series.ranks
         cohort_retention = self._query_metric_series(
             project_id,
             COHORT_RETENTION_SPEC,
@@ -375,9 +434,9 @@ class RobloxCreatorMetricsClient:
             end_date,
             metadata_by_metric,
         )
-        if cohort_retention:
+        if cohort_retention.values:
             metrics["day1_retention"] = _filter_metric_series(
-                _extract_cohort_retention_day(cohort_retention, 1),
+                _extract_cohort_retention_day(cohort_retention.values, 1),
                 "day1_retention",
                 project_id,
                 start_date,
@@ -387,7 +446,28 @@ class RobloxCreatorMetricsClient:
                 cohort_day=1,
             )
             metrics["day7_retention"] = _filter_metric_series(
-                _extract_cohort_retention_day(cohort_retention, 7),
+                _extract_cohort_retention_day(cohort_retention.values, 7),
+                "day7_retention",
+                project_id,
+                start_date,
+                end_date,
+                metadata_by_metric,
+                source_metric="DailyCohortRetention",
+                cohort_day=7,
+            )
+        if cohort_retention.ranks:
+            metric_ranks["day1_retention"] = _filter_metric_series(
+                _extract_cohort_retention_day(cohort_retention.ranks, 1),
+                "day1_retention",
+                project_id,
+                start_date,
+                end_date,
+                metadata_by_metric,
+                source_metric="DailyCohortRetention",
+                cohort_day=1,
+            )
+            metric_ranks["day7_retention"] = _filter_metric_series(
+                _extract_cohort_retention_day(cohort_retention.ranks, 7),
                 "day7_retention",
                 project_id,
                 start_date,
@@ -408,8 +488,8 @@ class RobloxCreatorMetricsClient:
                 end_date,
                 metadata_by_metric,
             )
-            if series:
-                metrics["five_minute_retention"] = series
+            if series.values:
+                metrics["five_minute_retention"] = series.values
         home_recommendations = self._query_metric_series(
             project_id,
             HOME_RECOMMENDATIONS_SPEC,
@@ -421,9 +501,9 @@ class RobloxCreatorMetricsClient:
             end_date,
             metadata_by_metric,
         )
-        if home_recommendations:
-            metrics["home_recommendations"] = home_recommendations
-        return metrics
+        if home_recommendations.values:
+            metrics["home_recommendations"] = home_recommendations.values
+        return metrics, metric_ranks
 
     def _fetch_feature_permissions(self, project_id: str, attempts: list[QueryAttempt]) -> None:
         """探测项目是否拥有 analytics 页面权限。"""
@@ -472,7 +552,7 @@ class RobloxCreatorMetricsClient:
         start_date: date,
         end_date: date,
         metadata_by_metric: dict[str, date],
-    ) -> dict[str, str]:
+    ) -> MetricSeriesResult:
         """按指标配置请求 analytics-query-gateway，并返回按日期组织的值。"""
 
         url = ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE.format(resource_type=ANALYTICS_RESOURCE_TYPE, resource_id=project_id)
@@ -482,19 +562,30 @@ class RobloxCreatorMetricsClient:
             payload = self._poll_query_result(url, request_payload, payload)
         except RobloxCreatorMetricsClientError as exc:
             attempts.append(QueryAttempt(spec.metric, url, "POST", f"error: {exc}", _truncate_json(request_payload), ""))
-            return {}
+            return MetricSeriesResult(values={}, ranks={})
         attempts.append(QueryAttempt(spec.metric, url, "POST", "ok", _truncate_json(request_payload), _truncate_json(payload)))
         series = self._extract_metric_series_from_query_result(payload, spec, business_timezone)
         if spec.value_type == "cohort_retention_ratio":
             return series
-        return _filter_metric_series(
-            series,
-            spec.field_name,
-            project_id,
-            start_date,
-            end_date,
-            metadata_by_metric,
-            source_metric=spec.metric,
+        return MetricSeriesResult(
+            values=_filter_metric_series(
+                series.values,
+                spec.field_name,
+                project_id,
+                start_date,
+                end_date,
+                metadata_by_metric,
+                source_metric=spec.metric,
+            ),
+            ranks=_filter_metric_series(
+                series.ranks,
+                spec.field_name,
+                project_id,
+                start_date,
+                end_date,
+                metadata_by_metric,
+                source_metric=spec.metric,
+            ),
         )
 
     def _build_metric_request_payload(
@@ -544,43 +635,95 @@ class RobloxCreatorMetricsClient:
         payload: object,
         spec: MetricQuerySpec,
         business_timezone: timezone | ZoneInfo,
-    ) -> dict[str, str]:
+    ) -> MetricSeriesResult:
         """从 queryResult 中抽取并格式化按日期组织的指标序列。"""
 
         values = self._extract_query_values(payload)
         if spec.value_type == "session_bucket_ratio":
-            return _format_series(
-                _extract_session_bucket_retention_series(values, threshold_seconds=300, business_timezone=business_timezone),
-                _format_ratio,
+            return MetricSeriesResult(
+                values=_format_series(
+                    _extract_session_bucket_retention_series(values, threshold_seconds=300, business_timezone=business_timezone),
+                    _format_ratio,
+                ),
+                ranks={},
             )
         if spec.value_type == "breakdown_count":
-            return _format_series(
-                _extract_breakdown_daily_counts(values, "Home Recommendation", business_timezone, aliases=("HomeRecommendation",)),
-                _format_count,
+            return MetricSeriesResult(
+                values=_format_series(
+                    _extract_breakdown_daily_counts(values, "Home Recommendation", business_timezone, aliases=("HomeRecommendation",)),
+                    _format_count,
+                ),
+                ranks={},
             )
         if spec.value_type == "cohort_retention_ratio":
-            return _extract_cohort_retention_series(values, business_timezone)
+            return MetricSeriesResult(
+                values=_extract_cohort_retention_series(values, business_timezone),
+                ranks=_extract_cohort_retention_rank_series(values, business_timezone),
+            )
 
         datapoints = _flatten_numeric_datapoints(values)
+        ranks = _extract_percentile_rank_series(values, business_timezone)
         if not datapoints:
-            return {}
+            return MetricSeriesResult(values={}, ranks=ranks)
         if spec.value_type == "daily_average":
-            return _format_series(_aggregate_daily_values(datapoints, "average", business_timezone), _format_count)
+            return MetricSeriesResult(
+                values=_format_series(_aggregate_daily_values(datapoints, "average", business_timezone), _format_count),
+                ranks=ranks,
+            )
         if spec.value_type == "daily_max":
-            return _format_series(_aggregate_daily_values(datapoints, "max", business_timezone), _format_count)
+            return MetricSeriesResult(
+                values=_format_series(_aggregate_daily_values(datapoints, "max", business_timezone), _format_count),
+                ranks=ranks,
+            )
 
         latest_values = _aggregate_daily_values(datapoints, "latest", business_timezone)
         if spec.value_type == "integer":
-            return _format_series(latest_values, _format_count)
+            return MetricSeriesResult(values=_format_series(latest_values, _format_count), ranks=ranks)
         if spec.value_type == "ratio":
-            return _format_series(latest_values, _format_ratio)
+            return MetricSeriesResult(values=_format_series(latest_values, _format_ratio), ranks=ranks)
         if spec.value_type == "currency":
-            return _format_series(latest_values, _format_currency)
+            return MetricSeriesResult(values=_format_series(latest_values, _format_currency), ranks=ranks)
         if spec.value_type == "minutes":
-            return _format_series(latest_values, _format_duration_from_minutes)
+            return MetricSeriesResult(values=_format_series(latest_values, _format_duration_from_minutes), ranks=ranks)
         if spec.value_type == "seconds":
-            return _format_series(latest_values, _format_duration_from_seconds)
-        return _format_series(latest_values, lambda value: _normalize_metric_value(str(value)))
+            return MetricSeriesResult(values=_format_series(latest_values, _format_duration_from_seconds), ranks=ranks)
+        return MetricSeriesResult(
+            values=_format_series(latest_values, lambda value: _normalize_metric_value(str(value))),
+            ranks=ranks,
+        )
+
+    def _fetch_overview_metric_ranks(
+        self,
+        overview_url: str,
+        business_timezone: timezone | ZoneInfo,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, dict[str, str]]:
+        """从 Creator overview 同级页面的结构化 payload 中提取每日百分位。"""
+
+        try:
+            html_text = self._fetch_overview_html(overview_url)
+        except RobloxCreatorMetricsClientError:
+            logging.warning("Failed to fetch Creator overview html for percentile fallback.", exc_info=True)
+            return {}
+
+        extracted = _extract_metric_rank_series_from_html(html_text, business_timezone)
+        filtered: dict[str, dict[str, str]] = {}
+        empty_metadata: dict[str, date] = {}
+        project_id = _extract_project_id(overview_url)
+        for field_name in PROJECT_METRIC_RANK_FIELDS:
+            if not extracted.get(field_name):
+                continue
+            filtered[field_name] = _filter_metric_series(
+                extracted[field_name],
+                field_name,
+                project_id,
+                start_date,
+                end_date,
+                empty_metadata,
+                source_metric="",
+            )
+        return filtered
 
     def _extract_query_values(self, payload: object) -> list[dict[str, object]]:
         """从 analytics gateway 响应中提取 values 列表。"""
@@ -922,6 +1065,107 @@ def _try_load_json(candidate: str) -> object | None:
         return None
 
 
+def _extract_metric_rank_series_from_html(
+    html_text: str,
+    business_timezone: timezone | ZoneInfo,
+) -> dict[str, dict[str, str]]:
+    ranks_by_field: dict[str, dict[str, str]] = {field_name: {} for field_name in PROJECT_METRIC_RANK_FIELDS}
+    for script_content in _extract_script_contents(html_text):
+        decoded = html.unescape(script_content).strip()
+        if not decoded:
+            continue
+        payloads = [*_extract_json_payloads_from_script(decoded), *_extract_assignment_payloads(decoded)]
+        for payload in payloads:
+            _collect_metric_rank_series_from_payload(payload, ranks_by_field, business_timezone)
+    return {field_name: ranks for field_name, ranks in ranks_by_field.items() if ranks}
+
+
+def _collect_metric_rank_series_from_payload(
+    payload: object,
+    ranks_by_field: dict[str, dict[str, str]],
+    business_timezone: timezone | ZoneInfo,
+    inherited_field: str = "",
+    inherited_date: str = "",
+) -> None:
+    if isinstance(payload, dict):
+        current_field = inherited_field or _resolve_metric_field_from_payload(payload)
+        current_date = inherited_date or _resolve_report_date_from_payload(payload, business_timezone)
+        current_rank = _extract_percentile_rank_from_payload(payload)
+        if current_field and current_date and current_rank:
+            ranks_by_field.setdefault(current_field, {})[current_date] = current_rank
+
+        for key, value in payload.items():
+            next_field = current_field or _match_metric_alias(str(key))
+            next_date = current_date or _parse_report_date_candidate(key, business_timezone)
+            _collect_metric_rank_series_from_payload(
+                value,
+                ranks_by_field,
+                business_timezone,
+                next_field,
+                next_date,
+            )
+        return
+
+    if isinstance(payload, list):
+        for item in payload:
+            _collect_metric_rank_series_from_payload(
+                item,
+                ranks_by_field,
+                business_timezone,
+                inherited_field,
+                inherited_date,
+            )
+        return
+
+    if inherited_field and inherited_date:
+        current_rank = _format_percentile_rank(payload)
+        if current_rank:
+            ranks_by_field.setdefault(inherited_field, {})[inherited_date] = current_rank
+
+
+def _resolve_metric_field_from_payload(payload: dict[str, object]) -> str:
+    for field_name in (
+        "label",
+        "name",
+        "title",
+        "metric",
+        "metricName",
+        "metric_name",
+        "displayName",
+        "display_name",
+    ):
+        raw_value = payload.get(field_name)
+        if isinstance(raw_value, str):
+            matched = _match_metric_alias(raw_value)
+            if matched:
+                return matched
+    return ""
+
+
+def _resolve_report_date_from_payload(
+    payload: dict[str, object],
+    business_timezone: timezone | ZoneInfo,
+) -> str:
+    for field_name in (
+        "time",
+        "timestamp",
+        "date",
+        "day",
+        "reportDate",
+        "report_date",
+        "startTime",
+        "start_time",
+        "endTime",
+        "end_time",
+        "bucketStartTime",
+        "bucket_start_time",
+    ):
+        report_date = _parse_report_date_candidate(payload.get(field_name), business_timezone)
+        if report_date:
+            return report_date
+    return ""
+
+
 def _has_missing_metrics(metrics: dict[str, str]) -> bool:
     return any(not metrics.get(definition.field_name) for definition in METRIC_DEFINITIONS)
 
@@ -1007,6 +1251,88 @@ def _normalize_metric_value(value: str) -> str:
     return normalized
 
 
+def _extract_percentile_rank_from_payload(payload: object) -> str:
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if _looks_like_percentile_key(key):
+                rank_text = _format_percentile_rank(value)
+                if rank_text:
+                    return rank_text
+        for key, value in payload.items():
+            if not isinstance(value, dict):
+                continue
+            if not _looks_like_percentile_container_key(key):
+                continue
+            rank_text = _extract_percentile_rank_from_payload(value)
+            if rank_text:
+                return rank_text
+    return ""
+
+
+def _looks_like_percentile_key(raw_key: object) -> bool:
+    normalized = _normalize_label(str(raw_key))
+    if not normalized:
+        return False
+    if normalized in PERCENTILE_KEYWORDS:
+        return True
+    return "percentile" in normalized
+
+
+def _looks_like_percentile_container_key(raw_key: object) -> bool:
+    normalized = _normalize_label(str(raw_key))
+    if not normalized:
+        return False
+    return any(keyword in normalized for keyword in PERCENTILE_CONTAINER_KEYWORDS)
+
+
+def _format_percentile_rank(value: object) -> str:
+    if isinstance(value, str):
+        normalized = _normalize_metric_value(value).lower()
+        if not normalized:
+            return ""
+        if re.fullmatch(r"\d+(?:\.\d+)?(?:st|nd|rd|th)", normalized):
+            return normalized
+        if "percentile" in normalized:
+            match = re.search(r"\d+(?:\.\d+)?", normalized)
+            if match:
+                return _format_percentile_rank(match.group(0))
+    numeric = _coerce_numeric(value)
+    if numeric is None:
+        return ""
+    percentile = numeric * 100 if 0.0 <= numeric <= 1.0 else numeric
+    percentile = max(0.0, min(100.0, percentile))
+    if abs(percentile - round(percentile)) < 0.01:
+        return f"{int(round(percentile))}th"
+    return f"{percentile:.2f}".rstrip("0").rstrip(".") + "th"
+
+
+def _parse_report_date_candidate(
+    value: object,
+    business_timezone: timezone | ZoneInfo,
+) -> str:
+    if isinstance(value, datetime):
+        return value.astimezone(business_timezone).date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, (int, float)):
+        epoch_value = float(value)
+        if epoch_value > 1_000_000_000_000:
+            epoch_value /= 1000
+        if epoch_value > 1_000_000_000:
+            return datetime.fromtimestamp(epoch_value, tz=timezone.utc).astimezone(business_timezone).date().isoformat()
+    if not isinstance(value, str):
+        return ""
+    raw_value = value.strip()
+    if not raw_value:
+        return ""
+    parsed = _parse_iso_datetime(raw_value)
+    if parsed is not None:
+        return parsed.astimezone(business_timezone).date().isoformat()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_value):
+        return raw_value
+    return ""
+
+
 def _is_retryable_exception(exc: Exception) -> bool:
     if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
         return True
@@ -1051,6 +1377,24 @@ def _flatten_numeric_datapoints(values: list[dict[str, object]]) -> list[tuple[d
             datapoints.append((parsed, numeric))
     datapoints.sort(key=lambda item: item[0])
     return datapoints
+
+
+def _extract_percentile_rank_series(
+    values: list[dict[str, object]],
+    business_timezone: timezone | ZoneInfo,
+) -> dict[str, str]:
+    ranks: dict[str, str] = {}
+    for series in values:
+        for point in series.get("dataPoints", []):
+            if not isinstance(point, dict):
+                continue
+            parsed = _parse_iso_datetime(str(point.get("time", "")))
+            rank_text = _extract_percentile_rank_from_payload(point)
+            if parsed is None or not rank_text:
+                continue
+            report_date = _to_business_date_string(parsed, business_timezone)
+            ranks[report_date] = rank_text
+    return ranks
 
 
 def _latest_value(datapoints: list[tuple[datetime, float]]) -> float | None:
@@ -1272,6 +1616,29 @@ def _extract_cohort_retention_series(
         for timestamp, value in _flatten_numeric_datapoints([series]):
             report_date = _to_business_date_string(timestamp, business_timezone)
             series_by_key[f"{cohort_day}|{report_date}"] = _format_ratio(value)
+    return series_by_key
+
+
+def _extract_cohort_retention_rank_series(
+    values: list[dict[str, object]],
+    business_timezone: timezone | ZoneInfo,
+) -> dict[str, str]:
+    """解析 DailyCohortRetention 的 CohortDay 分桶百分位结果。"""
+
+    series_by_key: dict[str, str] = {}
+    for series in values:
+        cohort_day = _extract_cohort_day_value(series.get("breakdownValue", []))
+        if cohort_day is None:
+            continue
+        for point in series.get("dataPoints", []):
+            if not isinstance(point, dict):
+                continue
+            parsed = _parse_iso_datetime(str(point.get("time", "")))
+            rank_text = _extract_percentile_rank_from_payload(point)
+            if parsed is None or not rank_text:
+                continue
+            report_date = _to_business_date_string(parsed, business_timezone)
+            series_by_key[f"{cohort_day}|{report_date}"] = rank_text
     return series_by_key
 
 

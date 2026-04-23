@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date, datetime, timezone
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from app.config import Config
 from app.project_metrics_models import get_project_required_fields
@@ -16,6 +17,19 @@ def _build_json_response(payload: dict, *, status_code: int = 200, headers: dict
     response.json.return_value = payload
     response.text = "{}"
     response.url = "https://create.roblox.com/dashboard/creations/experiences/9682356542/overview"
+    return response
+
+
+def _build_html_response(
+    html_text: str = "<html><body></body></html>",
+    *,
+    url: str = "https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+) -> Mock:
+    response = Mock()
+    response.status_code = 200
+    response.headers = {}
+    response.text = html_text
+    response.url = url
     return response
 
 
@@ -37,6 +51,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
+            if method == "GET" and "dashboard/creations/experiences" in url:
+                return _build_html_response(url=url)
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -69,9 +85,9 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 if metric == "AveragePlayTimeMinutesPerDAU":
                     return _build_json_response(
                         _wrap_query_result({"breakdownValue": [], "dataPoints": [
-                            {"time": "2026-03-10T00:00:00Z", "value": 12.5},
-                            {"time": "2026-03-11T00:00:00Z", "value": 15.0},
-                            {"time": "2026-03-12T00:00:00Z", "value": 18.0},
+                            {"time": "2026-03-10T00:00:00Z", "value": 12.5, "benchmarkPercentile": 81},
+                            {"time": "2026-03-11T00:00:00Z", "value": 15.0, "benchmarkPercentile": 82},
+                            {"time": "2026-03-12T00:00:00Z", "value": 18.0, "benchmarkPercentile": 83},
                         ]})
                     )
                 if metric == "DailyCohortRetention":
@@ -80,24 +96,30 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             {
                                 "breakdownValue": [{"dimension": "CohortDay", "value": "1"}],
                                 "dataPoints": [
-                                    {"time": "2026-03-09T00:00:00Z", "value": 0.0758},
-                                    {"time": "2026-03-10T00:00:00Z", "value": 0.0677},
-                                    {"time": "2026-03-11T00:00:00Z", "value": 0.0811},
+                                    {"time": "2026-03-09T00:00:00Z", "value": 0.0758, "benchmarkPercentile": 74},
+                                    {"time": "2026-03-10T00:00:00Z", "value": 0.0677, "benchmarkPercentile": 72},
+                                    {"time": "2026-03-11T00:00:00Z", "value": 0.0811, "benchmarkPercentile": 75},
                                 ],
                             },
                             {
                                 "breakdownValue": [{"dimension": "CohortDay", "value": "7"}],
                                 "dataPoints": [
-                                    {"time": "2026-03-04T00:00:00Z", "value": 0.0061},
-                                    {"time": "2026-03-05T00:00:00Z", "value": 0.0070},
+                                    {"time": "2026-03-04T00:00:00Z", "value": 0.0061, "benchmarkPercentile": 64},
+                                    {"time": "2026-03-05T00:00:00Z", "value": 0.0070, "benchmarkPercentile": 66},
                                 ],
                             },
                         ])
                     )
                 if metric == "PayingUsersCVR":
-                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.025, "benchmarkPercentile": 58},
+                        {"time": "2026-03-11T00:00:00Z", "value": 0.03, "benchmarkPercentile": 61},
+                    ]}))
                 if metric == "AverageRevenuePerPayingUser":
-                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 8.9, "benchmarkPercentile": 77},
+                        {"time": "2026-03-11T00:00:00Z", "value": 9.3, "benchmarkPercentile": 79},
+                    ]}))
                 if metric == "RFYQualifiedPTR":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
                 if metric == "TotalSessionsEndedInBucket":
@@ -160,15 +182,121 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         record_map = {record.report_date: record for record in records}
         self.assertEqual("10", record_map["2026-03-11"].peak_ccu)
         self.assertEqual("15m 0s", record_map["2026-03-11"].average_session_time)
+        self.assertEqual("82th", record_map["2026-03-11"].average_session_time_rank)
         self.assertEqual("", record_map["2026-03-11"].day1_retention)
         self.assertEqual("50%", record_map["2026-03-11"].five_minute_retention)
         self.assertEqual("610", record_map["2026-03-11"].home_recommendations)
         self.assertEqual("0.15%", record_map["2026-03-11"].client_crash_rate)
         self.assertEqual("6.77%", record_map["2026-03-10"].day1_retention)
+        self.assertEqual("72th", record_map["2026-03-10"].day1_retention_rank)
+        self.assertEqual("58th", record_map["2026-03-10"].payer_conversion_rate_rank)
+        self.assertEqual("77th", record_map["2026-03-10"].arppu_rank)
         self.assertEqual("", record_map["2026-03-10"].day7_retention)
         self.assertEqual("7.58%", record_map["2026-03-09"].day1_retention)
+        self.assertEqual("", record_map["2026-03-09"].day7_retention_rank)
+        self.assertNotIn("2026-03-05", record_map)
         self.assertNotIn("2026-03-04", record_map)
         self.assertNotIn("2026-03-13", record_map)
+
+    def test_fetch_project_daily_metrics_uses_overview_payload_for_missing_ranks(self) -> None:
+        session = Mock()
+        overview_url = "https://create.roblox.com/dashboard/creations/experiences/1234567890/overview"
+        mocked_window = (
+            datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 18, 0, 0, tzinfo=timezone.utc),
+            date(2026, 3, 1),
+            date(2026, 3, 17),
+        )
+
+        def request(method: str, url: str, **kwargs):
+            if method == "GET" and "feature-permissions" in url:
+                return _build_json_response({"userCanViewAnalyticsForUniverse": True})
+            if method == "GET" and "status-config" in url:
+                return _build_json_response({"annotationConfigurations": []})
+            if method == "GET" and "dashboard/creations/experiences" in url:
+                return _build_html_response(
+                    """
+                    <html><body><script>
+                    window.__metricRanks = {
+                      "cards": [
+                        {"metricName": "Average Session Time", "dataPoints": [{"time": "2026-03-10T00:00:00Z", "benchmarkPercentile": 82}]},
+                        {"metricName": "Day 1 Retention", "dataPoints": [{"time": "2026-03-10T00:00:00Z", "benchmarkPercentile": 71}]},
+                        {"metricName": "Day 7 Retention", "dataPoints": [{"time": "2026-03-05T00:00:00Z", "benchmarkPercentile": 63}]},
+                        {"metricName": "Payer Conversion Rate", "dataPoints": [{"time": "2026-03-10T00:00:00Z", "benchmarkPercentile": 58}]},
+                        {"metricName": "ARPPU", "dataPoints": [{"time": "2026-03-10T00:00:00Z", "benchmarkPercentile": 76}]}
+                      ]
+                    };
+                    </script></body></html>
+                    """,
+                    url=url,
+                )
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({
+                    "operation": {
+                        "done": True,
+                        "metricMetadataResult": {
+                            "metadata": [
+                                {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-17T00:00:00Z"},
+                                {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-17T00:00:00Z"},
+                                {"metric": "PayingUsersCVR", "latestAvailableTime": "2026-03-17T00:00:00Z"},
+                                {"metric": "AverageRevenuePerPayingUser", "latestAvailableTime": "2026-03-17T00:00:00Z"},
+                                {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-17T00:00:00Z"},
+                            ]
+                        },
+                    }
+                })
+            if method == "POST" and "analytics-query-gateway" in url:
+                metric = kwargs["json"]["query"]["metric"]
+                if metric == "PeakConcurrentPlayers":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 11.1},
+                    ]}))
+                if metric == "AveragePlayTimeMinutesPerDAU":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 12.5},
+                    ]}))
+                if metric == "PayingUsersCVR":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.025},
+                    ]}))
+                if metric == "AverageRevenuePerPayingUser":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 8.9},
+                    ]}))
+                if metric == "DailyCohortRetention":
+                    return _build_json_response(_wrap_query_result([
+                        {
+                            "breakdownValue": [{"dimension": "CohortDay", "value": "1"}],
+                            "dataPoints": [{"time": "2026-03-10T00:00:00Z", "value": 0.0677}],
+                        },
+                        {
+                            "breakdownValue": [{"dimension": "CohortDay", "value": "7"}],
+                            "dataPoints": [{"time": "2026-03-05T00:00:00Z", "value": 0.0070}],
+                        },
+                    ]))
+                return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_overview_url=overview_url,
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=1,
+                feishu_timezone="Asia/Shanghai",
+            ),
+            session=session,
+        )
+
+        with patch("app.roblox_creator_metrics_client._resolve_project_query_window", return_value=mocked_window):
+            records = client.fetch_project_daily_metrics()
+        record_map = {record.report_date: record for record in records}
+
+        self.assertEqual("82th", record_map["2026-03-10"].average_session_time_rank)
+        self.assertEqual("71th", record_map["2026-03-10"].day1_retention_rank)
+        self.assertEqual("63th", record_map["2026-03-05"].day7_retention_rank)
+        self.assertEqual("58th", record_map["2026-03-10"].payer_conversion_rate_rank)
+        self.assertEqual("76th", record_map["2026-03-10"].arppu_rank)
 
     def test_fetch_project_daily_metrics_refreshes_xcsrf_token(self) -> None:
         session = Mock()
@@ -183,6 +311,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
+            if method == "GET" and "dashboard/creations/experiences" in url:
+                return _build_html_response(url=url)
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -235,6 +365,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
+            if method == "GET" and "dashboard/creations/experiences" in url:
+                return _build_html_response(url=url)
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -337,6 +469,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
+            if method == "GET" and "dashboard/creations/experiences" in url:
+                return _build_html_response(url=url)
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {

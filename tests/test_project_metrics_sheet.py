@@ -35,10 +35,15 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             report_date="2026-03-12",
             peak_ccu="2,345",
             average_session_time="18m 30s",
+            average_session_time_rank="82th",
             day1_retention="31%",
+            day1_retention_rank="71th",
             day7_retention="12%",
+            day7_retention_rank="63th",
             payer_conversion_rate="2.5%",
+            payer_conversion_rate_rank="58th",
             arppu="$8.90",
+            arppu_rank="76th",
             qptr="4.2",
             five_minute_retention="40%",
             home_recommendations="98",
@@ -53,8 +58,14 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("2026-03-12（周四）", row[0])
         self.assertEqual("2,345", row[1])
         self.assertEqual("18m 30s", row[2])
-        self.assertEqual("0.12%", row[10])
-        self.assertEqual("2026-03-12T01:02:03Z", row[11])
+        self.assertEqual("82th", row[3])
+        self.assertEqual("71th", row[5])
+        self.assertEqual("63th", row[7])
+        self.assertEqual("58th", row[9])
+        self.assertEqual("$8.90", row[10])
+        self.assertEqual("76th", row[11])
+        self.assertEqual("0.12%", row[15])
+        self.assertEqual("2026-03-12T01:02:03Z", row[16])
 
     def test_build_project_metrics_table_adds_rows_in_date_desc_order(self) -> None:
         records = [
@@ -100,8 +111,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_table_merges_existing_rows_without_clearing_history(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11", "200", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
-            ["2026-03-10", "180", "", "", "", "", "", "", "", "", "2026-03-10T01:02:03Z"],
+            ["2026-03-11", "200", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
+            ["2026-03-10", "180", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "2026-03-10T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
@@ -151,7 +162,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_table_clears_existing_value_when_new_value_missing(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11", "200", "15m", "31%", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
+            ["2026-03-11", "200", "15m", "", "31%", "", "", "", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
@@ -177,8 +188,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("2026-03-11（周三）", table_state.rows[1][0])
         self.assertEqual("230", table_state.rows[1][1])
         self.assertEqual("15m", table_state.rows[1][2])
-        self.assertEqual("31%", table_state.rows[1][3])
-        self.assertEqual("2026-03-12T01:02:03Z", table_state.rows[1][11])
+        self.assertEqual("31%", table_state.rows[1][4])
+        self.assertEqual("2026-03-12T01:02:03Z", table_state.rows[1][16])
 
     def test_build_project_metrics_rebuild_rows_pads_blank_rows_to_fixed_height(self) -> None:
         records = [
@@ -210,7 +221,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_rebuild_rows_preserves_existing_non_empty_cells(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11（周三）", "200", "15m", "31%", "", "", "", "4.5%", "", "88", "0.10%", "2026-03-11T01:02:03Z"],
+            ["2026-03-11（周三）", "200", "15m", "82th", "31%", "71th", "", "", "", "", "", "", "4.5%", "", "88", "0.10%", "2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
@@ -236,15 +247,18 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("2026-03-11（周三）", rows[1][0])
         self.assertEqual("200", rows[1][1])
         self.assertEqual("15m", rows[1][2])
-        self.assertEqual("4.5%", rows[1][7])
-        self.assertEqual("88", rows[1][9])
-        self.assertEqual("0.10%", rows[1][10])
-        self.assertEqual("2026-03-12T01:02:03Z", rows[1][11])
+        self.assertEqual("82th", rows[1][3])
+        self.assertEqual("31%", rows[1][4])
+        self.assertEqual("71th", rows[1][5])
+        self.assertEqual("4.5%", rows[1][12])
+        self.assertEqual("88", rows[1][14])
+        self.assertEqual("0.10%", rows[1][15])
+        self.assertEqual("2026-03-12T01:02:03Z", rows[1][16])
 
     def test_build_project_metrics_table_updates_existing_rows_with_weekday_suffix(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11（周三）", "200", "", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
+            ["2026-03-11（周三）", "200", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
