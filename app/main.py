@@ -6,6 +6,7 @@ import sys
 import time
 
 from .config import Config, load_config
+from .creator_metrics_probe import run_creator_metrics_probe
 from .feishu_client import FeishuClient, FeishuClientError
 from .github_client import GitHubClient, GitHubClientError
 from .project_metrics_models import ProjectDailyMetricsRecord
@@ -48,6 +49,7 @@ from .top_trending_sheet import (
 
 
 PROJECT_METRICS_REPORT_MODE = "roblox_project_daily_metrics"
+CREATOR_METRICS_PROBE_MODE = "creator_metrics_probe"
 PROJECT_METRICS_SHEET_MAX_ROWS = 365
 PROJECT_METRICS_SHEET_END_COLUMN = "Q"
 
@@ -84,6 +86,11 @@ def run_once() -> int:
     start = time.time()
 
     try:
+        if cfg.run_report_mode == CREATOR_METRICS_PROBE_MODE:
+            probe_outputs = run_creator_metrics_probe(cfg)
+            for path in probe_outputs:
+                logging.info("Creator probe output saved: %s", path)
+            return 0
         report_payload = _fetch_report_payload(cfg)
         json_path, csv_path = _write_report_outputs(cfg, report_payload)
     except (RobloxClientError, RobloxCreatorMetricsClientError) as exc:
