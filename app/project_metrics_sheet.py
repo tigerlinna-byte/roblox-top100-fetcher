@@ -32,6 +32,56 @@ PROJECT_METRICS_HEADERS = [
     "报错率",
     "更新时间",
 ]
+LEGACY_PROJECT_METRICS_HEADERS = [
+    "日期",
+    "峰值PCU",
+    "平均在线时长",
+    "次留",
+    "7留",
+    "付费率",
+    "付费用户平均收入",
+    "QPTR",
+    "五分钟留存",
+    "Home Recommendation数量",
+    "报错率",
+    "更新时间",
+]
+PROJECT_METRICS_FIELD_TO_HEADER = {
+    "report_date": "日期",
+    "peak_ccu": "峰值PCU",
+    "average_session_time": "平均在线时长",
+    "average_session_time_rank": "平均在线时长同类排名",
+    "day1_retention": "次留",
+    "day1_retention_rank": "次留同类排名",
+    "day7_retention": "7留",
+    "day7_retention_rank": "7留同类排名",
+    "payer_conversion_rate": "付费率",
+    "payer_conversion_rate_rank": "付费率同类排名",
+    "arppu": "付费用户平均收入",
+    "arppu_rank": "付费用户平均收入同类排名",
+    "qptr": "QPTR",
+    "five_minute_retention": "五分钟留存",
+    "home_recommendations": "Home Recommendation数量",
+    "client_crash_rate": "报错率",
+    "fetched_at": "更新时间",
+}
+PROJECT_METRICS_HEADER_TO_FIELD = {
+    header: field_name for field_name, header in PROJECT_METRICS_FIELD_TO_HEADER.items()
+}
+PROJECT_METRICS_LEGACY_FIELD_ORDER = (
+    "report_date",
+    "peak_ccu",
+    "average_session_time",
+    "day1_retention",
+    "day7_retention",
+    "payer_conversion_rate",
+    "arppu",
+    "qptr",
+    "five_minute_retention",
+    "home_recommendations",
+    "client_crash_rate",
+    "fetched_at",
+)
 
 
 @dataclass(frozen=True)
@@ -226,12 +276,160 @@ def _resolve_insert_index(rows: list[list[object]], report_date: str) -> int:
 
 def _normalize_existing_rows(existing_rows: list[list[object]]) -> list[list[object]]:
     rows: list[list[object]] = [PROJECT_METRICS_HEADERS.copy()]
-    for row in existing_rows[1:] if existing_rows else []:
-        normalized = [str(cell) if cell is not None else "" for cell in row[: len(PROJECT_METRICS_HEADERS)]]
-        normalized.extend([""] * (len(PROJECT_METRICS_HEADERS) - len(normalized)))
-        if any(str(cell).strip() for cell in normalized):
+    if not existing_rows:
+        return rows
+
+    header_row = [str(cell) if cell is not None else "" for cell in existing_rows[0]]
+    for row in existing_rows[1:]:
+        normalized = _normalize_existing_row(header_row, row)
+        if any(cell.strip() for cell in normalized):
             rows.append(normalized)
     return rows
+
+
+def _normalize_existing_row(header_row: list[str], row: list[object]) -> list[str]:
+    row_cells = [str(cell) if cell is not None else "" for cell in row]
+    field_values = _extract_row_field_values(header_row, row_cells)
+    normalized = [field_values.get("report_date", "")]
+    for header in PROJECT_METRICS_HEADERS[1:]:
+        normalized.append(field_values.get(PROJECT_METRICS_HEADER_TO_FIELD[header], ""))
+    return normalized
+
+
+def _extract_row_field_values(header_row: list[str], row_cells: list[str]) -> dict[str, str]:
+    if _looks_like_legacy_header(header_row):
+        return _extract_legacy_row_field_values(row_cells)
+    if _looks_like_legacy_shifted_row(row_cells):
+        return _extract_shifted_legacy_row_field_values(row_cells)
+    return _extract_row_field_values_by_header(header_row, row_cells)
+
+
+def _extract_row_field_values_by_header(header_row: list[str], row_cells: list[str]) -> dict[str, str]:
+    field_values: dict[str, str] = {}
+    for index, raw_header in enumerate(header_row):
+        field_name = PROJECT_METRICS_HEADER_TO_FIELD.get(raw_header.strip(), "")
+        if not field_name:
+            continue
+        cell_text = row_cells[index].strip() if index < len(row_cells) else ""
+        normalized = _normalize_field_value(field_name, cell_text)
+        if normalized:
+            field_values[field_name] = normalized
+    return field_values
+
+
+def _extract_legacy_row_field_values(row_cells: list[str]) -> dict[str, str]:
+    field_values: dict[str, str] = {}
+    for index, field_name in enumerate(PROJECT_METRICS_LEGACY_FIELD_ORDER):
+        cell_text = row_cells[index].strip() if index < len(row_cells) else ""
+        normalized = _normalize_field_value(field_name, cell_text)
+        if normalized:
+            field_values[field_name] = normalized
+    return field_values
+
+
+def _extract_shifted_legacy_row_field_values(row_cells: list[str]) -> dict[str, str]:
+    legacy_values = _extract_legacy_row_field_values(row_cells)
+    current_values = _extract_row_field_values_by_header(PROJECT_METRICS_HEADERS, row_cells)
+    has_current_fetched_at = bool(current_values.get("fetched_at", ""))
+    field_values: dict[str, str] = {
+        "report_date": legacy_values.get("report_date", current_values.get("report_date", "")),
+        "peak_ccu": legacy_values.get("peak_ccu", current_values.get("peak_ccu", "")),
+        "average_session_time": legacy_values.get(
+            "average_session_time",
+            current_values.get("average_session_time", ""),
+        ),
+        "day1_retention": legacy_values.get("day1_retention", ""),
+        "day7_retention": current_values.get("day7_retention", legacy_values.get("day7_retention", "")),
+        "payer_conversion_rate": legacy_values.get("payer_conversion_rate", ""),
+        "arppu": current_values.get("arppu", legacy_values.get("arppu", "")),
+        "qptr": current_values.get("qptr", legacy_values.get("qptr", "")),
+        "five_minute_retention": current_values.get(
+            "five_minute_retention",
+            legacy_values.get("five_minute_retention", ""),
+        ),
+        "home_recommendations": current_values.get(
+            "home_recommendations",
+            legacy_values.get("home_recommendations", ""),
+        ),
+        "client_crash_rate": current_values.get(
+            "client_crash_rate",
+            legacy_values.get("client_crash_rate", ""),
+        ),
+        "fetched_at": current_values.get("fetched_at", legacy_values.get("fetched_at", "")),
+    }
+    for field_name in (
+        "average_session_time_rank",
+        "day1_retention_rank",
+        "day7_retention_rank",
+        "payer_conversion_rate_rank",
+        "arppu_rank",
+    ):
+        field_values[field_name] = current_values.get(field_name, "")
+    if has_current_fetched_at:
+        field_values["day7_retention"] = current_values.get("day7_retention", "")
+    return {field_name: value for field_name, value in field_values.items() if value}
+
+
+def _looks_like_legacy_header(header_row: list[str]) -> bool:
+    normalized_header = [cell.strip() for cell in header_row[: len(LEGACY_PROJECT_METRICS_HEADERS)]]
+    return normalized_header == LEGACY_PROJECT_METRICS_HEADERS
+
+
+def _looks_like_legacy_shifted_row(row_cells: list[str]) -> bool:
+    if len(row_cells) < len(PROJECT_METRICS_HEADERS):
+        return False
+    if row_cells[3].strip() and not _looks_like_rank_text(row_cells[3].strip()):
+        return True
+    if row_cells[5].strip() and not _looks_like_rank_text(row_cells[5].strip()):
+        return True
+    if row_cells[7].strip() and not _looks_like_rank_text(row_cells[7].strip()):
+        return True
+    if row_cells[9].strip() and not _looks_like_rank_text(row_cells[9].strip()):
+        return True
+    if row_cells[11].strip() and not _looks_like_rank_text(row_cells[11].strip()):
+        return True
+    return False
+
+
+def _normalize_field_value(field_name: str, value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    if field_name == "report_date":
+        report_date = _extract_report_date(text)
+        return _format_report_date_display(report_date) if report_date else ""
+    if field_name == "fetched_at":
+        return text if _looks_like_timestamp(text) else ""
+    if field_name.endswith("_rank"):
+        return text if _looks_like_rank_text(text) else ""
+    if field_name in {"arppu"}:
+        return text if text.startswith("$") else ""
+    if field_name in {"day1_retention", "day7_retention", "payer_conversion_rate", "five_minute_retention", "client_crash_rate"}:
+        return text if "%" in text else ""
+    if field_name in {"peak_ccu", "home_recommendations"}:
+        return text if _looks_like_number_text(text) else ""
+    return text
+
+
+def _looks_like_timestamp(value: str) -> bool:
+    return value.endswith("Z") and "T" in value
+
+
+def _looks_like_rank_text(value: str) -> bool:
+    text = value.strip().lower()
+    if not text:
+        return False
+    if not text.endswith(("st", "nd", "rd", "th")):
+        return False
+    numeric_part = text[:-2]
+    if not numeric_part:
+        return False
+    return numeric_part.replace(".", "", 1).isdigit()
+
+
+def _looks_like_number_text(value: str) -> bool:
+    text = value.strip().replace(",", "")
+    return text.isdigit()
 
 
 def _build_date_index(rows: list[list[object]]) -> dict[str, int]:

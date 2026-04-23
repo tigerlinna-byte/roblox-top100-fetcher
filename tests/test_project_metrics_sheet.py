@@ -5,6 +5,7 @@ import unittest
 from app.config import Config
 from app.project_metrics_models import ProjectDailyMetricsRecord
 from app.project_metrics_sheet import (
+    LEGACY_PROJECT_METRICS_HEADERS,
     PROJECT_METRICS_HEADERS,
     build_project_metrics_rebuild_rows,
     build_project_metrics_table,
@@ -152,7 +153,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         table_state = build_project_metrics_table(existing_rows, records)
 
         self.assertEqual(
-            ["2026-03-12（周四）", "2026-03-11（周三）", "2026-03-10"],
+            ["2026-03-12（周四）", "2026-03-11（周三）", "2026-03-10（周二）"],
             [row[0] for row in table_state.rows[1:]],
         )
         self.assertEqual("230", table_state.rows[2][1])
@@ -284,6 +285,58 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("2026-03-11（周三）", table_state.rows[1][0])
         self.assertEqual("230", table_state.rows[1][1])
         self.assertEqual("13m", table_state.rows[1][2])
+
+    def test_build_project_metrics_table_migrates_legacy_header_rows_by_semantics(self) -> None:
+        existing_rows = [
+            LEGACY_PROJECT_METRICS_HEADERS.copy(),
+            ["2026-03-10", "200", "10m", "30%", "10%", "2%", "$5.00", "3%", "35%", "50", "0.10%", "2026-03-10T01:02:03Z"],
+        ]
+
+        table_state = build_project_metrics_table(existing_rows, [])
+
+        self.assertEqual("2026-03-10（周二）", table_state.rows[1][0])
+        self.assertEqual("200", table_state.rows[1][1])
+        self.assertEqual("10m", table_state.rows[1][2])
+        self.assertEqual("", table_state.rows[1][3])
+        self.assertEqual("30%", table_state.rows[1][4])
+        self.assertEqual("", table_state.rows[1][5])
+        self.assertEqual("10%", table_state.rows[1][6])
+        self.assertEqual("", table_state.rows[1][7])
+        self.assertEqual("2%", table_state.rows[1][8])
+        self.assertEqual("", table_state.rows[1][9])
+        self.assertEqual("$5.00", table_state.rows[1][10])
+        self.assertEqual("", table_state.rows[1][11])
+        self.assertEqual("3%", table_state.rows[1][12])
+        self.assertEqual("35%", table_state.rows[1][13])
+        self.assertEqual("50", table_state.rows[1][14])
+        self.assertEqual("0.10%", table_state.rows[1][15])
+        self.assertEqual("2026-03-10T01:02:03Z", table_state.rows[1][16])
+
+    def test_build_project_metrics_table_repairs_shifted_legacy_rows_under_new_header(self) -> None:
+        existing_rows = [
+            PROJECT_METRICS_HEADERS.copy(),
+            ["2026-03-10", "200", "10m", "30%", "10%", "2%", "$5.00", "3%", "35%", "50", "0.10%", "2026-03-10T01:02:03Z", "", "", "", "", ""],
+        ]
+
+        table_state = build_project_metrics_table(existing_rows, [])
+
+        self.assertEqual("2026-03-10（周二）", table_state.rows[1][0])
+        self.assertEqual("200", table_state.rows[1][1])
+        self.assertEqual("10m", table_state.rows[1][2])
+        self.assertEqual("", table_state.rows[1][3])
+        self.assertEqual("30%", table_state.rows[1][4])
+        self.assertEqual("", table_state.rows[1][5])
+        self.assertEqual("10%", table_state.rows[1][6])
+        self.assertEqual("", table_state.rows[1][7])
+        self.assertEqual("2%", table_state.rows[1][8])
+        self.assertEqual("", table_state.rows[1][9])
+        self.assertEqual("$5.00", table_state.rows[1][10])
+        self.assertEqual("", table_state.rows[1][11])
+        self.assertEqual("3%", table_state.rows[1][12])
+        self.assertEqual("35%", table_state.rows[1][13])
+        self.assertEqual("50", table_state.rows[1][14])
+        self.assertEqual("0.10%", table_state.rows[1][15])
+        self.assertEqual("2026-03-10T01:02:03Z", table_state.rows[1][16])
 
 
 if __name__ == "__main__":

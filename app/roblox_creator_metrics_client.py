@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import json
 import logging
 import re
@@ -98,42 +97,12 @@ METRIC_DEFINITIONS = (
     ),
     MetricDefinition("client_crash_rate", ("client crash rate", "crash rate", "client crash rate 15m")),
 )
-VALUE_CANDIDATE_KEYS = (
-    "value",
-    "displayValue",
-    "formattedValue",
-    "formatted_value",
-    "display_value",
-    "metricValue",
-    "metric_value",
-    "currentValue",
-    "current_value",
-    "latestValue",
-    "latest_value",
-)
-BROWSER_HEADERS = {
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Cache-Control": "no-cache",
-    "Pragma": "no-cache",
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-    ),
-}
 INLINE_JSON_PATTERN = re.compile(r"<script[^>]*>(?P<content>.*?)</script>", re.IGNORECASE | re.DOTALL)
-JSON_PARSE_PATTERN = re.compile(r"JSON\.parse\((?P<quoted>\"(?:\\.|[^\"])*\")\)", re.DOTALL)
 CAMEL_CASE_BOUNDARY_PATTERN = re.compile(r"([a-z0-9])([A-Z])")
 ACRONYM_BOUNDARY_PATTERN = re.compile(r"([A-Z]+)([A-Z][a-z])")
-VALUE_PATTERN = re.compile(
-    r"(?P<value>(?:\$|USD\s*)?\d[\d,]*(?:\.\d+)?%?|\d+h\s*\d+m(?:\s*\d+s)?|\d+m\s*\d+s|\d+[:]\d+|\d+)",
-    re.IGNORECASE,
-)
 DEBUG_HTML_MAX_LENGTH = 120_000
 DEBUG_PAYLOAD_MAX_LENGTH = 20_000
 
-
-MISSING_METRIC_PLACEHOLDER = "未获取"
 ANALYTICS_STATUS_CONFIG_URL_TEMPLATE = (
     "https://apis.roblox.com/analytics-query-gateway/v1/status-config?universeId={resource_id}"
 )
@@ -141,6 +110,9 @@ ANALYTICS_FEATURE_PERMISSIONS_URL_TEMPLATE = (
     "https://apis.roblox.com/developer-analytics-aggregations/v1/feature-permissions?universeId={resource_id}"
 )
 ANALYTICS_METADATA_URL = "https://apis.roblox.com/analytics-query-gateway/v1/metrics/metadata"
+ANALYTICS_BENCHMARK_SCORECARD_URL_TEMPLATE = (
+    "https://apis.roblox.com/universe-analytics-insights/v2/universes/{resource_id}/insights/benchmark-scorecard?metric={metric}"
+)
 ANALYTICS_RESOURCE_TYPE = "RESOURCE_TYPE_UNIVERSE"
 
 
@@ -168,6 +140,14 @@ class QueryAttempt:
     status: str
     request_excerpt: str
     payload_excerpt: str
+
+
+@dataclass(frozen=True)
+class BenchmarkScorecardSpec:
+    """描述 benchmark-scorecard 与日报字段之间的映射。"""
+
+    field_name: str
+    metric: str
 
 
 DIRECT_QUERY_SPECS = (
@@ -214,6 +194,13 @@ PROJECT_METRIC_RANK_FIELDS = (
     "day7_retention",
     "payer_conversion_rate",
     "arppu",
+)
+BENCHMARK_SCORECARD_SPECS = (
+    BenchmarkScorecardSpec("average_session_time", "L7AveragePlayTimeMinutesPerDAU"),
+    BenchmarkScorecardSpec("day1_retention", "L7AverageForwardD1Retention"),
+    BenchmarkScorecardSpec("day7_retention", "L7AverageForwardD7Retention"),
+    BenchmarkScorecardSpec("payer_conversion_rate", "L7AveragePayingUsersCVR"),
+    BenchmarkScorecardSpec("arppu", "L7AverageRevenuePerPayingUser"),
 )
 PERCENTILE_KEYWORDS = (
     "percentile",
@@ -310,22 +297,16 @@ class RobloxCreatorMetricsClient:
             start_date,
             end_date,
         )
-        missing_rank_fields = [
-            field_name
-            for field_name in PROJECT_METRIC_RANK_FIELDS
-            if metrics_by_field.get(field_name) and not metric_ranks_by_field.get(field_name)
-        ]
-        if missing_rank_fields:
-            overview_metric_ranks = self._fetch_overview_metric_ranks(
-                resolved_overview_url,
-                business_timezone,
-                start_date,
-                end_date,
-            )
-            for field_name in missing_rank_fields:
-                fallback_series = overview_metric_ranks.get(field_name, {})
-                if fallback_series:
-                    metric_ranks_by_field[field_name] = fallback_series
+        benchmark_metric_ranks = self._fetch_benchmark_metric_ranks(
+            project_id,
+            direct_attempts,
+            business_timezone,
+            start_date,
+            end_date,
+        )
+        for field_name, rank_series in benchmark_metric_ranks.items():
+            if rank_series:
+                metric_ranks_by_field[field_name] = rank_series
         required_fields = get_project_required_fields(project_id)
         minimum_missing = [field_name for field_name in required_fields if not metrics_by_field.get(field_name)]
         missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if not metrics_by_field.get(definition.field_name)]
@@ -692,38 +673,44 @@ class RobloxCreatorMetricsClient:
             ranks=ranks,
         )
 
-    def _fetch_overview_metric_ranks(
+    def _fetch_benchmark_metric_ranks(
         self,
-        overview_url: str,
+        project_id: str,
+        attempts: list[QueryAttempt],
         business_timezone: timezone | ZoneInfo,
         start_date: date,
         end_date: date,
     ) -> dict[str, dict[str, str]]:
-        """从 Creator overview 同级页面的结构化 payload 中提取每日百分位。"""
+        """抓取 overview 页面 benchmark-scorecard 接口返回的同类百分位。"""
 
-        try:
-            html_text = self._fetch_overview_html(overview_url)
-        except RobloxCreatorMetricsClientError:
-            logging.warning("Failed to fetch Creator overview html for percentile fallback.", exc_info=True)
-            return {}
-
-        extracted = _extract_metric_rank_series_from_html(html_text, business_timezone)
-        filtered: dict[str, dict[str, str]] = {}
+        metric_ranks: dict[str, dict[str, str]] = {}
         empty_metadata: dict[str, date] = {}
-        project_id = _extract_project_id(overview_url)
-        for field_name in PROJECT_METRIC_RANK_FIELDS:
-            if not extracted.get(field_name):
+        for spec in BENCHMARK_SCORECARD_SPECS:
+            url = ANALYTICS_BENCHMARK_SCORECARD_URL_TEMPLATE.format(
+                resource_id=project_id,
+                metric=spec.metric,
+            )
+            try:
+                payload = self._request_json("GET", url, json_body=None)
+            except RobloxCreatorMetricsClientError as exc:
+                attempts.append(QueryAttempt(spec.metric, url, "GET", f"error: {exc}", "", ""))
                 continue
-            filtered[field_name] = _filter_metric_series(
-                extracted[field_name],
-                field_name,
+            attempts.append(QueryAttempt(spec.metric, url, "GET", "ok", "", _truncate_json(payload)))
+            rank_series = _extract_benchmark_scorecard_rank_series(payload, business_timezone)
+            if not rank_series:
+                continue
+            filtered_rank_series = _filter_metric_series(
+                rank_series,
+                spec.field_name,
                 project_id,
                 start_date,
                 end_date,
                 empty_metadata,
                 source_metric="",
             )
-        return filtered
+            if filtered_rank_series:
+                metric_ranks[spec.field_name] = filtered_rank_series
+        return metric_ranks
 
     def _extract_query_values(self, payload: object) -> list[dict[str, object]]:
         """从 analytics gateway 响应中提取 values 列表。"""
@@ -743,38 +730,6 @@ class RobloxCreatorMetricsClient:
             if isinstance(values, list):
                 return [item for item in values if isinstance(item, dict)]
         return []
-
-    def _fetch_overview_html(self, overview_url: str) -> str:
-        def _call() -> str:
-            assert self.session is not None
-            response = self.session.request(
-                method="GET",
-                url=overview_url,
-                headers=BROWSER_HEADERS,
-                cookies={".ROBLOSECURITY": self.config.roblox_creator_cookie},
-                timeout=self.config.request_timeout_seconds,
-                allow_redirects=True,
-            )
-            if response.status_code >= 400:
-                raise requests.HTTPError(
-                    f"HTTP {response.status_code}: {response.text[:400]}",
-                    response=response,
-                )
-            if "login" in response.url.lower():
-                raise RobloxCreatorMetricsClientError("Creator 后台请求被重定向到登录页，请检查 Cookie 是否有效")
-            return response.text
-
-        try:
-            return with_retry(
-                _call,
-                attempts=self.config.retry_max_attempts,
-                base_backoff_seconds=self.config.retry_backoff_seconds,
-                is_retryable=_is_retryable_exception,
-            )
-        except RobloxCreatorMetricsClientError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise RobloxCreatorMetricsClientError(f"请求 Creator overview 失败: {overview_url}") from exc
 
     def _request_json(self, method: str, url: str, *, json_body: dict[str, object] | None):
         """发送 JSON 请求，并在需要时自动刷新 x-csrf-token。"""
@@ -835,99 +790,6 @@ class RobloxCreatorMetricsClient:
             )
         return response.json()
 
-    def _extract_metrics_from_html(self, html_text: str) -> dict[str, str]:
-        metrics: dict[str, str] = {}
-        metrics.update(self._extract_metrics_from_inline_json(html_text))
-        metrics.update(self._extract_metrics_from_script_assignments(html_text))
-        visible_metrics = self._extract_metrics_from_visible_text(html_text)
-        for key, value in visible_metrics.items():
-            metrics.setdefault(key, value)
-        return metrics
-
-    def _extract_metrics_from_inline_json(self, html_text: str) -> dict[str, str]:
-        metrics: dict[str, str] = {}
-        for script_content in _extract_script_contents(html_text):
-            stripped = html.unescape(script_content).strip()
-            if not stripped:
-                continue
-            for payload in _extract_json_payloads_from_script(stripped):
-                self._collect_metrics_from_payload(payload, metrics)
-        return metrics
-
-    def _extract_metrics_from_script_assignments(self, html_text: str) -> dict[str, str]:
-        metrics: dict[str, str] = {}
-        for script_content in _extract_script_contents(html_text):
-            decoded = html.unescape(script_content)
-            if not decoded:
-                continue
-            for payload in _extract_assignment_payloads(decoded):
-                self._collect_metrics_from_payload(payload, metrics)
-        return metrics
-
-    def _collect_metrics_from_payload(self, payload, metrics: dict[str, str]) -> None:
-        if isinstance(payload, dict):
-            label_fields = [
-                "label",
-                "name",
-                "title",
-                "metric",
-                "heading",
-                "header",
-                "metricName",
-                "metric_name",
-                "displayName",
-                "display_name",
-            ]
-            for field in label_fields:
-                raw_label = payload.get(field)
-                if not isinstance(raw_label, str):
-                    continue
-                matched_field = _match_metric_alias(raw_label)
-                if not matched_field:
-                    continue
-                value = _extract_value_from_payload(payload)
-                if value:
-                    metrics.setdefault(matched_field, value)
-
-            for key, value in payload.items():
-                matched_field = _match_metric_alias(str(key))
-                if matched_field and _is_scalar_metric_value(value):
-                    metrics.setdefault(matched_field, _normalize_metric_value(str(value)))
-                self._collect_metrics_from_payload(value, metrics)
-            return
-
-        if isinstance(payload, list):
-            for item in payload:
-                self._collect_metrics_from_payload(item, metrics)
-
-    def _extract_metrics_from_visible_text(self, html_text: str) -> dict[str, str]:
-        parser = _VisibleTextParser()
-        parser.feed(html_text)
-        segments = parser.segments
-        metrics: dict[str, str] = {}
-        lower_segments = [_normalize_label(segment) for segment in segments]
-        for index, normalized_segment in enumerate(lower_segments):
-            matched_field = _match_metric_alias(normalized_segment)
-            if not matched_field:
-                continue
-            candidate_values = []
-            same_segment_value = _extract_inline_value(segments[index], normalized_segment)
-            if same_segment_value:
-                candidate_values.append(same_segment_value)
-            for offset in range(1, 6):
-                if index + offset >= len(segments):
-                    break
-                next_segment = segments[index + offset]
-                if _match_metric_alias(lower_segments[index + offset]):
-                    break
-                extracted = _extract_metric_value(next_segment)
-                if extracted:
-                    candidate_values.append(extracted)
-                    break
-            if candidate_values:
-                metrics.setdefault(matched_field, candidate_values[0])
-        return metrics
-
     def _write_debug_snapshot(
         self,
         html_text: str,
@@ -977,169 +839,51 @@ def _extract_script_contents(html_text: str) -> list[str]:
     return [match.group("content") for match in INLINE_JSON_PATTERN.finditer(html_text)]
 
 
-def _extract_json_payloads_from_script(script_content: str) -> list[object]:
-    payloads: list[object] = []
-    stripped = script_content.strip()
-    if (stripped.startswith("{") and stripped.endswith("}")) or (
-        stripped.startswith("[") and stripped.endswith("]")
-    ):
-        payload = _try_load_json(stripped)
-        if payload is not None:
-            payloads.append(payload)
-    for match in JSON_PARSE_PATTERN.finditer(script_content):
-        try:
-            decoded = json.loads(match.group("quoted"))
-        except json.JSONDecodeError:
-            continue
-        payload = _try_load_json(decoded)
-        if payload is not None:
-            payloads.append(payload)
-    return payloads
-
-
-def _extract_assignment_payloads(script_content: str) -> list[object]:
-    payloads: list[object] = []
-    for token in ("=", ":"):
-        search_from = 0
-        while True:
-            position = script_content.find(token, search_from)
-            if position < 0:
-                break
-            start_index = _find_json_start(script_content, position + 1)
-            if start_index < 0:
-                search_from = position + 1
-                continue
-            candidate = _extract_balanced_json(script_content, start_index)
-            if candidate:
-                payload = _try_load_json(candidate)
-                if payload is not None:
-                    payloads.append(payload)
-            search_from = position + 1
-    return payloads
-
-
-def _find_json_start(text: str, start_index: int) -> int:
-    for index in range(start_index, len(text)):
-        if text[index] in "[{":
-            return index
-        if not text[index].isspace():
-            return -1
-    return -1
-
-
-def _extract_balanced_json(text: str, start_index: int) -> str:
-    opening = text[start_index]
-    closing = "}" if opening == "{" else "]"
-    depth = 0
-    in_string = False
-    escape = False
-    for index in range(start_index, len(text)):
-        char = text[index]
-        if in_string:
-            if escape:
-                escape = False
-                continue
-            if char == "\\":
-                escape = True
-                continue
-            if char == '"':
-                in_string = False
-            continue
-        if char == '"':
-            in_string = True
-            continue
-        if char == opening:
-            depth += 1
-            continue
-        if char == closing:
-            depth -= 1
-            if depth == 0:
-                return text[start_index : index + 1]
-    return ""
-
-
-def _try_load_json(candidate: str) -> object | None:
-    try:
-        return json.loads(candidate)
-    except json.JSONDecodeError:
-        return None
-
-
-def _extract_metric_rank_series_from_html(
-    html_text: str,
-    business_timezone: timezone | ZoneInfo,
-) -> dict[str, dict[str, str]]:
-    ranks_by_field: dict[str, dict[str, str]] = {field_name: {} for field_name in PROJECT_METRIC_RANK_FIELDS}
-    for script_content in _extract_script_contents(html_text):
-        decoded = html.unescape(script_content).strip()
-        if not decoded:
-            continue
-        payloads = [*_extract_json_payloads_from_script(decoded), *_extract_assignment_payloads(decoded)]
-        for payload in payloads:
-            _collect_metric_rank_series_from_payload(payload, ranks_by_field, business_timezone)
-    return {field_name: ranks for field_name, ranks in ranks_by_field.items() if ranks}
-
-
-def _collect_metric_rank_series_from_payload(
+def _extract_benchmark_scorecard_rank_series(
     payload: object,
-    ranks_by_field: dict[str, dict[str, str]],
     business_timezone: timezone | ZoneInfo,
-    inherited_field: str = "",
-    inherited_date: str = "",
-) -> None:
-    if isinstance(payload, dict):
-        current_field = inherited_field or _resolve_metric_field_from_payload(payload)
-        current_date = inherited_date or _resolve_report_date_from_payload(payload, business_timezone)
-        current_rank = _extract_percentile_rank_from_payload(payload)
-        if current_field and current_date and current_rank:
-            ranks_by_field.setdefault(current_field, {})[current_date] = current_rank
+) -> dict[str, str]:
+    """从 benchmark-scorecard 响应中提取日期到百分位的映射。"""
 
-        for key, value in payload.items():
-            next_field = current_field or _match_metric_alias(str(key))
-            next_date = current_date or _parse_report_date_candidate(key, business_timezone)
-            _collect_metric_rank_series_from_payload(
-                value,
-                ranks_by_field,
-                business_timezone,
-                next_field,
-                next_date,
-            )
-        return
-
-    if isinstance(payload, list):
-        for item in payload:
-            _collect_metric_rank_series_from_payload(
-                item,
-                ranks_by_field,
-                business_timezone,
-                inherited_field,
-                inherited_date,
-            )
-        return
-
-    if inherited_field and inherited_date:
-        current_rank = _format_percentile_rank(payload)
-        if current_rank:
-            ranks_by_field.setdefault(inherited_field, {})[inherited_date] = current_rank
+    if not isinstance(payload, dict):
+        return {}
+    report_date = _resolve_report_date_from_payload(payload, business_timezone)
+    if not report_date:
+        return {}
+    rank_text = _extract_benchmark_scorecard_rank(payload)
+    if not rank_text:
+        return {}
+    return {report_date: rank_text}
 
 
-def _resolve_metric_field_from_payload(payload: dict[str, object]) -> str:
-    for field_name in (
-        "label",
-        "name",
-        "title",
-        "metric",
-        "metricName",
-        "metric_name",
-        "displayName",
-        "display_name",
-    ):
-        raw_value = payload.get(field_name)
-        if isinstance(raw_value, str):
-            matched = _match_metric_alias(raw_value)
-            if matched:
-                return matched
-    return ""
+def _extract_benchmark_scorecard_rank(payload: object) -> str:
+    """优先读取 scorecard 顶层推荐百分位，缺失时再回退到备选 benchmark。"""
+
+    if not isinstance(payload, dict):
+        return ""
+    top_level_rank = _format_percentile_rank(payload.get("currentPercentile"))
+    if top_level_rank:
+        return top_level_rank
+
+    recommended_type = str(payload.get("recommendedType", "")).strip()
+    available_benchmarks = payload.get("availableBenchmarks")
+    if isinstance(available_benchmarks, list):
+        if recommended_type:
+            for benchmark in available_benchmarks:
+                if not isinstance(benchmark, dict):
+                    continue
+                if str(benchmark.get("benchmarkType", "")).strip() != recommended_type:
+                    continue
+                rank_text = _format_percentile_rank(benchmark.get("currentPercentile"))
+                if rank_text:
+                    return rank_text
+        for benchmark in available_benchmarks:
+            if not isinstance(benchmark, dict):
+                continue
+            rank_text = _format_percentile_rank(benchmark.get("currentPercentile"))
+            if rank_text:
+                return rank_text
+    return _extract_percentile_rank_from_payload(payload)
 
 
 def _resolve_report_date_from_payload(
@@ -1153,6 +897,10 @@ def _resolve_report_date_from_payload(
         "day",
         "reportDate",
         "report_date",
+        "metricTime",
+        "metric_time",
+        "benchmarkTime",
+        "benchmark_time",
         "startTime",
         "start_time",
         "endTime",
@@ -1166,20 +914,8 @@ def _resolve_report_date_from_payload(
     return ""
 
 
-def _has_missing_metrics(metrics: dict[str, str]) -> bool:
-    return any(not metrics.get(definition.field_name) for definition in METRIC_DEFINITIONS)
-
-
 def _truncate_json(payload: object) -> str:
     return json.dumps(payload, ensure_ascii=False, default=str)[:DEBUG_PAYLOAD_MAX_LENGTH]
-
-
-def _match_metric_alias(raw_label: str) -> str:
-    normalized = _normalize_label(raw_label)
-    for definition in METRIC_DEFINITIONS:
-        if normalized in definition.aliases:
-            return definition.field_name
-    return ""
 
 
 def _normalize_label(value: str) -> str:
@@ -1192,56 +928,6 @@ def _normalize_label(value: str) -> str:
 
 def _normalize_space(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
-
-
-def _extract_inline_value(segment: str, normalized_label: str) -> str:
-    original_lower = _normalize_label(segment)
-    if original_lower == normalized_label:
-        return ""
-    suffix = original_lower.replace(normalized_label, "", 1).strip(" :-")
-    if not suffix:
-        return ""
-    return _extract_metric_value(suffix)
-
-
-def _extract_value_from_payload(payload: dict) -> str:
-    for key in VALUE_CANDIDATE_KEYS:
-        raw_value = payload.get(key)
-        if _is_scalar_metric_value(raw_value):
-            return _normalize_metric_value(str(raw_value))
-    for key, raw_value in payload.items():
-        if key in {
-            "label",
-            "name",
-            "title",
-            "metric",
-            "heading",
-            "header",
-            "metricName",
-            "metric_name",
-            "displayName",
-            "display_name",
-        }:
-            continue
-        if _is_scalar_metric_value(raw_value):
-            return _normalize_metric_value(str(raw_value))
-    return ""
-
-
-def _is_scalar_metric_value(value) -> bool:
-    return isinstance(value, (str, int, float)) and str(value).strip() != ""
-
-
-def _extract_metric_value(value: str) -> str:
-    normalized = _normalize_metric_value(value)
-    if not normalized:
-        return ""
-    if VALUE_PATTERN.fullmatch(normalized):
-        return normalized
-    match = VALUE_PATTERN.search(normalized)
-    if match:
-        return _normalize_metric_value(match.group("value"))
-    return ""
 
 
 def _normalize_metric_value(value: str) -> str:

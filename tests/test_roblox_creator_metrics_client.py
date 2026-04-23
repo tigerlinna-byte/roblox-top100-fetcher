@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import date, datetime, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import Mock, patch
 
 from app.config import Config
@@ -20,22 +21,31 @@ def _build_json_response(payload: dict, *, status_code: int = 200, headers: dict
     return response
 
 
-def _build_html_response(
-    html_text: str = "<html><body></body></html>",
-    *,
-    url: str = "https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-) -> Mock:
-    response = Mock()
-    response.status_code = 200
-    response.headers = {}
-    response.text = html_text
-    response.url = url
-    return response
-
-
 def _wrap_query_result(value: dict | list[dict]) -> dict:
     values = value if isinstance(value, list) else [value]
     return {"operation": {"done": True, "queryResult": {"values": values}}}
+
+
+def _extract_metric_query(url: str) -> str:
+    query = parse_qs(urlparse(url).query)
+    return query.get("metric", [""])[0]
+
+
+def _build_benchmark_scorecard_payload(
+    metric_time: str,
+    current_percentile: int,
+    *,
+    current_value: float = 0.0,
+) -> dict:
+    return {
+        "metricTime": metric_time,
+        "currentValue": current_value,
+        "currentPercentile": current_percentile,
+        "availableBenchmarks": [],
+        "recommendedType": "",
+        "benchmarkTime": metric_time,
+        "metricCurrentValue": current_value,
+    }
 
 
 class RobloxCreatorMetricsClientTests(unittest.TestCase):
@@ -51,8 +61,16 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
-            if method == "GET" and "dashboard/creations/experiences" in url:
-                return _build_html_response(url=url)
+            if method == "GET" and "benchmark-scorecard" in url:
+                metric = _extract_metric_query(url)
+                scorecards = {
+                    "L7AveragePlayTimeMinutesPerDAU": _build_benchmark_scorecard_payload("2026-03-11T00:00:00Z", 82, current_value=15.0),
+                    "L7AverageForwardD1Retention": _build_benchmark_scorecard_payload("2026-03-10T00:00:00Z", 72, current_value=0.0677),
+                    "L7AverageForwardD7Retention": _build_benchmark_scorecard_payload("2026-03-05T00:00:00Z", 63, current_value=0.0070),
+                    "L7AveragePayingUsersCVR": _build_benchmark_scorecard_payload("2026-03-10T00:00:00Z", 58, current_value=0.025),
+                    "L7AverageRevenuePerPayingUser": _build_benchmark_scorecard_payload("2026-03-10T00:00:00Z", 77, current_value=8.9),
+                }
+                return _build_json_response(scorecards.get(metric, {}))
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -85,9 +103,9 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 if metric == "AveragePlayTimeMinutesPerDAU":
                     return _build_json_response(
                         _wrap_query_result({"breakdownValue": [], "dataPoints": [
-                            {"time": "2026-03-10T00:00:00Z", "value": 12.5, "benchmarkPercentile": 81},
-                            {"time": "2026-03-11T00:00:00Z", "value": 15.0, "benchmarkPercentile": 82},
-                            {"time": "2026-03-12T00:00:00Z", "value": 18.0, "benchmarkPercentile": 83},
+                            {"time": "2026-03-10T00:00:00Z", "value": 12.5},
+                            {"time": "2026-03-11T00:00:00Z", "value": 15.0},
+                            {"time": "2026-03-12T00:00:00Z", "value": 18.0},
                         ]})
                     )
                 if metric == "DailyCohortRetention":
@@ -96,29 +114,29 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             {
                                 "breakdownValue": [{"dimension": "CohortDay", "value": "1"}],
                                 "dataPoints": [
-                                    {"time": "2026-03-09T00:00:00Z", "value": 0.0758, "benchmarkPercentile": 74},
-                                    {"time": "2026-03-10T00:00:00Z", "value": 0.0677, "benchmarkPercentile": 72},
-                                    {"time": "2026-03-11T00:00:00Z", "value": 0.0811, "benchmarkPercentile": 75},
+                                    {"time": "2026-03-09T00:00:00Z", "value": 0.0758},
+                                    {"time": "2026-03-10T00:00:00Z", "value": 0.0677},
+                                    {"time": "2026-03-11T00:00:00Z", "value": 0.0811},
                                 ],
                             },
                             {
                                 "breakdownValue": [{"dimension": "CohortDay", "value": "7"}],
                                 "dataPoints": [
-                                    {"time": "2026-03-04T00:00:00Z", "value": 0.0061, "benchmarkPercentile": 64},
-                                    {"time": "2026-03-05T00:00:00Z", "value": 0.0070, "benchmarkPercentile": 66},
+                                    {"time": "2026-03-04T00:00:00Z", "value": 0.0061},
+                                    {"time": "2026-03-05T00:00:00Z", "value": 0.0070},
                                 ],
                             },
                         ])
                     )
                 if metric == "PayingUsersCVR":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
-                        {"time": "2026-03-10T00:00:00Z", "value": 0.025, "benchmarkPercentile": 58},
-                        {"time": "2026-03-11T00:00:00Z", "value": 0.03, "benchmarkPercentile": 61},
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.025},
+                        {"time": "2026-03-11T00:00:00Z", "value": 0.03},
                     ]}))
                 if metric == "AverageRevenuePerPayingUser":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
-                        {"time": "2026-03-10T00:00:00Z", "value": 8.9, "benchmarkPercentile": 77},
-                        {"time": "2026-03-11T00:00:00Z", "value": 9.3, "benchmarkPercentile": 79},
+                        {"time": "2026-03-10T00:00:00Z", "value": 8.9},
+                        {"time": "2026-03-11T00:00:00Z", "value": 9.3},
                     ]}))
                 if metric == "RFYQualifiedPTR":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
@@ -198,7 +216,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertNotIn("2026-03-04", record_map)
         self.assertNotIn("2026-03-13", record_map)
 
-    def test_fetch_project_daily_metrics_uses_overview_payload_for_missing_ranks(self) -> None:
+    def test_fetch_project_daily_metrics_uses_benchmark_scorecard_for_ranks(self) -> None:
         session = Mock()
         overview_url = "https://create.roblox.com/dashboard/creations/experiences/1234567890/overview"
         mocked_window = (
@@ -213,23 +231,16 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
-            if method == "GET" and "dashboard/creations/experiences" in url:
-                return _build_html_response(
-                    """
-                    <html><body><script>
-                    window.__metricRanks = {
-                      "cards": [
-                        {"metricName": "Average Session Time", "dataPoints": [{"time": "2026-03-10T00:00:00Z", "benchmarkPercentile": 82}]},
-                        {"metricName": "Day 1 Retention", "dataPoints": [{"time": "2026-03-10T00:00:00Z", "benchmarkPercentile": 71}]},
-                        {"metricName": "Day 7 Retention", "dataPoints": [{"time": "2026-03-05T00:00:00Z", "benchmarkPercentile": 63}]},
-                        {"metricName": "Payer Conversion Rate", "dataPoints": [{"time": "2026-03-10T00:00:00Z", "benchmarkPercentile": 58}]},
-                        {"metricName": "ARPPU", "dataPoints": [{"time": "2026-03-10T00:00:00Z", "benchmarkPercentile": 76}]}
-                      ]
-                    };
-                    </script></body></html>
-                    """,
-                    url=url,
-                )
+            if method == "GET" and "benchmark-scorecard" in url:
+                metric = _extract_metric_query(url)
+                scorecards = {
+                    "L7AveragePlayTimeMinutesPerDAU": _build_benchmark_scorecard_payload("2026-03-10T00:00:00Z", 82, current_value=12.5),
+                    "L7AverageForwardD1Retention": _build_benchmark_scorecard_payload("2026-03-10T00:00:00Z", 71, current_value=0.0677),
+                    "L7AverageForwardD7Retention": _build_benchmark_scorecard_payload("2026-03-05T00:00:00Z", 63, current_value=0.0070),
+                    "L7AveragePayingUsersCVR": _build_benchmark_scorecard_payload("2026-03-10T00:00:00Z", 58, current_value=0.025),
+                    "L7AverageRevenuePerPayingUser": _build_benchmark_scorecard_payload("2026-03-10T00:00:00Z", 76, current_value=8.9),
+                }
+                return _build_json_response(scorecards.get(metric, {}))
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -311,8 +322,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
-            if method == "GET" and "dashboard/creations/experiences" in url:
-                return _build_html_response(url=url)
+            if method == "GET" and "benchmark-scorecard" in url:
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -365,8 +376,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
-            if method == "GET" and "dashboard/creations/experiences" in url:
-                return _build_html_response(url=url)
+            if method == "GET" and "benchmark-scorecard" in url:
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -438,6 +449,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         def request(method: str, url: str, **kwargs):
             if method == "GET" and ("feature-permissions" in url or "status-config" in url):
                 return _build_json_response({})
+            if method == "GET" and "benchmark-scorecard" in url:
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({"operation": {"done": True, "metricMetadataResult": {"metadata": []}}})
             if method == "POST" and "analytics-query-gateway" in url:
@@ -469,8 +482,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 return _build_json_response({"userCanViewAnalyticsForUniverse": True})
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
-            if method == "GET" and "dashboard/creations/experiences" in url:
-                return _build_html_response(url=url)
+            if method == "GET" and "benchmark-scorecard" in url:
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
