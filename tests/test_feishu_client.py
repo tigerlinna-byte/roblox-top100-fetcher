@@ -635,6 +635,90 @@ class FeishuClientTests(unittest.TestCase):
             style_kwargs["json"]["data"][0]["ranges"],
         )
 
+    def test_reset_project_metrics_rank_font_colors_targets_rank_columns(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        style_response = Mock()
+        style_response.status_code = 200
+        style_response.json.return_value = {"code": 0, "data": {}}
+
+        session.request.side_effect = [auth_response, style_response]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        client.reset_project_metrics_rank_font_colors("shtcn_sheet", "sheet001", row_count=365)
+
+        style_kwargs = session.request.call_args_list[1].kwargs
+        self.assertEqual(
+            ["sheet001!D2:D365", "sheet001!F2:F365", "sheet001!H2:H365", "sheet001!J2:J365", "sheet001!L2:L365"],
+            style_kwargs["json"]["data"][0]["ranges"],
+        )
+        self.assertEqual("#000000", style_kwargs["json"]["data"][0]["style"]["foreColor"])
+
+    def test_apply_project_metrics_rank_font_colors_accepts_gradient_hex_colors(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+
+        style_response = Mock()
+        style_response.status_code = 200
+        style_response.json.return_value = {"code": 0, "data": {}}
+
+        session.request.side_effect = [auth_response, style_response]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        from app.project_metrics_sheet import ProjectMetricsRankColorCell
+
+        client.apply_project_metrics_rank_font_colors(
+            "shtcn_sheet",
+            "sheet001",
+            [
+                ProjectMetricsRankColorCell(row_index=2, column_letter="D", color="#237804"),
+                ProjectMetricsRankColorCell(row_index=2, column_letter="F", color="#51a43f"),
+            ],
+        )
+
+        style_kwargs = session.request.call_args_list[1].kwargs
+        self.assertEqual(
+            ["sheet001!D2:D2"],
+            style_kwargs["json"]["data"][0]["ranges"],
+        )
+        self.assertEqual("#237804", style_kwargs["json"]["data"][0]["style"]["foreColor"])
+        self.assertEqual(
+            ["sheet001!F2:F2"],
+            style_kwargs["json"]["data"][1]["ranges"],
+        )
+        self.assertEqual("#51a43f", style_kwargs["json"]["data"][1]["style"]["foreColor"])
+
     def test_read_sheet_values_returns_rows(self) -> None:
         session = Mock()
 

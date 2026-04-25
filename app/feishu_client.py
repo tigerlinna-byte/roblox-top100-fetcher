@@ -9,6 +9,7 @@ from typing import Callable
 import requests
 
 from .config import Config
+from .project_metrics_sheet import ProjectMetricsRankColorCell, PROJECT_METRICS_RANK_COLUMN_LETTERS
 from .retry import with_retry
 from .top_trending_sheet import GameNameHighlightCell, LaunchDateCell, RankChangeCell, ThumbnailCell
 
@@ -436,6 +437,44 @@ class FeishuClient:
             ],
         )
 
+    def reset_project_metrics_rank_font_colors(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        *,
+        row_count: int,
+    ) -> None:
+        """将项目日报排名列字体颜色重置为黑色，避免旧颜色残留。"""
+
+        if row_count < 2:
+            return
+        self._apply_font_colors(
+            spreadsheet_token,
+            [
+                (f"{sheet_id}!{column_letter}2:{column_letter}{row_count}", "black")
+                for column_letter in PROJECT_METRICS_RANK_COLUMN_LETTERS
+            ],
+        )
+
+    def apply_project_metrics_rank_font_colors(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        cells: list[ProjectMetricsRankColorCell],
+    ) -> None:
+        """按项目日报排名单元格的渐变色更新字体颜色。"""
+
+        self._apply_font_colors(
+            spreadsheet_token,
+            [
+                (
+                    f"{sheet_id}!{cell.column_letter}{cell.row_index}:{cell.column_letter}{cell.row_index}",
+                    cell.color,
+                )
+                for cell in cells
+            ],
+        )
+
     def _apply_font_colors(
         self,
         spreadsheet_token: str,
@@ -445,34 +484,22 @@ class FeishuClient:
             return
 
         access_token = self._fetch_tenant_access_token()
-        grouped_ranges: dict[str, list[str]] = {
-            "red": [],
-            "green": [],
-            "yellow": [],
-            "black": [],
-            "gray": [],
-        }
+        grouped_ranges: dict[str, list[str]] = {}
         for range_ref, color in range_colors:
-            if color not in grouped_ranges:
+            fore_color = _normalize_font_color(color)
+            if not fore_color:
                 continue
-            grouped_ranges[color].append(range_ref)
+            grouped_ranges.setdefault(fore_color, []).append(range_ref)
 
-        color_map = {
-            "red": "#f54a45",
-            "green": "#00b578",
-            "yellow": "#faad14",
-            "black": "#000000",
-            "gray": "#8c8c8c",
-        }
         payload = {
             "data": [
                 {
                     "ranges": ranges,
                     "style": {
-                        "foreColor": color_map[color],
+                        "foreColor": fore_color,
                     },
                 }
-                for color, ranges in grouped_ranges.items()
+                for fore_color, ranges in grouped_ranges.items()
                 if ranges
             ]
         }
@@ -623,6 +650,27 @@ def _is_retryable_exception(exc: Exception) -> bool:
             return False
         return response.status_code in {408, 409, 425, 429, 500, 502, 503, 504}
     return False
+
+
+def _normalize_font_color(color: str) -> str:
+    """将业务颜色名或十六进制颜色统一为飞书字体颜色值。"""
+
+    color_map = {
+        "red": "#f54a45",
+        "green": "#00b578",
+        "yellow": "#faad14",
+        "black": "#000000",
+        "gray": "#8c8c8c",
+    }
+    normalized = color.strip().lower()
+    mapped_color = color_map.get(normalized)
+    if mapped_color:
+        return mapped_color
+    if len(normalized) == 7 and normalized.startswith("#"):
+        hex_part = normalized[1:]
+        if all(character in "0123456789abcdef" for character in hex_part):
+            return normalized
+    return ""
 
 
 def _stringify_feishu_content(payload: dict | None) -> dict | None:

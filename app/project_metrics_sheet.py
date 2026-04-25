@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import re
 
 from .config import Config
 from .github_client import GitHubClient
@@ -82,6 +83,22 @@ PROJECT_METRICS_LEGACY_FIELD_ORDER = (
     "client_crash_rate",
     "fetched_at",
 )
+PROJECT_METRICS_RANK_FIELD_NAMES = (
+    "average_session_time_rank",
+    "day1_retention_rank",
+    "day7_retention_rank",
+    "payer_conversion_rate_rank",
+    "arppu_rank",
+)
+PROJECT_METRICS_RANK_COLUMN_LETTERS = ("D", "F", "H", "J", "L")
+PROJECT_METRICS_RANK_COLOR_STOPS = (
+    (0.0, "#f54a45"),
+    (25.0, "#faad14"),
+    (50.0, "#7fcf7a"),
+    (90.0, "#237804"),
+)
+PROJECT_METRICS_RANK_MAX_COLOR_VALUE = 90.0
+RANK_NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
 
 
 @dataclass(frozen=True)
@@ -112,6 +129,15 @@ class ProjectMetricsTableState:
     """表示项目日报表当前的二维表内容。"""
 
     rows: list[list[object]]
+
+
+@dataclass(frozen=True)
+class ProjectMetricsRankColorCell:
+    """描述项目日报排名单元格需要应用的字体颜色。"""
+
+    row_index: int
+    column_letter: str
+    color: str
 
 
 def resolve_project_metrics_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
@@ -242,6 +268,27 @@ def build_project_metrics_rebuild_rows(
     return normalized_rows[:total_rows]
 
 
+def build_project_metrics_rank_color_cells(rows: list[list[object]]) -> list[ProjectMetricsRankColorCell]:
+    """根据项目日报排名列内容构造字体颜色更新单元格。"""
+
+    cells: list[ProjectMetricsRankColorCell] = []
+    rank_columns = _resolve_project_metrics_rank_columns(rows)
+    for row_index, row in enumerate(rows[1:], start=2):
+        for column_index, column_letter in rank_columns:
+            value = str(row[column_index]).strip() if column_index < len(row) else ""
+            color = _resolve_project_metrics_rank_color(value)
+            if not color:
+                continue
+            cells.append(
+                ProjectMetricsRankColorCell(
+                    row_index=row_index,
+                    column_letter=column_letter,
+                    color=color,
+                )
+            )
+    return cells
+
+
 def _merge_single_record(rows: list[list[object]], record: ProjectDailyMetricsRecord) -> None:
     date_to_index = _build_date_index(rows)
     row_values = build_project_metrics_values(record)
@@ -370,6 +417,66 @@ def _extract_shifted_legacy_row_field_values(row_cells: list[str]) -> dict[str, 
     return {field_name: value for field_name, value in field_values.items() if value}
 
 
+def _resolve_project_metrics_rank_columns(rows: list[list[object]]) -> tuple[tuple[int, str], ...]:
+    header_row = [str(cell).strip() if cell is not None else "" for cell in rows[0]] if rows else PROJECT_METRICS_HEADERS
+    resolved_columns: list[tuple[int, str]] = []
+    for field_name in PROJECT_METRICS_RANK_FIELD_NAMES:
+        header = PROJECT_METRICS_FIELD_TO_HEADER[field_name]
+        try:
+            column_index = header_row.index(header)
+        except ValueError:
+            column_index = PROJECT_METRICS_HEADERS.index(header)
+        resolved_columns.append((column_index, _column_letter(column_index + 1)))
+    return tuple(resolved_columns)
+
+
+def _resolve_project_metrics_rank_color(value: str) -> str:
+    rank_value = _extract_rank_numeric_value(value)
+    if rank_value is None:
+        return ""
+    return _interpolate_rank_color(rank_value)
+
+
+def _extract_rank_numeric_value(value: str) -> float | None:
+    match = RANK_NUMBER_PATTERN.search(value.strip())
+    if match is None:
+        return None
+    return float(match.group(0))
+
+
+def _interpolate_rank_color(value: float) -> str:
+    bounded_value = max(0.0, min(PROJECT_METRICS_RANK_MAX_COLOR_VALUE, value))
+    previous_stop = PROJECT_METRICS_RANK_COLOR_STOPS[0]
+    for current_stop in PROJECT_METRICS_RANK_COLOR_STOPS[1:]:
+        if bounded_value <= current_stop[0]:
+            start_value, start_color = previous_stop
+            end_value, end_color = current_stop
+            # 相邻阈值之间按数值比例混合 RGB，避免同一档内颜色突变。
+            ratio = (bounded_value - start_value) / (end_value - start_value)
+            return _mix_hex_color(start_color, end_color, ratio)
+        previous_stop = current_stop
+    return PROJECT_METRICS_RANK_COLOR_STOPS[-1][1]
+
+
+def _mix_hex_color(start_color: str, end_color: str, ratio: float) -> str:
+    start_rgb = _parse_hex_color(start_color)
+    end_rgb = _parse_hex_color(end_color)
+    mixed_rgb = tuple(
+        round(start_channel + (end_channel - start_channel) * ratio)
+        for start_channel, end_channel in zip(start_rgb, end_rgb, strict=True)
+    )
+    return "#{:02x}{:02x}{:02x}".format(*mixed_rgb)
+
+
+def _parse_hex_color(color: str) -> tuple[int, int, int]:
+    normalized = color.removeprefix("#")
+    return (
+        int(normalized[0:2], 16),
+        int(normalized[2:4], 16),
+        int(normalized[4:6], 16),
+    )
+
+
 def _looks_like_legacy_header(header_row: list[str]) -> bool:
     normalized_header = [cell.strip() for cell in header_row[: len(LEGACY_PROJECT_METRICS_HEADERS)]]
     return normalized_header == LEGACY_PROJECT_METRICS_HEADERS
@@ -430,6 +537,15 @@ def _looks_like_rank_text(value: str) -> bool:
 def _looks_like_number_text(value: str) -> bool:
     text = value.strip().replace(",", "")
     return text.isdigit()
+
+
+def _column_letter(index: int) -> str:
+    value = max(1, index)
+    letters: list[str] = []
+    while value > 0:
+        value, remainder = divmod(value - 1, 26)
+        letters.append(chr(65 + remainder))
+    return "".join(reversed(letters))
 
 
 def _build_date_index(rows: list[list[object]]) -> dict[str, int]:

@@ -7,6 +7,7 @@ from app.project_metrics_models import ProjectDailyMetricsRecord
 from app.project_metrics_sheet import (
     LEGACY_PROJECT_METRICS_HEADERS,
     PROJECT_METRICS_HEADERS,
+    build_project_metrics_rank_color_cells,
     build_project_metrics_rebuild_rows,
     build_project_metrics_table,
     build_project_metrics_values,
@@ -255,6 +256,29 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("88", rows[1][14])
         self.assertEqual("0.10%", rows[1][15])
         self.assertEqual("2026-03-12T01:02:03Z", rows[1][16])
+
+    def test_build_project_metrics_rank_color_cells_maps_thresholds_and_gradients(self) -> None:
+        rows = [
+            PROJECT_METRICS_HEADERS.copy(),
+            ["2026-03-12", "", "", "90th", "", "50th", "", "25th", "", "0th", "", "同类 70th", "", "", "", "", ""],
+            ["2026-03-11", "", "", "10th", "", "40th", "", "bad", "", "", "", "-3th", "", "", "", "", ""],
+        ]
+
+        cells = build_project_metrics_rank_color_cells(rows)
+
+        self.assertEqual(
+            [
+                (2, "D", "#237804"),
+                (2, "F", "#7fcf7a"),
+                (2, "H", "#faad14"),
+                (2, "J", "#f54a45"),
+                (2, "L", "#51a43f"),
+                (3, "D", "#f77231"),
+                (3, "F", "#b0c151"),
+                (3, "L", "#f54a45"),
+            ],
+            [(cell.row_index, cell.column_letter, cell.color) for cell in cells],
+        )
 
     def test_build_project_metrics_table_updates_existing_rows_with_weekday_suffix(self) -> None:
         existing_rows = [

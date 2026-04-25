@@ -12,6 +12,7 @@ from .project_metrics_models import ProjectDailyMetricsRecord
 from .project_metrics_sheet import (
     ProjectMetricsSheetVariables,
     ProjectMetricsSpreadsheetTarget,
+    build_project_metrics_rank_color_cells,
     build_project_metrics_rebuild_rows,
     get_saved_project_metrics_target,
     resolve_project_metrics_variables,
@@ -354,14 +355,25 @@ def _sync_project_metrics_sheet(
         end_column=PROJECT_METRICS_SHEET_END_COLUMN,
         end_row=PROJECT_METRICS_SHEET_MAX_ROWS,
     )
+    rebuild_rows = build_project_metrics_rebuild_rows(
+        existing_rows,
+        records,
+        total_rows=PROJECT_METRICS_SHEET_MAX_ROWS,
+    )
     feishu_client.write_sheet_values(
         target.spreadsheet_token,
         target.sheet_id,
-        build_project_metrics_rebuild_rows(
-            existing_rows,
-            records,
-            total_rows=PROJECT_METRICS_SHEET_MAX_ROWS,
-        ),
+        rebuild_rows,
+    )
+    feishu_client.reset_project_metrics_rank_font_colors(
+        target.spreadsheet_token,
+        target.sheet_id,
+        row_count=len(rebuild_rows),
+    )
+    feishu_client.apply_project_metrics_rank_font_colors(
+        target.spreadsheet_token,
+        target.sheet_id,
+        build_project_metrics_rank_color_cells(rebuild_rows),
     )
     return target
 
