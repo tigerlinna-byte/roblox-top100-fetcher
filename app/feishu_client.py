@@ -475,6 +475,30 @@ class FeishuClient:
             ],
         )
 
+    def apply_project_metrics_rank_bold(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        *,
+        row_count: int,
+    ) -> None:
+        """将项目日报排名列数据区字体设置为加粗。"""
+
+        if row_count < 2:
+            return
+        self._apply_cell_styles(
+            spreadsheet_token,
+            [
+                (
+                    [
+                        f"{sheet_id}!{column_letter}2:{column_letter}{row_count}"
+                        for column_letter in PROJECT_METRICS_RANK_COLUMN_LETTERS
+                    ],
+                    {"font": {"bold": True}},
+                )
+            ],
+        )
+
     def _apply_font_colors(
         self,
         spreadsheet_token: str,
@@ -483,7 +507,6 @@ class FeishuClient:
         if not range_colors:
             return
 
-        access_token = self._fetch_tenant_access_token()
         grouped_ranges: dict[str, list[str]] = {}
         for range_ref, color in range_colors:
             fore_color = _normalize_font_color(color)
@@ -491,21 +514,31 @@ class FeishuClient:
                 continue
             grouped_ranges.setdefault(fore_color, []).append(range_ref)
 
-        payload = {
-            "data": [
-                {
-                    "ranges": ranges,
-                    "style": {
-                        "foreColor": fore_color,
-                    },
-                }
+        self._apply_cell_styles(
+            spreadsheet_token,
+            [
+                (ranges, {"foreColor": fore_color})
                 for fore_color, ranges in grouped_ranges.items()
                 if ranges
+            ],
+        )
+
+    def _apply_cell_styles(
+        self,
+        spreadsheet_token: str,
+        range_styles: list[tuple[list[str], dict[str, object]]],
+    ) -> None:
+        payload = {
+            "data": [
+                {"ranges": ranges, "style": style}
+                for ranges, style in range_styles
+                if ranges and style
             ]
         }
         if not payload["data"]:
             return
 
+        access_token = self._fetch_tenant_access_token()
         self._request_json(
             "PUT",
             f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/styles_batch_update",

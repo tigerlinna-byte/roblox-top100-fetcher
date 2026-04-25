@@ -370,6 +370,11 @@ def _sync_project_metrics_sheet(
         target.sheet_id,
         row_count=len(rebuild_rows),
     )
+    feishu_client.apply_project_metrics_rank_bold(
+        target.spreadsheet_token,
+        target.sheet_id,
+        row_count=len(rebuild_rows),
+    )
     feishu_client.apply_project_metrics_rank_font_colors(
         target.spreadsheet_token,
         target.sheet_id,
