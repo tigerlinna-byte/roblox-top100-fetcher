@@ -9,7 +9,7 @@ The current table builder normalizes rows by header semantics and preserves non-
 **Goals:**
 
 - Rename the existing “报错率” column to “崩溃率” without creating a duplicate client crash rate metric.
-- Add daily client frame rate, server crash count, and server frame rate columns between “崩溃率” and “更新时间”.
+- Add daily tablet/PC/phone client memory percentage, client frame rate, server crash count, and server frame rate columns between “崩溃率” and “更新时间”.
 - Treat each value as the metric for the date shown in the row's “日期” column.
 - Preserve existing sheet data, especially columns after the insertion point and rank font styling.
 - Backfill newly available values for dates in the normal project metrics query window.
@@ -41,6 +41,12 @@ Client frame rate and server frame rate should use daily values for the row date
 
 Server crashes is a count metric, so it should use the daily count/value returned by Roblox rather than an average unless Roblox only exposes finer-grained count buckets that must be summed for the day.
 
+### Use device-specific memory percentage, not raw memory
+
+The memory columns should use Roblox `ClientMemoryUsagePercentageAvg` broken down by device/platform values. The target device values are `Tablet`, `Computer`, and `Phone`, mapped respectively to “平板内存”, “PC内存”, and “手机内存”. These values should be formatted as percentages.
+
+Alternative considered: reintroduce raw client memory or server memory columns. That would conflict with the updated requirement and would not answer device-specific client memory pressure.
+
 ### Keep migration semantic, not positional
 
 Existing rows should be read by header names where possible. Legacy headers containing “报错率” should still populate `client_crash_rate`, now displayed as “崩溃率”. Newly introduced columns should default to blank when older sheets have no matching data.
@@ -49,7 +55,7 @@ This keeps future migrations less brittle and directly addresses the requirement
 
 ### Verify Roblox metric keys before finalizing implementation
 
-The Creator Dashboard frontend metric enums identify the retained daily average/count metrics as `ClientFpsAvg`, `ServerCrashCount`, and `ServerFrameRateAvg`. These should be used for the direct analytics requests instead of the shorter URL-level display metric names.
+The Creator Dashboard frontend metric enums identify the retained daily average/count metrics as `ClientMemoryUsagePercentageAvg`, `ClientFpsAvg`, `ServerCrashCount`, and `ServerFrameRateAvg`. For memory percentage, the implementation should request a platform/device breakdown and extract `Tablet`, `Computer`, and `Phone` into separate fields. These internal names should be used for direct analytics requests instead of URL-level display labels.
 
 ## Risks / Trade-offs
 
@@ -70,4 +76,4 @@ The Creator Dashboard frontend metric enums identify the retained daily average/
 
 ## Open Questions
 
-- Confirm units returned by frame-rate metrics so formatting can be stable and readable.
+- Confirm whether `ClientMemoryUsagePercentageAvg` returns fractions or percentage-point values, and confirm units returned by frame-rate metrics so formatting can be stable and readable.

@@ -31,10 +31,11 @@ PROJECT_METRICS_HEADERS = [
     "五分钟留存",
     "Home Recommendation数量",
     "崩溃率",
-    "客户端内存",
+    "平板内存",
+    "PC内存",
+    "手机内存",
     "客户端帧率",
     "服务器崩溃数",
-    "服务器内存",
     "服务器帧率",
     "更新时间",
 ]
@@ -69,10 +70,11 @@ PROJECT_METRICS_FIELD_TO_HEADER = {
     "five_minute_retention": "五分钟留存",
     "home_recommendations": "Home Recommendation数量",
     "client_crash_rate": "崩溃率",
-    "client_memory_usage": "客户端内存",
+    "tablet_memory_percentage": "平板内存",
+    "pc_memory_percentage": "PC内存",
+    "phone_memory_percentage": "手机内存",
     "client_frame_rate": "客户端帧率",
     "server_crashes": "服务器崩溃数",
-    "server_memory_usage": "服务器内存",
     "server_frame_rate": "服务器帧率",
     "fetched_at": "更新时间",
 }
@@ -95,10 +97,11 @@ PROJECT_METRICS_LEGACY_FIELD_ORDER = (
     "fetched_at",
 )
 PROJECT_METRICS_PERFORMANCE_FIELD_NAMES = {
-    "client_memory_usage",
+    "tablet_memory_percentage",
+    "pc_memory_percentage",
+    "phone_memory_percentage",
     "client_frame_rate",
     "server_crashes",
-    "server_memory_usage",
     "server_frame_rate",
 }
 PROJECT_METRICS_RANK_FIELD_NAMES = (
@@ -254,10 +257,11 @@ def build_project_metrics_values(record: ProjectDailyMetricsRecord) -> list[obje
         record.five_minute_retention,
         record.home_recommendations,
         record.client_crash_rate,
-        record.client_memory_usage,
+        record.tablet_memory_percentage,
+        record.pc_memory_percentage,
+        record.phone_memory_percentage,
         record.client_frame_rate,
         record.server_crashes,
-        record.server_memory_usage,
         record.server_frame_rate,
         record.fetched_at,
     ]
@@ -425,10 +429,11 @@ def _extract_shifted_legacy_row_field_values(row_cells: list[str]) -> dict[str, 
             "client_crash_rate",
             legacy_values.get("client_crash_rate", ""),
         ),
-        "client_memory_usage": current_values.get("client_memory_usage", ""),
+        "tablet_memory_percentage": current_values.get("tablet_memory_percentage", ""),
+        "pc_memory_percentage": current_values.get("pc_memory_percentage", ""),
+        "phone_memory_percentage": current_values.get("phone_memory_percentage", ""),
         "client_frame_rate": current_values.get("client_frame_rate", ""),
         "server_crashes": current_values.get("server_crashes", ""),
-        "server_memory_usage": current_values.get("server_memory_usage", ""),
         "server_frame_rate": current_values.get("server_frame_rate", ""),
         "fetched_at": current_values.get("fetched_at", legacy_values.get("fetched_at", "")),
     }
@@ -539,7 +544,16 @@ def _normalize_field_value(field_name: str, value: str) -> str:
         return text if _looks_like_rank_text(text) else ""
     if field_name in {"arppu"}:
         return text if text.startswith("$") else ""
-    if field_name in {"day1_retention", "day7_retention", "payer_conversion_rate", "five_minute_retention", "client_crash_rate"}:
+    if field_name in {
+        "day1_retention",
+        "day7_retention",
+        "payer_conversion_rate",
+        "five_minute_retention",
+        "client_crash_rate",
+        "tablet_memory_percentage",
+        "pc_memory_percentage",
+        "phone_memory_percentage",
+    }:
         return text if "%" in text else ""
     if field_name in {"peak_ccu", "home_recommendations", "server_crashes"}:
         return text if _looks_like_number_text(text) else ""

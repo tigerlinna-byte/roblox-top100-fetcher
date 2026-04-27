@@ -96,10 +96,11 @@ METRIC_DEFINITIONS = (
         ),
     ),
     MetricDefinition("client_crash_rate", ("client crash rate", "crash rate", "client crash rate 15m")),
-    MetricDefinition("client_memory_usage", ("client memory usage", "client memory", "memory usage")),
+    MetricDefinition("tablet_memory_percentage", ("tablet memory percentage", "tablet memory usage percentage")),
+    MetricDefinition("pc_memory_percentage", ("pc memory percentage", "computer memory usage percentage", "pc memory usage percentage")),
+    MetricDefinition("phone_memory_percentage", ("phone memory percentage", "mobile memory usage percentage", "phone memory usage percentage")),
     MetricDefinition("client_frame_rate", ("client frame rate", "client fps", "frame rate", "fps")),
     MetricDefinition("server_crashes", ("server crashes", "server crash count")),
-    MetricDefinition("server_memory_usage", ("server memory usage", "server memory")),
     MetricDefinition("server_frame_rate", ("server frame rate", "server fps")),
 )
 INLINE_JSON_PATTERN = re.compile(r"<script[^>]*>(?P<content>.*?)</script>", re.IGNORECASE | re.DOTALL)
@@ -131,6 +132,7 @@ class MetricQuerySpec:
     lookback_days: int
     value_type: str
     breakdown_dimensions: tuple[str, ...] = ()
+    breakdown_match_values: tuple[str, ...] = ()
     filters: tuple[dict[str, object], ...] = ()
     limit: int | None = None
 
@@ -162,10 +164,35 @@ DIRECT_QUERY_SPECS = (
     MetricQuerySpec("arppu", "AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
     MetricQuerySpec("qptr", "RFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("client_crash_rate", "ClientCrashRate15m", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
-    MetricQuerySpec("client_memory_usage", "ClientMemoryUsageAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "memory"),
+    MetricQuerySpec(
+        "tablet_memory_percentage",
+        "ClientMemoryUsagePercentageAvg",
+        "METRIC_GRANULARITY_ONE_DAY",
+        14,
+        "breakdown_ratio",
+        breakdown_dimensions=("Platform",),
+        breakdown_match_values=("Tablet",),
+    ),
+    MetricQuerySpec(
+        "pc_memory_percentage",
+        "ClientMemoryUsagePercentageAvg",
+        "METRIC_GRANULARITY_ONE_DAY",
+        14,
+        "breakdown_ratio",
+        breakdown_dimensions=("Platform",),
+        breakdown_match_values=("Computer", "Desktop", "PC"),
+    ),
+    MetricQuerySpec(
+        "phone_memory_percentage",
+        "ClientMemoryUsagePercentageAvg",
+        "METRIC_GRANULARITY_ONE_DAY",
+        14,
+        "breakdown_ratio",
+        breakdown_dimensions=("Platform",),
+        breakdown_match_values=("Phone", "Mobile"),
+    ),
     MetricQuerySpec("client_frame_rate", "ClientFpsAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
     MetricQuerySpec("server_crashes", "ServerCrashCount", "METRIC_GRANULARITY_ONE_DAY", 14, "daily_sum"),
-    MetricQuerySpec("server_memory_usage", "ServerMemoryUsageAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "memory"),
     MetricQuerySpec("server_frame_rate", "ServerFrameRateAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
 )
 DIRECT_QUERY_FALLBACK_SPECS = (
@@ -355,10 +382,11 @@ class RobloxCreatorMetricsClient:
                     five_minute_retention=metrics_by_field.get("five_minute_retention", {}).get(report_date, ""),
                     home_recommendations=metrics_by_field.get("home_recommendations", {}).get(report_date, ""),
                     client_crash_rate=metrics_by_field.get("client_crash_rate", {}).get(report_date, ""),
-                    client_memory_usage=metrics_by_field.get("client_memory_usage", {}).get(report_date, ""),
+                    tablet_memory_percentage=metrics_by_field.get("tablet_memory_percentage", {}).get(report_date, ""),
+                    pc_memory_percentage=metrics_by_field.get("pc_memory_percentage", {}).get(report_date, ""),
+                    phone_memory_percentage=metrics_by_field.get("phone_memory_percentage", {}).get(report_date, ""),
                     client_frame_rate=metrics_by_field.get("client_frame_rate", {}).get(report_date, ""),
                     server_crashes=metrics_by_field.get("server_crashes", {}).get(report_date, ""),
-                    server_memory_usage=metrics_by_field.get("server_memory_usage", {}).get(report_date, ""),
                     server_frame_rate=metrics_by_field.get("server_frame_rate", {}).get(report_date, ""),
                     project_id=project_id,
                     source_url=resolved_overview_url,
@@ -648,6 +676,16 @@ class RobloxCreatorMetricsClient:
                 values=_format_series(
                     _extract_breakdown_daily_counts(values, "Home Recommendation", business_timezone, aliases=("HomeRecommendation",)),
                     _format_count,
+                ),
+                ranks={},
+            )
+        if spec.value_type == "breakdown_ratio":
+            if not spec.breakdown_match_values:
+                return MetricSeriesResult(values={}, ranks={})
+            return MetricSeriesResult(
+                values=_format_series(
+                    _extract_breakdown_daily_average(values, spec.breakdown_match_values, business_timezone),
+                    _format_ratio,
                 ),
                 ranks={},
             )
@@ -1173,10 +1211,11 @@ def _format_duration_from_seconds(value: float) -> str:
 
 
 def _contains_breakdown_value(breakdown_values: list[object], expected_value: str) -> bool:
+    expected_normalized = expected_value.strip().casefold()
     for item in breakdown_values:
         if not isinstance(item, dict):
             continue
-        if str(item.get("value", "")) == expected_value:
+        if str(item.get("value", "")).strip().casefold() == expected_normalized:
             return True
     return False
 
@@ -1465,6 +1504,26 @@ def _extract_breakdown_daily_counts(
             report_date = _to_business_date_string(timestamp, business_timezone)
             counts[report_date] = counts.get(report_date, 0.0) + value
     return counts
+
+
+def _extract_breakdown_daily_average(
+    values: list[dict[str, object]],
+    expected_values: tuple[str, ...],
+    business_timezone: timezone | ZoneInfo,
+) -> dict[str, float]:
+    """按 breakdown 值筛选序列，并把同一业务日期的数值聚合为平均值。"""
+
+    daily_values: dict[str, list[float]] = {}
+    for series in values:
+        if not any(_contains_breakdown_value(series.get("breakdownValue", []), value) for value in expected_values):
+            continue
+        for timestamp, value in _flatten_numeric_datapoints([series]):
+            report_date = _to_business_date_string(timestamp, business_timezone)
+            daily_values.setdefault(report_date, []).append(value)
+    return {
+        report_date: sum(values_for_day) / max(1, len(values_for_day))
+        for report_date, values_for_day in daily_values.items()
+    }
 
 
 def _business_midnight_now(business_timezone: timezone | ZoneInfo) -> datetime:

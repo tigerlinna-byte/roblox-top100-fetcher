@@ -84,10 +84,9 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ClientMemoryUsageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ClientMemoryUsagePercentageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientFpsAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ServerCrashCount", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ServerMemoryUsageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ServerFrameRateAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                             ]
                         },
@@ -184,12 +183,29 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {"time": "2026-03-10T00:00:00Z", "value": 0.0012},
                         {"time": "2026-03-11T00:00:00Z", "value": 0.0015},
                     ]}))
-                if metric == "ClientMemoryUsageAvg":
-                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
-                        {"time": "2026-03-10T00:00:00Z", "value": 511.5},
-                        {"time": "2026-03-11T00:00:00Z", "value": 512.0},
-                        {"time": "2026-03-11T12:00:00Z", "value": 520.0},
-                    ]}))
+                if metric == "ClientMemoryUsagePercentageAvg":
+                    return _build_json_response(_wrap_query_result([
+                        {
+                            "breakdownValue": [{"dimension": "Platform", "value": "Tablet"}],
+                            "dataPoints": [
+                                {"time": "2026-03-10T00:00:00Z", "value": 0.4},
+                                {"time": "2026-03-11T00:00:00Z", "value": 0.42},
+                                {"time": "2026-03-11T12:00:00Z", "value": 0.44},
+                            ],
+                        },
+                        {
+                            "breakdownValue": [{"dimension": "Platform", "value": "Computer"}],
+                            "dataPoints": [
+                                {"time": "2026-03-11T00:00:00Z", "value": 55},
+                            ],
+                        },
+                        {
+                            "breakdownValue": [{"dimension": "Platform", "value": "Phone"}],
+                            "dataPoints": [
+                                {"time": "2026-03-11T00:00:00Z", "value": 0.61},
+                            ],
+                        },
+                    ]))
                 if metric == "ClientFpsAvg":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 58.25},
@@ -200,11 +216,6 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {"time": "2026-03-10T00:00:00Z", "value": 1},
                         {"time": "2026-03-11T00:00:00Z", "value": 2},
                         {"time": "2026-03-11T12:00:00Z", "value": 3},
-                    ]}))
-                if metric == "ServerMemoryUsageAvg":
-                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
-                        {"time": "2026-03-10T00:00:00Z", "value": 1024.0},
-                        {"time": "2026-03-11T00:00:00Z", "value": 1030.5},
                     ]}))
                 if metric == "ServerFrameRateAvg":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
@@ -236,10 +247,11 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("50%", record_map["2026-03-11"].five_minute_retention)
         self.assertEqual("610", record_map["2026-03-11"].home_recommendations)
         self.assertEqual("0.15%", record_map["2026-03-11"].client_crash_rate)
-        self.assertEqual("516 MB", record_map["2026-03-11"].client_memory_usage)
+        self.assertEqual("43%", record_map["2026-03-11"].tablet_memory_percentage)
+        self.assertEqual("55%", record_map["2026-03-11"].pc_memory_percentage)
+        self.assertEqual("61%", record_map["2026-03-11"].phone_memory_percentage)
         self.assertEqual("59.5 FPS", record_map["2026-03-11"].client_frame_rate)
         self.assertEqual("5", record_map["2026-03-11"].server_crashes)
-        self.assertEqual("1030.5 MB", record_map["2026-03-11"].server_memory_usage)
         self.assertEqual("59.75 FPS", record_map["2026-03-11"].server_frame_rate)
         self.assertEqual("6.77%", record_map["2026-03-10"].day1_retention)
         self.assertEqual("72th", record_map["2026-03-10"].day1_retention_rank)
@@ -251,6 +263,14 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertNotIn("2026-03-05", record_map)
         self.assertNotIn("2026-03-04", record_map)
         self.assertNotIn("2026-03-13", record_map)
+        memory_requests = [
+            json_payload["query"]
+            for call in session.request.call_args_list
+            if isinstance((json_payload := call.kwargs.get("json")), dict)
+            and json_payload.get("query", {}).get("metric") == "ClientMemoryUsagePercentageAvg"
+        ]
+        self.assertTrue(memory_requests)
+        self.assertTrue(all(request["breakdown"] == [{"dimensions": ["Platform"]}] for request in memory_requests))
 
     def test_fetch_project_daily_metrics_uses_benchmark_scorecard_for_ranks(self) -> None:
         session = Mock()
