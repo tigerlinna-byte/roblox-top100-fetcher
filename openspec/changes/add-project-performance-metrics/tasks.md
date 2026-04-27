@@ -1,11 +1,11 @@
 ## 1. Metric Discovery
 
-- [x] 1.1 Confirm Roblox Analytics internal metric keys for client frame rate, server crashes, server memory usage, and server frame rate using Creator Analytics network traffic or authenticated metadata.
-- [ ] 1.2 Confirm units and aggregation behavior for memory, frame-rate, and server crash metrics.
+- [x] 1.1 Confirm Roblox Analytics internal metric keys for client frame rate, server crashes, and server frame rate using Creator Analytics network traffic or authenticated metadata.
+- [ ] 1.2 Confirm units and aggregation behavior for frame-rate and server crash metrics.
 
 ## 2. Data Model And Fetching
 
-- [x] 2.1 Add project daily metric fields for client memory usage, client frame rate, server crashes, server memory usage, and server frame rate.
+- [x] 2.1 Add project daily metric fields for client frame rate, server crashes, and server frame rate.
 - [x] 2.2 Extend direct Roblox metric query specs and metadata requests for the new fields.
 - [x] 2.3 Format continuous performance metrics as daily averages and server crashes as daily count values.
 - [x] 2.4 Populate the new fields when building `ProjectDailyMetricsRecord` instances.
@@ -13,7 +13,7 @@
 ## 3. Feishu Sheet Mapping
 
 - [x] 3.1 Rename the visible crash-rate header from “报错率” to “崩溃率” while preserving old “报错率” input during row normalization.
-- [x] 3.2 Insert the five new performance columns after “崩溃率” and before “更新时间”.
+- [x] 3.2 Insert the three retained performance columns after “崩溃率” and before “更新时间”.
 - [x] 3.3 Expand the project metrics Feishu read/write range and column width configuration through the new final column.
 - [x] 3.4 Keep rank font reset, bold, and color updates scoped to the existing rank columns only.
 

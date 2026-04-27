@@ -9,7 +9,7 @@ The current table builder normalizes rows by header semantics and preserves non-
 **Goals:**
 
 - Rename the existing “报错率” column to “崩溃率” without creating a duplicate client crash rate metric.
-- Add daily client/server memory, frame rate, and server crash columns between “崩溃率” and “更新时间”.
+- Add daily client frame rate, server crash count, and server frame rate columns between “崩溃率” and “更新时间”.
 - Treat each value as the metric for the date shown in the row's “日期” column.
 - Preserve existing sheet data, especially columns after the insertion point and rank font styling.
 - Backfill newly available values for dates in the normal project metrics query window.
@@ -35,9 +35,9 @@ The new metric fields should be appended after `client_crash_rate` and before `f
 
 Alternative considered: append new fields after `更新时间`. That would avoid moving the timestamp column, but it would make the sheet less coherent and conflict with the requested placement after crash rate.
 
-### Use daily average aggregation for continuous performance metrics
+### Use daily average aggregation for frame-rate metrics
 
-Client memory, client frame rate, server memory, and server frame rate should use daily values for the row date. If Roblox returns multiple data points within a day for these metrics, the implementation should average them for that business date. If Roblox returns a daily-granularity value, that value can be used directly.
+Client frame rate and server frame rate should use daily values for the row date. If Roblox returns multiple data points within a day for these metrics, the implementation should average them for that business date. If Roblox returns a daily-granularity value, that value can be used directly.
 
 Server crashes is a count metric, so it should use the daily count/value returned by Roblox rather than an average unless Roblox only exposes finer-grained count buckets that must be summed for the day.
 
@@ -49,7 +49,7 @@ This keeps future migrations less brittle and directly addresses the requirement
 
 ### Verify Roblox metric keys before finalizing implementation
 
-The Creator Dashboard frontend metric enums identify the daily average/count metrics as `ClientMemoryUsageAvg`, `ClientFpsAvg`, `ServerCrashCount`, `ServerMemoryUsageAvg`, and `ServerFrameRateAvg`. These should be used for the direct analytics requests instead of the shorter URL-level display metric names.
+The Creator Dashboard frontend metric enums identify the retained daily average/count metrics as `ClientFpsAvg`, `ServerCrashCount`, and `ServerFrameRateAvg`. These should be used for the direct analytics requests instead of the shorter URL-level display metric names.
 
 ## Risks / Trade-offs
 
@@ -70,4 +70,4 @@ The Creator Dashboard frontend metric enums identify the daily average/count met
 
 ## Open Questions
 
-- Confirm units returned by memory and frame-rate metrics so formatting can be stable and readable.
+- Confirm units returned by frame-rate metrics so formatting can be stable and readable.
