@@ -84,7 +84,11 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ClientMemoryUsage", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ClientFrameRate", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ServerCrashes", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ServerMemoryUsage", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ServerFrameRate", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                             ]
                         },
                     }
@@ -180,6 +184,33 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {"time": "2026-03-10T00:00:00Z", "value": 0.0012},
                         {"time": "2026-03-11T00:00:00Z", "value": 0.0015},
                     ]}))
+                if metric == "ClientMemoryUsage":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 511.5},
+                        {"time": "2026-03-11T00:00:00Z", "value": 512.0},
+                        {"time": "2026-03-11T12:00:00Z", "value": 520.0},
+                    ]}))
+                if metric == "ClientFrameRate":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 58.25},
+                        {"time": "2026-03-11T00:00:00Z", "value": 59.5},
+                    ]}))
+                if metric == "ServerCrashes":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 1},
+                        {"time": "2026-03-11T00:00:00Z", "value": 2},
+                        {"time": "2026-03-11T12:00:00Z", "value": 3},
+                    ]}))
+                if metric == "ServerMemoryUsage":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 1024.0},
+                        {"time": "2026-03-11T00:00:00Z", "value": 1030.5},
+                    ]}))
+                if metric == "ServerFrameRate":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 60.0},
+                        {"time": "2026-03-11T00:00:00Z", "value": 59.75},
+                    ]}))
                 return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
             raise AssertionError(f"unexpected request: {method} {url}")
 
@@ -205,6 +236,11 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("50%", record_map["2026-03-11"].five_minute_retention)
         self.assertEqual("610", record_map["2026-03-11"].home_recommendations)
         self.assertEqual("0.15%", record_map["2026-03-11"].client_crash_rate)
+        self.assertEqual("516 MB", record_map["2026-03-11"].client_memory_usage)
+        self.assertEqual("59.5 FPS", record_map["2026-03-11"].client_frame_rate)
+        self.assertEqual("5", record_map["2026-03-11"].server_crashes)
+        self.assertEqual("1030.5 MB", record_map["2026-03-11"].server_memory_usage)
+        self.assertEqual("59.75 FPS", record_map["2026-03-11"].server_frame_rate)
         self.assertEqual("6.77%", record_map["2026-03-10"].day1_retention)
         self.assertEqual("72th", record_map["2026-03-10"].day1_retention_rank)
         self.assertEqual("58th", record_map["2026-03-10"].payer_conversion_rate_rank)

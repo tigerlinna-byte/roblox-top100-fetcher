@@ -50,7 +50,7 @@ from .top_trending_sheet import (
 
 PROJECT_METRICS_REPORT_MODE = "roblox_project_daily_metrics"
 PROJECT_METRICS_SHEET_MAX_ROWS = 365
-PROJECT_METRICS_SHEET_END_COLUMN = "Q"
+PROJECT_METRICS_SHEET_END_COLUMN = "V"
 
 
 @dataclass(frozen=True)
@@ -424,7 +424,7 @@ def _apply_project_metrics_sheet_presentation(spreadsheet_title: str, feishu_cli
         feishu_client.set_sheet_column_widths(
             target.spreadsheet_token,
             target.sheet_id,
-            [120, 110, 130, 120, 90, 120, 90, 120, 90, 120, 140, 140, 90, 110, 180, 110, 180],
+            [120, 110, 130, 120, 90, 120, 90, 120, 90, 120, 140, 140, 90, 110, 180, 110, 120, 110, 120, 120, 110, 180],
         )
     except FeishuClientError:
         logging.warning("Failed to apply project metrics sheet layout.", exc_info=True)

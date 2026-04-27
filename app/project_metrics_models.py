@@ -31,6 +31,11 @@ PROJECT_METRICS_FIELD_NAMES = (
     "five_minute_retention",
     "home_recommendations",
     "client_crash_rate",
+    "client_memory_usage",
+    "client_frame_rate",
+    "server_crashes",
+    "server_memory_usage",
+    "server_frame_rate",
 )
 
 
@@ -54,6 +59,11 @@ class ProjectDailyMetricsRecord:
     five_minute_retention: str = ""
     home_recommendations: str = ""
     client_crash_rate: str = ""
+    client_memory_usage: str = ""
+    client_frame_rate: str = ""
+    server_crashes: str = ""
+    server_memory_usage: str = ""
+    server_frame_rate: str = ""
     project_id: str = ""
     source_url: str = ""
     fetched_at: str = ""

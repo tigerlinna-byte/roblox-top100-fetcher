@@ -30,7 +30,12 @@ PROJECT_METRICS_HEADERS = [
     "QPTR",
     "五分钟留存",
     "Home Recommendation数量",
-    "报错率",
+    "崩溃率",
+    "客户端内存",
+    "客户端帧率",
+    "服务器崩溃数",
+    "服务器内存",
+    "服务器帧率",
     "更新时间",
 ]
 LEGACY_PROJECT_METRICS_HEADERS = [
@@ -63,12 +68,18 @@ PROJECT_METRICS_FIELD_TO_HEADER = {
     "qptr": "QPTR",
     "five_minute_retention": "五分钟留存",
     "home_recommendations": "Home Recommendation数量",
-    "client_crash_rate": "报错率",
+    "client_crash_rate": "崩溃率",
+    "client_memory_usage": "客户端内存",
+    "client_frame_rate": "客户端帧率",
+    "server_crashes": "服务器崩溃数",
+    "server_memory_usage": "服务器内存",
+    "server_frame_rate": "服务器帧率",
     "fetched_at": "更新时间",
 }
 PROJECT_METRICS_HEADER_TO_FIELD = {
     header: field_name for field_name, header in PROJECT_METRICS_FIELD_TO_HEADER.items()
 }
+PROJECT_METRICS_HEADER_TO_FIELD["报错率"] = "client_crash_rate"
 PROJECT_METRICS_LEGACY_FIELD_ORDER = (
     "report_date",
     "peak_ccu",
@@ -83,6 +94,13 @@ PROJECT_METRICS_LEGACY_FIELD_ORDER = (
     "client_crash_rate",
     "fetched_at",
 )
+PROJECT_METRICS_PERFORMANCE_FIELD_NAMES = {
+    "client_memory_usage",
+    "client_frame_rate",
+    "server_crashes",
+    "server_memory_usage",
+    "server_frame_rate",
+}
 PROJECT_METRICS_RANK_FIELD_NAMES = (
     "average_session_time_rank",
     "day1_retention_rank",
@@ -236,6 +254,11 @@ def build_project_metrics_values(record: ProjectDailyMetricsRecord) -> list[obje
         record.five_minute_retention,
         record.home_recommendations,
         record.client_crash_rate,
+        record.client_memory_usage,
+        record.client_frame_rate,
+        record.server_crashes,
+        record.server_memory_usage,
+        record.server_frame_rate,
         record.fetched_at,
     ]
 
@@ -402,6 +425,11 @@ def _extract_shifted_legacy_row_field_values(row_cells: list[str]) -> dict[str, 
             "client_crash_rate",
             legacy_values.get("client_crash_rate", ""),
         ),
+        "client_memory_usage": current_values.get("client_memory_usage", ""),
+        "client_frame_rate": current_values.get("client_frame_rate", ""),
+        "server_crashes": current_values.get("server_crashes", ""),
+        "server_memory_usage": current_values.get("server_memory_usage", ""),
+        "server_frame_rate": current_values.get("server_frame_rate", ""),
         "fetched_at": current_values.get("fetched_at", legacy_values.get("fetched_at", "")),
     }
     for field_name in (
@@ -483,7 +511,7 @@ def _looks_like_legacy_header(header_row: list[str]) -> bool:
 
 
 def _looks_like_legacy_shifted_row(row_cells: list[str]) -> bool:
-    if len(row_cells) < len(PROJECT_METRICS_HEADERS):
+    if len(row_cells) < len(LEGACY_PROJECT_METRICS_HEADERS):
         return False
     if row_cells[3].strip() and not _looks_like_rank_text(row_cells[3].strip()):
         return True
@@ -513,8 +541,10 @@ def _normalize_field_value(field_name: str, value: str) -> str:
         return text if text.startswith("$") else ""
     if field_name in {"day1_retention", "day7_retention", "payer_conversion_rate", "five_minute_retention", "client_crash_rate"}:
         return text if "%" in text else ""
-    if field_name in {"peak_ccu", "home_recommendations"}:
+    if field_name in {"peak_ccu", "home_recommendations", "server_crashes"}:
         return text if _looks_like_number_text(text) else ""
+    if field_name in PROJECT_METRICS_PERFORMANCE_FIELD_NAMES:
+        return text
     return text
 
 

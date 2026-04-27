@@ -96,6 +96,11 @@ METRIC_DEFINITIONS = (
         ),
     ),
     MetricDefinition("client_crash_rate", ("client crash rate", "crash rate", "client crash rate 15m")),
+    MetricDefinition("client_memory_usage", ("client memory usage", "client memory", "memory usage")),
+    MetricDefinition("client_frame_rate", ("client frame rate", "client fps", "frame rate", "fps")),
+    MetricDefinition("server_crashes", ("server crashes", "server crash count")),
+    MetricDefinition("server_memory_usage", ("server memory usage", "server memory")),
+    MetricDefinition("server_frame_rate", ("server frame rate", "server fps")),
 )
 INLINE_JSON_PATTERN = re.compile(r"<script[^>]*>(?P<content>.*?)</script>", re.IGNORECASE | re.DOTALL)
 CAMEL_CASE_BOUNDARY_PATTERN = re.compile(r"([a-z0-9])([A-Z])")
@@ -157,6 +162,11 @@ DIRECT_QUERY_SPECS = (
     MetricQuerySpec("arppu", "AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
     MetricQuerySpec("qptr", "RFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("client_crash_rate", "ClientCrashRate15m", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+    MetricQuerySpec("client_memory_usage", "ClientMemoryUsage", "METRIC_GRANULARITY_ONE_DAY", 14, "memory"),
+    MetricQuerySpec("client_frame_rate", "ClientFrameRate", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
+    MetricQuerySpec("server_crashes", "ServerCrashes", "METRIC_GRANULARITY_ONE_DAY", 14, "daily_sum"),
+    MetricQuerySpec("server_memory_usage", "ServerMemoryUsage", "METRIC_GRANULARITY_ONE_DAY", 14, "memory"),
+    MetricQuerySpec("server_frame_rate", "ServerFrameRate", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
 )
 DIRECT_QUERY_FALLBACK_SPECS = (
     MetricQuerySpec("average_session_time", "SessionDurationSecondsAvg", "METRIC_GRANULARITY_ONE_MINUTE", 1, "seconds"),
@@ -345,6 +355,11 @@ class RobloxCreatorMetricsClient:
                     five_minute_retention=metrics_by_field.get("five_minute_retention", {}).get(report_date, ""),
                     home_recommendations=metrics_by_field.get("home_recommendations", {}).get(report_date, ""),
                     client_crash_rate=metrics_by_field.get("client_crash_rate", {}).get(report_date, ""),
+                    client_memory_usage=metrics_by_field.get("client_memory_usage", {}).get(report_date, ""),
+                    client_frame_rate=metrics_by_field.get("client_frame_rate", {}).get(report_date, ""),
+                    server_crashes=metrics_by_field.get("server_crashes", {}).get(report_date, ""),
+                    server_memory_usage=metrics_by_field.get("server_memory_usage", {}).get(report_date, ""),
+                    server_frame_rate=metrics_by_field.get("server_frame_rate", {}).get(report_date, ""),
                     project_id=project_id,
                     source_url=resolved_overview_url,
                     fetched_at=fetched_at,
@@ -649,6 +664,21 @@ class RobloxCreatorMetricsClient:
         if spec.value_type == "daily_average":
             return MetricSeriesResult(
                 values=_format_series(_aggregate_daily_values(datapoints, "average", business_timezone), _format_count),
+                ranks=ranks,
+            )
+        if spec.value_type == "memory":
+            return MetricSeriesResult(
+                values=_format_series(_aggregate_daily_values(datapoints, "average", business_timezone), _format_memory_usage),
+                ranks=ranks,
+            )
+        if spec.value_type == "frame_rate":
+            return MetricSeriesResult(
+                values=_format_series(_aggregate_daily_values(datapoints, "average", business_timezone), _format_frame_rate),
+                ranks=ranks,
+            )
+        if spec.value_type == "daily_sum":
+            return MetricSeriesResult(
+                values=_format_series(_aggregate_daily_values(datapoints, "sum", business_timezone), _format_count),
                 ranks=ranks,
             )
         if spec.value_type == "daily_max":
@@ -1115,6 +1145,18 @@ def _format_currency(value: float) -> str:
     return f"${value:.2f}"
 
 
+def _format_memory_usage(value: float) -> str:
+    if abs(value - round(value)) < 0.01:
+        return f"{int(round(value))} MB"
+    return f"{value:.2f}".rstrip("0").rstrip(".") + " MB"
+
+
+def _format_frame_rate(value: float) -> str:
+    if abs(value - round(value)) < 0.01:
+        return f"{int(round(value))} FPS"
+    return f"{value:.2f}".rstrip("0").rstrip(".") + " FPS"
+
+
 def _format_duration_from_minutes(value: float) -> str:
     return _format_duration_from_seconds(value * 60)
 
@@ -1216,6 +1258,8 @@ def _aggregate_daily_values(
         return {report_date: sum(values) / len(values) for report_date, values in grouped.items() if values}
     if mode == "max":
         return {report_date: max(values) for report_date, values in grouped.items() if values}
+    if mode == "sum":
+        return {report_date: sum(values) for report_date, values in grouped.items() if values}
     return {report_date: values[-1] for report_date, values in grouped.items() if values}
 
 
