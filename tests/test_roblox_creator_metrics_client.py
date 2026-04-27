@@ -84,11 +84,11 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ClientMemoryUsage", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ClientFrameRate", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ServerCrashes", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ServerMemoryUsage", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ServerFrameRate", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ClientMemoryUsageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ClientFpsAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ServerCrashCount", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ServerMemoryUsageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ServerFrameRateAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                             ]
                         },
                     }
@@ -184,29 +184,29 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {"time": "2026-03-10T00:00:00Z", "value": 0.0012},
                         {"time": "2026-03-11T00:00:00Z", "value": 0.0015},
                     ]}))
-                if metric == "ClientMemoryUsage":
+                if metric == "ClientMemoryUsageAvg":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 511.5},
                         {"time": "2026-03-11T00:00:00Z", "value": 512.0},
                         {"time": "2026-03-11T12:00:00Z", "value": 520.0},
                     ]}))
-                if metric == "ClientFrameRate":
+                if metric == "ClientFpsAvg":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 58.25},
                         {"time": "2026-03-11T00:00:00Z", "value": 59.5},
                     ]}))
-                if metric == "ServerCrashes":
+                if metric == "ServerCrashCount":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 1},
                         {"time": "2026-03-11T00:00:00Z", "value": 2},
                         {"time": "2026-03-11T12:00:00Z", "value": 3},
                     ]}))
-                if metric == "ServerMemoryUsage":
+                if metric == "ServerMemoryUsageAvg":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 1024.0},
                         {"time": "2026-03-11T00:00:00Z", "value": 1030.5},
                     ]}))
-                if metric == "ServerFrameRate":
+                if metric == "ServerFrameRateAvg":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 60.0},
                         {"time": "2026-03-11T00:00:00Z", "value": 59.75},

@@ -49,11 +49,11 @@ This keeps future migrations less brittle and directly addresses the requirement
 
 ### Verify Roblox metric keys before finalizing implementation
 
-`ClientMemoryUsage` is strongly indicated by the reference URL. The remaining metric keys should be confirmed against Roblox Creator Analytics network traffic or metadata with a valid Creator cookie before treating them as final. Likely candidates are `ClientFrameRate`, `ServerCrashes`, `ServerMemoryUsage`, and `ServerFrameRate`, but the implementation should be adjusted to the observed API names if they differ.
+The Creator Dashboard frontend metric enums identify the daily average/count metrics as `ClientMemoryUsageAvg`, `ClientFpsAvg`, `ServerCrashCount`, `ServerMemoryUsageAvg`, and `ServerFrameRateAvg`. These should be used for the direct analytics requests instead of the shorter URL-level display metric names.
 
 ## Risks / Trade-offs
 
-- Roblox metric names may differ from display names -> verify via Creator Analytics requests before hard-coding all new specs.
+- Roblox metric names may differ from URL display names -> use the Creator Dashboard frontend enum names and verify with real Creator Analytics requests.
 - Daily granularity may not be available for every new metric -> support aggregation from finer-grained data when the API requires it.
 - Feishu read range currently ends at column Q -> update it to cover the new final column or historical timestamp values may not be read back.
 - Column insertion could shift styles -> keep rank style ranges derived from rank fields and update only column widths/read-write dimensions.
@@ -70,5 +70,4 @@ This keeps future migrations less brittle and directly addresses the requirement
 
 ## Open Questions
 
-- Confirm exact Roblox internal metric names for client frame rate, server crashes, server memory usage, and server frame rate.
 - Confirm units returned by memory and frame-rate metrics so formatting can be stable and readable.

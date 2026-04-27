@@ -162,11 +162,11 @@ DIRECT_QUERY_SPECS = (
     MetricQuerySpec("arppu", "AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
     MetricQuerySpec("qptr", "RFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("client_crash_rate", "ClientCrashRate15m", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
-    MetricQuerySpec("client_memory_usage", "ClientMemoryUsage", "METRIC_GRANULARITY_ONE_DAY", 14, "memory"),
-    MetricQuerySpec("client_frame_rate", "ClientFrameRate", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
-    MetricQuerySpec("server_crashes", "ServerCrashes", "METRIC_GRANULARITY_ONE_DAY", 14, "daily_sum"),
-    MetricQuerySpec("server_memory_usage", "ServerMemoryUsage", "METRIC_GRANULARITY_ONE_DAY", 14, "memory"),
-    MetricQuerySpec("server_frame_rate", "ServerFrameRate", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
+    MetricQuerySpec("client_memory_usage", "ClientMemoryUsageAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "memory"),
+    MetricQuerySpec("client_frame_rate", "ClientFpsAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
+    MetricQuerySpec("server_crashes", "ServerCrashCount", "METRIC_GRANULARITY_ONE_DAY", 14, "daily_sum"),
+    MetricQuerySpec("server_memory_usage", "ServerMemoryUsageAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "memory"),
+    MetricQuerySpec("server_frame_rate", "ServerFrameRateAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
 )
 DIRECT_QUERY_FALLBACK_SPECS = (
     MetricQuerySpec("average_session_time", "SessionDurationSecondsAvg", "METRIC_GRANULARITY_ONE_MINUTE", 1, "seconds"),

@@ -262,11 +262,11 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - `TotalSessionsEndedInBucket`
 - `UniqueUsersWithImpressions`
 - `ClientCrashRate15m`
-- `ClientMemoryUsage`
-- `ClientFrameRate`
-- `ServerCrashes`
-- `ServerMemoryUsage`
-- `ServerFrameRate`
+- `ClientMemoryUsageAvg`
+- `ClientFpsAvg`
+- `ServerCrashCount`
+- `ServerMemoryUsageAvg`
+- `ServerFrameRateAvg`
 
 同时还会查询：
 

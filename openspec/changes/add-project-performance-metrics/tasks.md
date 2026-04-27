@@ -1,6 +1,6 @@
 ## 1. Metric Discovery
 
-- [ ] 1.1 Confirm Roblox Analytics internal metric keys for client frame rate, server crashes, server memory usage, and server frame rate using Creator Analytics network traffic or authenticated metadata.
+- [x] 1.1 Confirm Roblox Analytics internal metric keys for client frame rate, server crashes, server memory usage, and server frame rate using Creator Analytics network traffic or authenticated metadata.
 - [ ] 1.2 Confirm units and aggregation behavior for memory, frame-rate, and server crash metrics.
 
 ## 2. Data Model And Fetching
