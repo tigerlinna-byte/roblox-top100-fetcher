@@ -7,7 +7,6 @@ from urllib.parse import parse_qs, urlparse
 from unittest.mock import Mock, patch
 
 from app.config import Config
-from app.project_metrics_models import get_project_required_fields
 from app.roblox_creator_metrics_client import RobloxCreatorMetricsClient, RobloxCreatorMetricsClientError
 
 
@@ -49,10 +48,6 @@ def _build_benchmark_scorecard_payload(
 
 
 class RobloxCreatorMetricsClientTests(unittest.TestCase):
-    def test_get_project_required_fields_returns_project_specific_override(self) -> None:
-        self.assertEqual(("peak_ccu",), get_project_required_fields("9682356542"))
-        self.assertEqual((), get_project_required_fields("9707829514"))
-
     def test_fetch_project_daily_metrics_extracts_recent_series(self) -> None:
         session = Mock()
 
@@ -494,7 +489,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual(2, query_counts["DailyCohortRetention"])
         self.assertEqual(2, query_counts["UniqueUsersWithImpressions"])
 
-    def test_fetch_project_daily_metrics_writes_debug_snapshot_when_core_metrics_missing(self) -> None:
+    def test_fetch_project_daily_metrics_writes_debug_snapshot_when_metrics_missing(self) -> None:
         session = Mock()
         output_dir = Path(".test-output")
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -525,9 +520,9 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             session=session,
         )
 
-        with self.assertRaisesRegex(RobloxCreatorMetricsClientError, "核心指标"):
-            client.fetch_project_daily_metrics()
+        records = client.fetch_project_daily_metrics()
 
+        self.assertEqual([], records)
         self.assertTrue(debug_path.exists())
 
     def test_fetch_project_daily_metrics_allows_project_without_required_peak_ccu(self) -> None:

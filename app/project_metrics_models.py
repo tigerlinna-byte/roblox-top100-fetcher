@@ -9,12 +9,6 @@ PROJECT_START_DATES = {
     "9682356542": "2026-03-09",
     "9707829514": "2026-03-17",
 }
-DEFAULT_PROJECT_REQUIRED_FIELDS = ("peak_ccu",)
-PROJECT_REQUIRED_FIELDS = {
-    # 该项目当前在 Roblox analytics 接口中长期缺失 PeakConcurrentPlayers，
-    # 继续强制要求会让日报长期处于“部分失败”状态，因此这里放宽为不校验核心字段。
-    "9707829514": (),
-}
 PROJECT_METRICS_FIELD_NAMES = (
     "peak_ccu",
     "average_session_time",
@@ -89,12 +83,3 @@ def get_project_start_date(project_id: str) -> date | None:
     if not raw_value:
         return None
     return date.fromisoformat(raw_value)
-
-
-def get_project_required_fields(project_id: str) -> tuple[str, ...]:
-    """返回指定项目判定抓取成功所需的核心字段集合。"""
-
-    configured_fields = PROJECT_REQUIRED_FIELDS.get(project_id)
-    if configured_fields is None:
-        return DEFAULT_PROJECT_REQUIRED_FIELDS
-    return configured_fields

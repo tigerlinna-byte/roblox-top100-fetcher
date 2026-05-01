@@ -16,7 +16,6 @@ import requests
 from .config import Config
 from .project_metrics_models import (
     ProjectDailyMetricsRecord,
-    get_project_required_fields,
     get_project_start_date,
     now_iso,
 )
@@ -375,17 +374,15 @@ class RobloxCreatorMetricsClient:
         for field_name, rank_series in benchmark_metric_ranks.items():
             if rank_series:
                 metric_ranks_by_field[field_name] = rank_series
-        required_fields = get_project_required_fields(project_id)
-        minimum_missing = [field_name for field_name in required_fields if not metrics_by_field.get(field_name)]
         missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if not metrics_by_field.get(definition.field_name)]
         debug_path = ""
-        if minimum_missing:
+        if missing_fields:
             debug_path = self._write_debug_snapshot("", metrics_by_field, missing_fields, direct_attempts)
-        if minimum_missing:
-            raise RobloxCreatorMetricsClientError(
-                "Creator overview 页面缺少核心指标: "
-                + ", ".join(minimum_missing)
-                + (f"；已输出调试样本: {debug_path}" if debug_path else "")
+            logging.warning(
+                "Creator overview metrics missing for project %s: %s%s",
+                project_id,
+                ", ".join(missing_fields),
+                f"; debug snapshot: {debug_path}" if debug_path else "",
             )
 
         report_dates = sorted(

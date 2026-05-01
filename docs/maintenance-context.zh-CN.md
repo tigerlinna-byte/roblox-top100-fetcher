@@ -305,25 +305,9 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - 如果所有项目都失败，也会生成空 artifact 并发送失败摘要，不再让 GitHub Actions 因抓取失败变红
 - 这个模式同样依赖飞书应用身份调用电子表格 API，只有 webhook 无法完成写表
 
-#### 核心字段放宽规则
-
-项目 `9707829514` 当前对核心字段校验做了放宽。
-
-原因写在 [`app/project_metrics_models.py`](../app/project_metrics_models.py)：
-
-- 该项目长期缺失 `PeakConcurrentPlayers`
-- 如果仍然强制校验 `peak_ccu`，就会让这个项目长期处于失败状态
-
-当前配置是：
-
-- 默认项目必须至少拿到 `peak_ccu`
-- `9707829514` 例外，不要求核心字段
-
-后续如果 Roblox 接口恢复了这个指标，记得把放宽逻辑收回去。
-
 #### 调试快照
 
-当项目日报缺少核心指标时，会在 `OUTPUT_DIR` 下写出：
+当项目日报缺少任意指标时，会在 `OUTPUT_DIR` 下写出：
 
 - `data/creator_overview_debug.json`
 
@@ -334,7 +318,7 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - 每次 direct query 的请求与响应摘录
 - HTML/可见文本/脚本字段占位
 
-当前项目日报主链路主要依赖 direct query，因此排查时优先看 `direct_query_attempts`，不要默认认为 HTML 片段一定有用。
+当前项目日报主链路主要依赖 direct query，因此排查时优先看 `direct_query_attempts`，不要默认认为 HTML 片段一定有用。缺失指标只会留空并写调试快照，不会让项目日报抓取失败。
 
 ## 4. 触发映射
 
