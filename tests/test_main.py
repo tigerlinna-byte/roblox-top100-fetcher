@@ -201,7 +201,8 @@ class MainTests(unittest.TestCase):
             )
         ]
 
-        def fetch_project_daily_metrics(overview_url: str):
+        def fetch_project_daily_metrics(overview_url: str, *, report_dates=None):
+            self.assertIsNotNone(report_dates)
             if "9682356542" in overview_url:
                 return first_project_records
             raise RobloxCreatorMetricsClientError("Creator 后台请求被重定向到登录页，请检查 Cookie 是否有效")

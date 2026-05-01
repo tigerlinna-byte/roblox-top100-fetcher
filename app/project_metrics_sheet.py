@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 import re
 
 from .config import Config
@@ -110,6 +110,11 @@ PROJECT_METRICS_RANK_FIELD_NAMES = (
     "day7_retention_rank",
     "payer_conversion_rate_rank",
     "arppu_rank",
+)
+PROJECT_METRICS_BACKFILL_FIELD_NAMES = tuple(
+    field_name
+    for field_name in PROJECT_METRICS_FIELD_TO_HEADER
+    if field_name not in {"report_date", "fetched_at"}
 )
 PROJECT_METRICS_RANK_COLUMN_LETTERS = ("D", "F", "H", "J", "L")
 PROJECT_METRICS_RANK_COLOR_STOPS = (
@@ -295,6 +300,38 @@ def build_project_metrics_rebuild_rows(
     return normalized_rows[:total_rows]
 
 
+def build_project_metrics_query_dates(
+    existing_rows: list[list[object]],
+    start_date: date,
+    end_date: date,
+    *,
+    max_data_rows: int,
+) -> tuple[date, ...]:
+    """根据已有表格内容生成需要向 Roblox 回查的日期集合。"""
+
+    if start_date > end_date or max_data_rows <= 0:
+        return ()
+
+    normalized_rows = _normalize_existing_rows(existing_rows)
+    row_by_date = {
+        report_date: row
+        for row in normalized_rows[1:]
+        for report_date in [_extract_report_date(str(row[0]).strip())]
+        if report_date is not None
+    }
+    candidate_dates = _build_project_metrics_candidate_dates(
+        start_date,
+        end_date,
+        max_data_rows=max_data_rows,
+    )
+    query_dates: list[date] = []
+    for report_date in candidate_dates:
+        row = row_by_date.get(report_date.isoformat())
+        if row is None or not _project_metrics_row_has_all_backfill_fields(row):
+            query_dates.append(report_date)
+    return tuple(sorted(query_dates))
+
+
 def build_project_metrics_rank_color_cells(rows: list[list[object]]) -> list[ProjectMetricsRankColorCell]:
     """根据项目日报排名列内容构造字体颜色更新单元格。"""
 
@@ -320,21 +357,27 @@ def _merge_single_record(rows: list[list[object]], record: ProjectDailyMetricsRe
     date_to_index = _build_date_index(rows)
     row_values = build_project_metrics_values(record)
     target_index = date_to_index.get(record.report_date)
+    is_new_row = False
     if target_index is None:
         target_index = _resolve_insert_index(rows, record.report_date)
         rows.insert(target_index, [""] * len(PROJECT_METRICS_HEADERS))
+        is_new_row = True
 
     current_row = list(rows[target_index])
+    filled_missing_value = False
     for index, value in enumerate(row_values):
         text = str(value) if value is not None else ""
         if index == 0:
             current_row[index] = text
             continue
         if index == len(PROJECT_METRICS_HEADERS) - 1:
-            current_row[index] = text
             continue
-        if text:
+        current_text = str(current_row[index]).strip() if index < len(current_row) else ""
+        if text and not current_text:
             current_row[index] = text
+            filled_missing_value = True
+    if (is_new_row or filled_missing_value) and row_values[-1]:
+        current_row[-1] = str(row_values[-1])
     rows[target_index] = current_row
 
 
@@ -359,6 +402,29 @@ def _normalize_existing_rows(existing_rows: list[list[object]]) -> list[list[obj
         if any(cell.strip() for cell in normalized):
             rows.append(normalized)
     return rows
+
+
+def _build_project_metrics_candidate_dates(
+    start_date: date,
+    end_date: date,
+    *,
+    max_data_rows: int,
+) -> tuple[date, ...]:
+    newest_first: list[date] = []
+    current_date = end_date
+    while current_date >= start_date and len(newest_first) < max_data_rows:
+        newest_first.append(current_date)
+        current_date -= timedelta(days=1)
+    return tuple(reversed(newest_first))
+
+
+def _project_metrics_row_has_all_backfill_fields(row: list[object]) -> bool:
+    for field_name in PROJECT_METRICS_BACKFILL_FIELD_NAMES:
+        column_index = PROJECT_METRICS_HEADERS.index(PROJECT_METRICS_FIELD_TO_HEADER[field_name])
+        value = str(row[column_index]).strip() if column_index < len(row) else ""
+        if not value:
+            return False
+    return True
 
 
 def _normalize_existing_row(header_row: list[str], row: list[object]) -> list[str]:

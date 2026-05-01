@@ -238,11 +238,13 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 
 #### 数据窗口与日期口径
 
-项目日报的查询窗口由 [`app/roblox_creator_metrics_client.py`](../app/roblox_creator_metrics_client.py) 决定：
+项目日报的可查日期范围由 [`app/roblox_creator_metrics_client.py`](../app/roblox_creator_metrics_client.py) 决定，实际查询日期由 [`app/project_metrics_sheet.py`](../app/project_metrics_sheet.py) 根据旧表内容生成：
 
 - 以业务时区午夜为界
-- 默认抓“最近 10 天，截止到昨天”
-- 若项目起始日更晚，则从项目起始日开始
+- 默认范围是“项目起始日到昨天”
+- 只查询飞书表中不存在的日期，或已有日期行中仍有指标为空的日期
+- 已有完整数据的日期不会重复查询，已有非空单元格不会被新结果覆盖
+- 若没有已保存的飞书表目标，则按项目起始日到昨天补齐当前表格容量内的日期
 
 当前项目起始日定义在 [`app/project_metrics_models.py`](../app/project_metrics_models.py)：
 

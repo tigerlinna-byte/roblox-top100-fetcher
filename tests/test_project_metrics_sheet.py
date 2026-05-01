@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date
 
 from app.config import Config
 from app.project_metrics_models import ProjectDailyMetricsRecord
 from app.project_metrics_sheet import (
     LEGACY_PROJECT_METRICS_HEADERS,
     PROJECT_METRICS_HEADERS,
+    build_project_metrics_query_dates,
     build_project_metrics_rank_color_cells,
     build_project_metrics_rebuild_rows,
     build_project_metrics_table,
@@ -169,7 +171,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             ["2026-03-12（周四）", "2026-03-11（周三）", "2026-03-10（周二）"],
             [row[0] for row in table_state.rows[1:]],
         )
-        self.assertEqual("230", table_state.rows[2][1])
+        self.assertEqual("200", table_state.rows[2][1])
         self.assertEqual("13m", table_state.rows[2][2])
         self.assertEqual("180", table_state.rows[3][1])
 
@@ -200,10 +202,10 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         table_state = build_project_metrics_table(existing_rows, records)
 
         self.assertEqual("2026-03-11（周三）", table_state.rows[1][0])
-        self.assertEqual("230", table_state.rows[1][1])
+        self.assertEqual("200", table_state.rows[1][1])
         self.assertEqual("15m", table_state.rows[1][2])
         self.assertEqual("31%", table_state.rows[1][4])
-        self.assertEqual("2026-03-12T01:02:03Z", table_state.rows[1][22])
+        self.assertEqual("2026-03-11T01:02:03Z", table_state.rows[1][22])
 
     def test_build_project_metrics_rebuild_rows_pads_blank_rows_to_fixed_height(self) -> None:
         records = [
@@ -273,7 +275,51 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("58 FPS", rows[1][19])
         self.assertEqual("1", rows[1][20])
         self.assertEqual("60 FPS", rows[1][21])
-        self.assertEqual("2026-03-12T01:02:03Z", rows[1][22])
+        self.assertEqual("2026-03-11T01:02:03Z", rows[1][22])
+
+    def test_build_project_metrics_query_dates_skips_complete_existing_rows(self) -> None:
+        complete_row = [
+            "2026-03-11（周三）",
+            "200",
+            "15m",
+            "82th",
+            "31%",
+            "71th",
+            "10%",
+            "63th",
+            "2.3%",
+            "58th",
+            "$6.50",
+            "76th",
+            "4.5%",
+            "38%",
+            "61",
+            "0.09%",
+            "42%",
+            "55%",
+            "61%",
+            "58 FPS",
+            "1",
+            "60 FPS",
+            "2026-03-12T01:02:03Z",
+        ]
+        existing_rows = [
+            PROJECT_METRICS_HEADERS.copy(),
+            complete_row,
+            ["2026-03-10（周二）", "180", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+        ]
+
+        query_dates = build_project_metrics_query_dates(
+            existing_rows,
+            date(2026, 3, 9),
+            date(2026, 3, 12),
+            max_data_rows=4,
+        )
+
+        self.assertEqual(
+            (date(2026, 3, 9), date(2026, 3, 10), date(2026, 3, 12)),
+            query_dates,
+        )
 
     def test_build_project_metrics_rank_color_cells_maps_thresholds_and_gradients(self) -> None:
         rows = [
@@ -325,7 +371,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         table_state = build_project_metrics_table(existing_rows, records)
 
         self.assertEqual("2026-03-11（周三）", table_state.rows[1][0])
-        self.assertEqual("230", table_state.rows[1][1])
+        self.assertEqual("200", table_state.rows[1][1])
         self.assertEqual("13m", table_state.rows[1][2])
 
     def test_build_project_metrics_table_migrates_legacy_header_rows_by_semantics(self) -> None:

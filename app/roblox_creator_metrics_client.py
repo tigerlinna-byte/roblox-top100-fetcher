@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import json
 import logging
 import re
@@ -308,8 +309,13 @@ class RobloxCreatorMetricsClient:
         if self.session is None:
             self.session = requests.Session()
 
-    def fetch_project_daily_metrics(self, overview_url: str | None = None) -> list[ProjectDailyMetricsRecord]:
-        """抓取项目最近窗口内的真实日期指标序列。"""
+    def fetch_project_daily_metrics(
+        self,
+        overview_url: str | None = None,
+        *,
+        report_dates: Iterable[date] | None = None,
+    ) -> list[ProjectDailyMetricsRecord]:
+        """按默认窗口或指定日期集合抓取项目真实日期指标序列。"""
 
         resolved_overview_url = (overview_url or self.config.roblox_creator_overview_url).strip()
         if not resolved_overview_url:
@@ -319,9 +325,34 @@ class RobloxCreatorMetricsClient:
 
         project_id = _extract_project_id(resolved_overview_url)
         business_timezone = _resolve_business_timezone(self.config.feishu_timezone)
-        window = _resolve_project_query_window(project_id, business_timezone)
-        if window is None:
+        if report_dates is None:
+            window = _resolve_project_query_window(project_id, business_timezone)
+            windows = () if window is None else (window,)
+        else:
+            windows = _resolve_project_query_windows(project_id, business_timezone, report_dates)
+        if not windows:
             return []
+
+        records_by_date: dict[str, ProjectDailyMetricsRecord] = {}
+        for window in windows:
+            records = self._fetch_project_daily_metrics_window(
+                resolved_overview_url,
+                project_id,
+                business_timezone,
+                window,
+            )
+            for record in records:
+                records_by_date[record.report_date] = record
+        return [records_by_date[report_date] for report_date in sorted(records_by_date, reverse=True)]
+
+    def _fetch_project_daily_metrics_window(
+        self,
+        resolved_overview_url: str,
+        project_id: str,
+        business_timezone: timezone | ZoneInfo,
+        window: tuple[datetime, datetime, date, date],
+    ) -> list[ProjectDailyMetricsRecord]:
+        """抓取一个连续日期窗口内的项目日报指标。"""
 
         start_time, end_time, start_date, end_date = window
         direct_attempts: list[QueryAttempt] = []
@@ -1272,17 +1303,88 @@ def _resolve_project_query_window(
     project_id: str,
     business_timezone: timezone | ZoneInfo,
 ) -> tuple[datetime, datetime, date, date] | None:
+    windows = _resolve_project_query_windows(project_id, business_timezone, None)
+    return windows[0] if windows else None
+
+
+def resolve_project_metrics_query_date_bounds(
+    project_id: str,
+    timezone_name: str,
+) -> tuple[date, date] | None:
+    """解析项目日报允许增量回查的业务日期范围。"""
+
+    business_timezone = _resolve_business_timezone(timezone_name)
     business_midnight = _business_midnight_now(business_timezone)
     end_date = (business_midnight - timedelta(days=1)).date()
-    start_date = end_date - timedelta(days=9)
     project_start_date = get_project_start_date(project_id)
-    if project_start_date is not None and project_start_date > start_date:
-        start_date = project_start_date
+    start_date = project_start_date or (end_date - timedelta(days=9))
     if start_date > end_date:
         return None
+    return start_date, end_date
+
+
+def _resolve_project_query_windows(
+    project_id: str,
+    business_timezone: timezone | ZoneInfo,
+    report_dates: Iterable[date] | None,
+) -> tuple[tuple[datetime, datetime, date, date], ...]:
+    if report_dates is None:
+        business_midnight = _business_midnight_now(business_timezone)
+        end_date = (business_midnight - timedelta(days=1)).date()
+        start_date = end_date - timedelta(days=9)
+        project_start_date = get_project_start_date(project_id)
+        if project_start_date is not None and project_start_date > start_date:
+            start_date = project_start_date
+        if start_date > end_date:
+            return ()
+        return (_build_project_query_window(start_date, end_date, business_timezone),)
+
+    bounds = resolve_project_metrics_query_date_bounds(project_id, _timezone_name(business_timezone))
+    if bounds is None:
+        return ()
+    minimum_date, maximum_date = bounds
+    normalized_dates = sorted(
+        {
+            report_date
+            for report_date in report_dates
+            if minimum_date <= report_date <= maximum_date
+        }
+    )
+    if not normalized_dates:
+        return ()
+
+    ranges: list[tuple[date, date]] = []
+    range_start = normalized_dates[0]
+    previous_date = normalized_dates[0]
+    for current_date in normalized_dates[1:]:
+        if current_date == previous_date + timedelta(days=1):
+            previous_date = current_date
+            continue
+        ranges.append((range_start, previous_date))
+        range_start = current_date
+        previous_date = current_date
+    ranges.append((range_start, previous_date))
+    return tuple(
+        _build_project_query_window(start_date, end_date, business_timezone)
+        for start_date, end_date in ranges
+    )
+
+
+def _build_project_query_window(
+    start_date: date,
+    end_date: date,
+    business_timezone: timezone | ZoneInfo,
+) -> tuple[datetime, datetime, date, date]:
     start_time = datetime.combine(start_date, datetime.min.time(), tzinfo=business_timezone).astimezone(timezone.utc)
-    end_time = business_midnight.astimezone(timezone.utc)
+    end_exclusive = end_date + timedelta(days=1)
+    end_time = datetime.combine(end_exclusive, datetime.min.time(), tzinfo=business_timezone).astimezone(timezone.utc)
     return start_time, end_time, start_date, end_date
+
+
+def _timezone_name(business_timezone: timezone | ZoneInfo) -> str:
+    if isinstance(business_timezone, ZoneInfo):
+        return business_timezone.key
+    return "UTC"
 
 
 def _aggregate_daily_values(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 import logging
 import sys
 import time
@@ -12,6 +13,7 @@ from .project_metrics_models import ProjectDailyMetricsRecord
 from .project_metrics_sheet import (
     ProjectMetricsSheetVariables,
     ProjectMetricsSpreadsheetTarget,
+    build_project_metrics_query_dates,
     build_project_metrics_rank_color_cells,
     build_project_metrics_rebuild_rows,
     get_saved_project_metrics_target,
@@ -22,6 +24,7 @@ from .roblox_client import RobloxClient, RobloxClientError
 from .roblox_creator_metrics_client import (
     RobloxCreatorMetricsClient,
     RobloxCreatorMetricsClientError,
+    resolve_project_metrics_query_date_bounds,
 )
 from .storage import write_outputs, write_project_metrics_output
 from .summary import (
@@ -134,12 +137,35 @@ def _fetch_report_payload(cfg: Config):
             raise RobloxCreatorMetricsClientError("未配置任何项目日报 overview 地址")
 
         client = RobloxCreatorMetricsClient(cfg)
+        feishu_client = FeishuClient(cfg)
         records_by_project_id: dict[str, list[ProjectDailyMetricsRecord]] = {}
         failures: list[ProjectMetricsFetchFailure] = []
         for variables in variables_list:
             try:
-                records_by_project_id[variables.project_id] = client.fetch_project_daily_metrics(
-                    variables.overview_url
+                query_dates = _build_project_metrics_query_dates_for_project(
+                    cfg,
+                    feishu_client,
+                    variables,
+                )
+                if query_dates:
+                    records_by_project_id[variables.project_id] = client.fetch_project_daily_metrics(
+                        variables.overview_url,
+                        report_dates=query_dates,
+                    )
+                else:
+                    records_by_project_id[variables.project_id] = []
+                    logging.info(
+                        "Project metrics for %s are already complete in the tracked sheet window.",
+                        variables.project_id,
+                    )
+            except FeishuClientError as exc:
+                logging.exception("Failed to inspect project metrics sheet for %s.", variables.project_id)
+                failures.append(
+                    ProjectMetricsFetchFailure(
+                        project_id=variables.project_id,
+                        overview_url=variables.overview_url,
+                        reason=f"读取飞书项目日报表失败: {exc}",
+                    )
                 )
             except RobloxCreatorMetricsClientError as exc:
                 logging.exception("Failed to fetch project metrics for %s.", variables.project_id)
@@ -181,6 +207,56 @@ def _fetch_report_payload(cfg: Config):
             "top_playing_now": client.fetch_games_by_sort_id("top-playing-now"),
         }
     return client.fetch_top_games()
+
+
+def _build_project_metrics_query_dates_for_project(
+    cfg: Config,
+    feishu_client: FeishuClient,
+    variables: ProjectMetricsSheetVariables,
+) -> tuple[date, ...]:
+    """读取项目日报旧表，并生成本次需要向 Roblox 查询的日期。"""
+
+    bounds = resolve_project_metrics_query_date_bounds(
+        variables.project_id,
+        cfg.feishu_timezone,
+    )
+    if bounds is None:
+        return ()
+
+    existing_rows = _read_project_metrics_existing_rows(cfg, feishu_client, variables)
+    start_date, end_date = bounds
+    query_dates = build_project_metrics_query_dates(
+        existing_rows,
+        start_date,
+        end_date,
+        max_data_rows=PROJECT_METRICS_SHEET_MAX_ROWS - 1,
+    )
+    logging.info(
+        "Project metrics %s needs %s date(s) from %s to %s.",
+        variables.project_id,
+        len(query_dates),
+        start_date.isoformat(),
+        end_date.isoformat(),
+    )
+    return query_dates
+
+
+def _read_project_metrics_existing_rows(
+    cfg: Config,
+    feishu_client: FeishuClient,
+    variables: ProjectMetricsSheetVariables,
+) -> list[list[object]]:
+    """读取已保存项目日报表内容；没有已保存目标时返回空表。"""
+
+    target = get_saved_project_metrics_target(cfg, variables)
+    if target is None:
+        return []
+    return feishu_client.read_sheet_values(
+        target.spreadsheet_token,
+        target.sheet_id,
+        end_column=PROJECT_METRICS_SHEET_END_COLUMN,
+        end_row=PROJECT_METRICS_SHEET_MAX_ROWS,
+    )
 
 
 
