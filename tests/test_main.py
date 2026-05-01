@@ -217,7 +217,7 @@ class MainTests(unittest.TestCase):
         self.assertIn("Cookie", report_payload.failures[0].reason)
 
     @patch("app.main.RobloxCreatorMetricsClient")
-    def test_fetch_report_payload_raises_when_all_project_metrics_fetches_fail(
+    def test_fetch_report_payload_keeps_failure_payload_when_all_project_metrics_fetches_fail(
         self,
         client_cls,
     ) -> None:
@@ -233,11 +233,43 @@ class MainTests(unittest.TestCase):
             RobloxCreatorMetricsClientError("项目 9707829514 缺少 peak_ccu"),
         ]
 
-        with self.assertRaisesRegex(
-            RobloxCreatorMetricsClientError,
-            "全部项目抓取失败",
-        ):
-            _fetch_report_payload(cfg)
+        report_payload = _fetch_report_payload(cfg)
+
+        self.assertEqual({}, report_payload.records_by_project_id)
+        self.assertEqual(["9682356542", "9707829514"], [failure.project_id for failure in report_payload.failures])
+        self.assertIn("peak_ccu", report_payload.failures[0].reason)
+
+    @patch("app.main._sync_project_metrics_sheet")
+    @patch("app.main.FeishuClient")
+    def test_project_metrics_all_failures_sends_failure_summary_without_sheet_sync(
+        self,
+        feishu_client_cls,
+        sync_sheet,
+    ) -> None:
+        cfg = Config(
+            run_report_mode="roblox_project_daily_metrics",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+        )
+        report_payload = ProjectMetricsReportPayload(
+            records_by_project_id={},
+            failures=(
+                ProjectMetricsFetchFailure(
+                    project_id="9682356542",
+                    overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                    reason="Creator 后台请求失败",
+                ),
+            ),
+        )
+        feishu_client = MagicMock()
+        feishu_client_cls.return_value = feishu_client
+
+        _notify_success(cfg, report_payload)
+
+        sync_sheet.assert_not_called()
+        feishu_client.send_group_markdown.assert_called_once()
+        message = feishu_client.send_group_markdown.call_args.args[0]
+        self.assertIn("项目日报抓取异常", message)
+        self.assertIn("项目 9682356542", message)
 
 
 if __name__ == "__main__":

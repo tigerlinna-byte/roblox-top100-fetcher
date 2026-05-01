@@ -49,7 +49,7 @@ def build_project_metrics_partial_failure_markdown(
 
     now = _format_now(cfg.feishu_timezone)
     lines = [
-        "# Roblox 项目日报部分项目抓取失败",
+        "# Roblox 项目日报抓取异常",
         "",
         f"- 时间: {now} ({cfg.feishu_timezone})",
         f"- 触发: {_format_trigger(cfg)}",

@@ -189,11 +189,6 @@ def _fetch_report_payload(cfg: Config):
                     )
                 )
 
-        if not records_by_project_id:
-            raise RobloxCreatorMetricsClientError(
-                _build_project_metrics_fetch_failure_summary(failures)
-            )
-
         return ProjectMetricsReportPayload(
             records_by_project_id=records_by_project_id,
             failures=tuple(failures),
@@ -505,19 +500,6 @@ def _apply_project_metrics_sheet_presentation(spreadsheet_title: str, feishu_cli
     except FeishuClientError:
         logging.warning("Failed to apply project metrics sheet layout.", exc_info=True)
 
-
-
-def _build_project_metrics_fetch_failure_summary(
-    failures: list[ProjectMetricsFetchFailure],
-) -> str:
-    """汇总全部项目日报抓取失败原因，便于失败通知直出根因。"""
-
-    if not failures:
-        return "未获取到任何项目日报数据"
-    summary = "；".join(
-        f"项目 {failure.project_id}: {failure.reason}" for failure in failures
-    )
-    return f"全部项目抓取失败：{summary}"
 
 
 def _resolve_fetch_failure_reason(cfg: Config, exc: Exception | None = None) -> str:
