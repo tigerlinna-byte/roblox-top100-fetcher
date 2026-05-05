@@ -16,6 +16,8 @@ class Config:
     roblox_creator_overview_url: str = ""
     roblox_creator_overview_url_2: str = ""
     roblox_creator_cookie: str = ""
+    roblox_money_start_date: str = "2026-05-01"
+    roblox_money_usd_per_100k_robux: str = ""
     feishu_bot_webhook: str = ""
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
@@ -95,6 +97,8 @@ def load_config() -> Config:
         roblox_creator_overview_url=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL", ""),
         roblox_creator_overview_url_2=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL_2", ""),
         roblox_creator_cookie=os.getenv("ROBLOX_CREATOR_COOKIE", ""),
+        roblox_money_start_date=os.getenv("ROBLOX_MONEY_START_DATE", "2026-05-01"),
+        roblox_money_usd_per_100k_robux=os.getenv("ROBLOX_MONEY_USD_PER_100K_ROBUX", ""),
         feishu_bot_webhook=os.getenv("FEISHU_BOT_WEBHOOK", ""),
         feishu_app_id=os.getenv("FEISHU_APP_ID", ""),
         feishu_app_secret=os.getenv("FEISHU_APP_SECRET", ""),

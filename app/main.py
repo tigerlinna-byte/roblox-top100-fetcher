@@ -9,7 +9,7 @@ import time
 from .config import Config, load_config
 from .feishu_client import FeishuClient, FeishuClientError
 from .github_client import GitHubClient, GitHubClientError
-from .project_metrics_models import ProjectDailyMetricsRecord
+from .project_metrics_models import ProjectDailyMetricsRecord, now_iso
 from .project_metrics_sheet import (
     ProjectMetricsSheetVariables,
     ProjectMetricsSpreadsheetTarget,
@@ -20,13 +20,21 @@ from .project_metrics_sheet import (
     resolve_project_metrics_variables,
     save_project_metrics_target,
 )
+from .roblox_money_models import (
+    RobloxMoneyFetchFailure,
+    RobloxMoneyProjectRevenue,
+    RobloxMoneyReportPayload,
+    parse_roblox_money_start_date,
+    parse_usd_per_100k_robux,
+)
+from .roblox_money_summary import build_roblox_money_markdown
 from .roblox_client import RobloxClient, RobloxClientError
 from .roblox_creator_metrics_client import (
     RobloxCreatorMetricsClient,
     RobloxCreatorMetricsClientError,
     resolve_project_metrics_query_date_bounds,
 )
-from .storage import write_outputs, write_project_metrics_output
+from .storage import write_outputs, write_project_metrics_output, write_roblox_money_output
 from .summary import (
     build_failure_markdown,
     build_project_metrics_partial_failure_markdown,
@@ -52,6 +60,7 @@ from .top_trending_sheet import (
 
 
 PROJECT_METRICS_REPORT_MODE = "roblox_project_daily_metrics"
+ROBLOX_MONEY_REPORT_MODE = "roblox_money"
 PROJECT_METRICS_SHEET_MAX_ROWS = 365
 PROJECT_METRICS_SHEET_END_COLUMN = "V"
 
@@ -131,6 +140,9 @@ def _notify_failure(cfg: Config, reason: str) -> None:
 
 
 def _fetch_report_payload(cfg: Config):
+    if cfg.run_report_mode == ROBLOX_MONEY_REPORT_MODE:
+        return _fetch_roblox_money_payload(cfg)
+
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
         variables_list = resolve_project_metrics_variables(cfg)
         if not variables_list:
@@ -205,6 +217,80 @@ def _fetch_report_payload(cfg: Config):
     return client.fetch_top_games()
 
 
+def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
+    """抓取两个项目的收入日报摘要，允许单项目失败。"""
+
+    variables_list = resolve_project_metrics_variables(cfg)
+    if not variables_list:
+        raise RobloxCreatorMetricsClientError("未配置任何 Roblox 收入日报 overview 地址")
+
+    try:
+        minimum_start_date = parse_roblox_money_start_date(cfg.roblox_money_start_date)
+        usd_per_100k_robux = parse_usd_per_100k_robux(cfg.roblox_money_usd_per_100k_robux)
+    except ValueError as exc:
+        raise RobloxCreatorMetricsClientError(str(exc)) from exc
+
+    client = RobloxCreatorMetricsClient(cfg)
+    project_revenues: list[RobloxMoneyProjectRevenue] = []
+    failures: list[RobloxMoneyFetchFailure] = []
+    for variables in variables_list:
+        project_name = variables.spreadsheet_title or f"项目 {variables.project_id}"
+        try:
+            series = client.fetch_project_revenue_series(
+                variables.overview_url,
+                minimum_start_date=minimum_start_date,
+            )
+            if not series.values:
+                raise RobloxCreatorMetricsClientError("未找到 Roblox 总收入指标数据")
+            report_date = max(series.values)
+            month_start_date = max(minimum_start_date, date.fromisoformat(report_date).replace(day=1))
+            month_values = {
+                item_date: value
+                for item_date, value in series.values.items()
+                if month_start_date.isoformat() <= item_date <= report_date
+            }
+            project_revenues.append(
+                RobloxMoneyProjectRevenue(
+                    project_id=variables.project_id,
+                    project_name=project_name,
+                    source_url=variables.overview_url,
+                    revenue_metric=series.metric,
+                    report_date=report_date,
+                    month_start_date=month_start_date.isoformat(),
+                    month_end_date=report_date,
+                    daily_robux=series.values[report_date],
+                    month_to_date_robux=sum(month_values.values()),
+                    usd_per_100k_robux=usd_per_100k_robux,
+                    fetched_at=now_iso(),
+                )
+            )
+        except RobloxCreatorMetricsClientError as exc:
+            logging.exception("Failed to fetch Roblox money for %s.", variables.project_id)
+            failures.append(
+                RobloxMoneyFetchFailure(
+                    project_id=variables.project_id,
+                    project_name=project_name,
+                    overview_url=variables.overview_url,
+                    reason=str(exc),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logging.exception("Unexpected error while fetching Roblox money for %s.", variables.project_id)
+            failures.append(
+                RobloxMoneyFetchFailure(
+                    project_id=variables.project_id,
+                    project_name=project_name,
+                    overview_url=variables.overview_url,
+                    reason=f"未预期异常: {exc}",
+                )
+            )
+
+    return RobloxMoneyReportPayload(
+        project_revenues=tuple(project_revenues),
+        failures=tuple(failures),
+    )
+
+
 def _build_project_metrics_query_plan_for_project(
     cfg: Config,
     feishu_client: FeishuClient,
@@ -259,6 +345,10 @@ def _read_project_metrics_existing_rows(
 
 def _notify_success(cfg: Config, report_payload) -> None:
     feishu_client = FeishuClient(cfg)
+    if cfg.run_report_mode == ROBLOX_MONEY_REPORT_MODE:
+        feishu_client.send_group_markdown(build_roblox_money_markdown(cfg, report_payload))
+        return
+
     if cfg.run_report_mode == "top_trending_sheet":
         recent_place_ids_by_sheet = get_recent_place_ids_by_sheet(cfg)
         target = _sync_top_trending_sheet(cfg, report_payload, feishu_client)
@@ -507,7 +597,9 @@ def _apply_project_metrics_sheet_presentation(spreadsheet_title: str, feishu_cli
 def _resolve_fetch_failure_reason(cfg: Config, exc: Exception | None = None) -> str:
     """为抓取失败通知补齐尽量具体的原因。"""
 
-    if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
+    if cfg.run_report_mode == ROBLOX_MONEY_REPORT_MODE:
+        base_reason = "抓取 Roblox 收入数据失败"
+    elif cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
         base_reason = "抓取 Roblox 项目数据失败"
     else:
         base_reason = "抓取Roblox排行榜失败"
@@ -521,6 +613,8 @@ def _resolve_fetch_failure_reason(cfg: Config, exc: Exception | None = None) -> 
 
 
 def _resolve_feishu_failure_reason(cfg: Config) -> str:
+    if cfg.run_report_mode == ROBLOX_MONEY_REPORT_MODE:
+        return "飞书收入日报通知失败"
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
         return "飞书项目日报写入失败"
     return "飞书机器人通知失败"
@@ -530,6 +624,8 @@ def _resolve_feishu_failure_reason(cfg: Config) -> str:
 def _output_prefix(cfg: Config) -> str:
     if cfg.run_report_mode == "top_trending_sheet":
         return "top_trending"
+    if cfg.run_report_mode == ROBLOX_MONEY_REPORT_MODE:
+        return "roblox_money"
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
         return "project_metrics"
     return "top100"
@@ -541,6 +637,12 @@ def _write_report_outputs(cfg: Config, report_payload):
         return write_outputs(
             cfg.output_dir,
             report_payload["top_trending_v4"],
+            prefix=_output_prefix(cfg),
+        )
+    if cfg.run_report_mode == ROBLOX_MONEY_REPORT_MODE:
+        return write_roblox_money_output(
+            cfg.output_dir,
+            list(report_payload.project_revenues),
             prefix=_output_prefix(cfg),
         )
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:

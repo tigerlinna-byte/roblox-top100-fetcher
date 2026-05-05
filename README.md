@@ -9,6 +9,7 @@
 | `top100_message` | 手动本地运行、GitHub Actions 手动触发、飞书 `/roblox-top100` | 抓取 `top-playing-now` 榜单并发送文本摘要 | `data/top100_YYYY-MM-DD.json/csv` + 飞书摘要消息 |
 | `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron | 抓取 `Top_Trending_V4`、`Up_And_Coming_V4`、`top-playing-now`，更新飞书多 Sheet 表格并发送 `今日关注` 卡片 | `data/top_trending_YYYY-MM-DD.json/csv` + 飞书卡片 + 飞书表格链接 |
 | `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron | 抓取 Roblox Creator Analytics 项目日报，更新每个项目各自的飞书表格 | `data/project_metrics_YYYY-MM-DD.json/csv` + 每个项目的飞书表格链接 |
+| `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron | 抓取两个 Roblox 项目的总收入，按配置汇率换算美元并发送文本日报 | `data/roblox_money_YYYY-MM-DD.json/csv` + 飞书收入文本 |
 
 ## 系统结构
 
@@ -24,6 +25,9 @@
 - `ROBLOX_TOP_TRENDING_SORT_ID` 这个环境变量目前没有被主流程消费，不要把它当作 `/roblox-top-day` 的真实开关。
 - `/roblox-top-day` 的手动触发默认写“测试表”，只有 `trigger_source=cloudflare_cron` 时才会写“正式表”。
 - 项目日报当前只支持两个项目入口：`ROBLOX_CREATOR_OVERVIEW_URL` 和 `ROBLOX_CREATOR_OVERVIEW_URL_2`。如果要接第三个项目，需要改代码和工作流，不是只加变量就够。
+- `/roblox-money` 复用这两个项目入口，但手动和定时都只允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 中的 test 群触发和接收。
+- 收入日报只展示 Roblox Analytics 当前最新可用统计日的一天收入；月累计按该统计日所在自然月从 1 日累计，2026 年 5 月从 `2026-05-01` 开始。
+- 收入日报不使用 ARPPU 推算总收入；如果 Roblox 返回 Robux 总收入，必须配置 `ROBLOX_MONEY_USD_PER_100K_ROBUX` 才能换算美元。
 - `ROBLOX_CREATOR_COOKIE` 对项目日报是必需项；对榜单链路虽然不是硬性必需，但没有它时容易漏掉需要登录态才能看到的游戏。
 
 ## 本地快速开始

@@ -8,13 +8,14 @@
 
 这个仓库当前维护的是一套“Roblox 数据 -> GitHub Actions -> 飞书”的自动化链路，而不是一个单独的脚本。
 
-当前有 3 条真实运行链路：
+当前有 4 条真实运行链路：
 
 | 运行模式 | 入口 | 数据来源 | 结果 |
 | --- | --- | --- | --- |
 | `top100_message` | 本地运行、GitHub Actions 手动触发、飞书 `/roblox-top100` | Roblox 榜单接口 | 输出 JSON/CSV，并发送 Top100 文本摘要 |
 | `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron `0 1 * * *` | Roblox 榜单接口 | 更新 Top Trending 多 Sheet 飞书表，发送 `今日关注` 卡片和表格链接 |
 | `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron `10 1 * * *` | Roblox Creator Analytics 接口 | 更新每个项目自己的飞书表，并发送表格链接 |
+| `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron `20 1 * * *` | Roblox Creator Analytics 收入指标 | 发送两个项目的收入文本日报，并输出 JSON/CSV |
 
 如果有人还把它理解成“抓一下 Top100 然后发群”，那已经是过时认知。
 
@@ -65,9 +66,10 @@
 2. Cloudflare Cron
    - Worker 直接按 cron 分流到不同 `report_mode`
    - 不使用 GitHub Actions 自带 `schedule`
-   - 定时消息统一发到 `SCHEDULE_CHAT_IDS`
+   - Top Trending 与项目日报统一发到 `SCHEDULE_CHAT_IDS`
+   - 收入日报只发到 `ROBLOX_MONEY_TEST_CHAT_IDS`
 
-## 3. 三条运行模式的真实行为
+## 3. 四条运行模式的真实行为
 
 ### 3.1 `top100_message`
 
@@ -327,6 +329,39 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 
 当前项目日报主链路主要依赖 direct query，因此排查时优先看 `direct_query_attempts`，不要默认认为 HTML 片段一定有用。非核心指标缺失只会留空并写调试快照；核心字段缺失会让对应项目进入失败摘要，避免继续写入关键指标不完整的日期行。
 
+### 3.4 `roblox_money`
+
+入口：
+
+- test 群命令 `/roblox-money`
+- Cloudflare Cron `20 1 * * *`
+
+执行路径：
+
+1. Worker 校验命令来源群必须在 `ROBLOX_MONEY_TEST_CHAT_IDS`
+2. `app/main.py` 调用 `resolve_project_metrics_variables()` 复用现有两个项目 overview URL
+3. `RobloxCreatorMetricsClient.fetch_project_revenue_series()` 查询 Creator Analytics 总收入候选指标
+4. Python 侧按配置 `ROBLOX_MONEY_USD_PER_100K_ROBUX` 将 Robux 换算成美元
+5. 发送纯文本收入日报，不创建或更新飞书表格
+6. 输出 `data/roblox_money_YYYY-MM-DD.json/csv`
+
+#### 收入口径
+
+- 每日收入只展示 Roblox Analytics 当前最新可用统计日的一天收入
+- 月累计按该统计日所在自然月计算，从自然月 1 日累计到该统计日
+- 2026 年 5 月因为功能起始日是 `2026-05-01`，所以本月累计从 `2026-05-01` 开始
+- 后续月份自动从当月 1 日开始累计
+- 不使用 `AverageRevenuePerPayingUser` / ARPPU 推算总收入
+- 当前候选总收入指标顺序为 `Revenue`、`TotalRevenue`、`DailyRevenue`
+
+#### test 群限制
+
+`roblox_money` 与现有两个定时任务不同：
+
+- 手动命令只允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 里的群触发
+- 定时消息也只发到 `ROBLOX_MONEY_TEST_CHAT_IDS`
+- 它不复用 `SCHEDULE_CHAT_IDS`
+
 ## 4. 触发映射
 
 ### 4.1 飞书命令到运行模式
@@ -338,6 +373,7 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 | `/roblox-top100` | `top100_message` |
 | `/roblox-top-day` | `top_trending_sheet` |
 | `/roblox-project-metrics` | `roblox_project_daily_metrics` |
+| `/roblox-money` | `roblox_money` |
 
 当前是严格全字匹配，不支持模糊匹配。
 
@@ -346,6 +382,7 @@ Worker 允许通过环境变量改命令文本：
 - `COMMAND_TEXT`
 - `TOP_DAY_COMMAND_TEXT`
 - `PROJECT_METRICS_COMMAND_TEXT`
+- `ROBLOX_MONEY_COMMAND_TEXT`
 
 ### 4.2 Cloudflare Cron 到运行模式
 
@@ -355,15 +392,17 @@ Worker 允许通过环境变量改命令文本：
 | --- | --- | --- |
 | `0 1 * * *` | `09:00` | `top_trending_sheet` |
 | `10 1 * * *` | `09:10` | `roblox_project_daily_metrics` |
+| `20 1 * * *` | `09:20` | `roblox_money` |
 
 定时 dispatch 逻辑在 [`worker/src/index.js`](../worker/src/index.js)。
 
 注意：
 
-- 这两个定时任务都复用同一个 `SCHEDULE_CHAT_IDS`
+- Top Trending 与项目日报复用同一个 `SCHEDULE_CHAT_IDS`
 - `SCHEDULE_CHAT_IDS` 支持逗号分隔多个 `chat_id`
 - 定时触发会把多个 `chat_id` 原样传入 `RUN_CHAT_ID`
 - Python 侧会拆分后逐个群发送
+- 收入日报定时只使用 `ROBLOX_MONEY_TEST_CHAT_IDS`，并且手动 `/roblox-money` 也只允许这些群触发
 
 ## 5. 配置到底放在哪里
 
@@ -414,6 +453,11 @@ Worker 允许通过环境变量改命令文本：
 - `FEISHU_PROJECT_METRICS_2_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE`
 
+### 收入日报相关
+
+- `ROBLOX_MONEY_START_DATE`，默认 `2026-05-01`
+- `ROBLOX_MONEY_USD_PER_100K_ROBUX`，必填，用于 Robux 到美元换算
+
 ### 5.3 Cloudflare Worker Secrets / 环境变量
 
 Worker 当前必需配置：
@@ -432,9 +476,11 @@ Worker 当前必需配置：
 - `ALLOWED_CHAT_IDS`
 - `ALLOWED_OPEN_IDS`
 - `SCHEDULE_CHAT_IDS`
+- `ROBLOX_MONEY_TEST_CHAT_IDS`
 - `COMMAND_TEXT`
 - `TOP_DAY_COMMAND_TEXT`
 - `PROJECT_METRICS_COMMAND_TEXT`
+- `ROBLOX_MONEY_COMMAND_TEXT`
 - `EVENT_DEDUP_TTL_SECONDS`
 - `EVENT_DEDUP_KV_BINDING`
 
@@ -454,6 +500,7 @@ Worker 当前必需配置：
 - GitHub Variables token
 - 项目日报 overview URL
 - 各类飞书表格 token / sheet id
+- 收入日报汇率 `ROBLOX_MONEY_USD_PER_100K_ROBUX`
 
 ## 6. 持久化与状态管理
 
@@ -466,6 +513,7 @@ Worker 当前必需配置：
 - `top100_YYYY-MM-DD.json/csv`
 - `top_trending_YYYY-MM-DD.json/csv`
 - `project_metrics_YYYY-MM-DD.json/csv`
+- `roblox_money_YYYY-MM-DD.json/csv`
 - `creator_overview_debug_<project_id>.json`（仅项目日报缺关键指标时）
 
 GitHub Actions 会上传：
@@ -561,6 +609,15 @@ Worker 事件去重默认使用 Cloudflare KV：
 - [`app/project_metrics_sheet.py`](../app/project_metrics_sheet.py)
   - 项目日报表头
   - 合并与整表重建逻辑
+
+### 收入日报链路
+
+- [`app/roblox_money_models.py`](../app/roblox_money_models.py)
+  - 收入日报数据结构
+  - 汇率与起始日期配置解析
+
+- [`app/roblox_money_summary.py`](../app/roblox_money_summary.py)
+  - 收入日报飞书文本构建
 
 ### 飞书与 GitHub
 

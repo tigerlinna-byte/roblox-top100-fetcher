@@ -1,6 +1,7 @@
 const DEFAULT_TOP100_COMMAND = "/roblox-top100";
 const DEFAULT_TOP_DAY_COMMAND = "/roblox-top-day";
 const DEFAULT_PROJECT_METRICS_COMMAND = "/roblox-project-metrics";
+const DEFAULT_ROBLOX_MONEY_COMMAND = "/roblox-money";
 const processedEvents = new Map();
 const DEFAULT_DEDUP_KV_BINDING = "EVENT_DEDUP_KV";
 
@@ -61,6 +62,13 @@ export async function handleRequest(request, env, ctx, fetchImpl = fetch) {
   const command = resolveCommand(env, message.text);
   if (!command) {
     return jsonResponse({ ok: true, ignored: "command_mismatch" });
+  }
+
+  if (
+    command.reportMode === "roblox_money" &&
+    !isAllowedValue(parseCsvSet(env.ROBLOX_MONEY_TEST_CHAT_IDS), message.chatId)
+  ) {
+    return jsonResponse({ ok: true, ignored: "roblox_money_chat_not_allowed" });
   }
 
   if (!isAllowedValue(parseCsvSet(env.ALLOWED_CHAT_IDS), message.chatId)) {
@@ -143,6 +151,7 @@ export async function handleScheduled(controller, env, ctx, fetchImpl = fetch) {
 
 function resolveScheduledTrigger(env, cron) {
   const chatIds = parseCsvList(env.SCHEDULE_CHAT_IDS);
+  const robloxMoneyChatIds = parseCsvList(env.ROBLOX_MONEY_TEST_CHAT_IDS);
   if ((cron === "0 1 * * *" || cron === "10 1 * * *") && !chatIds.length) {
     console.warn(JSON.stringify({
       level: "warn",
@@ -167,6 +176,23 @@ function resolveScheduledTrigger(env, cron) {
       triggerActor: "cloudflare-cron",
       chatId: chatIds.join(","),
       reportMode: "roblox_project_daily_metrics",
+    };
+  }
+
+  if (cron === "20 1 * * *") {
+    if (!robloxMoneyChatIds.length) {
+      console.warn(JSON.stringify({
+        level: "warn",
+        action: "schedule_skipped_missing_roblox_money_test_chat_ids",
+        cron,
+      }));
+      return null;
+    }
+    return {
+      triggerSource: "cloudflare_cron",
+      triggerActor: "cloudflare-cron",
+      chatId: robloxMoneyChatIds.join(","),
+      reportMode: "roblox_money",
     };
   }
 
@@ -440,6 +466,10 @@ function resolveCommand(env, text) {
     {
       text: env.PROJECT_METRICS_COMMAND_TEXT || DEFAULT_PROJECT_METRICS_COMMAND,
       reportMode: "roblox_project_daily_metrics",
+    },
+    {
+      text: env.ROBLOX_MONEY_COMMAND_TEXT || DEFAULT_ROBLOX_MONEY_COMMAND,
+      reportMode: "roblox_money",
     },
   ];
 

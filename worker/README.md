@@ -23,12 +23,14 @@
 | `/roblox-top100` | `top100_message` |
 | `/roblox-top-day` | `top_trending_sheet` |
 | `/roblox-project-metrics` | `roblox_project_daily_metrics` |
+| `/roblox-money` | `roblox_money` |
 
 命令文本可以通过这些 Worker 环境变量覆盖：
 
 - `COMMAND_TEXT`
 - `TOP_DAY_COMMAND_TEXT`
 - `PROJECT_METRICS_COMMAND_TEXT`
+- `ROBLOX_MONEY_COMMAND_TEXT`
 
 ## 必需配置
 
@@ -48,6 +50,7 @@
 - `ALLOWED_CHAT_IDS`
 - `ALLOWED_OPEN_IDS`
 - `SCHEDULE_CHAT_IDS`
+- `ROBLOX_MONEY_TEST_CHAT_IDS`
 - `EVENT_DEDUP_TTL_SECONDS`
 - `EVENT_DEDUP_KV_BINDING`
 
@@ -62,17 +65,20 @@
 
 ## 当前定时任务
 
-[`worker/wrangler.toml`](./wrangler.toml) 当前配置了两个 cron：
+[`worker/wrangler.toml`](./wrangler.toml) 当前配置了三个 cron：
 
 | Cron | 北京时间 | report mode |
 | --- | --- | --- |
 | `0 1 * * *` | `09:00` | `top_trending_sheet` |
 | `10 1 * * *` | `09:10` | `roblox_project_daily_metrics` |
+| `20 1 * * *` | `09:20` | `roblox_money` |
 
 注意：
 
-- 两个定时任务都依赖 `SCHEDULE_CHAT_IDS`
-- 如果 `SCHEDULE_CHAT_IDS` 为空，定时任务会被跳过
+- Top Trending 与项目日报定时任务都依赖 `SCHEDULE_CHAT_IDS`
+- `/roblox-money` 定时任务只依赖 `ROBLOX_MONEY_TEST_CHAT_IDS`，不会复用 `SCHEDULE_CHAT_IDS`
+- 如果 `SCHEDULE_CHAT_IDS` 为空，Top Trending 与项目日报定时任务会被跳过
+- 如果 `ROBLOX_MONEY_TEST_CHAT_IDS` 为空，收入日报定时任务会被跳过
 
 ## 本地测试
 

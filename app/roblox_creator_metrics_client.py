@@ -20,6 +20,7 @@ from .project_metrics_models import (
     get_project_start_date,
     now_iso,
 )
+from .roblox_money_models import ROBLOX_MONEY_REVENUE_METRIC_CANDIDATES
 from .retry import RetryError, with_retry
 
 
@@ -301,6 +302,14 @@ class MetricSeriesResult:
     ranks: dict[str, str]
 
 
+@dataclass(frozen=True)
+class RevenueMetricSeriesResult:
+    """描述项目总收入指标的每日 Robux 序列。"""
+
+    metric: str
+    values: dict[str, float]
+
+
 @dataclass
 class RobloxCreatorMetricsClient:
     """负责抓取 Roblox Creator 后台项目 overview 指标。"""
@@ -358,6 +367,68 @@ class RobloxCreatorMetricsClient:
             for record in records:
                 records_by_date[record.report_date] = record
         return [records_by_date[report_date] for report_date in sorted(records_by_date, reverse=True)]
+
+    def fetch_project_revenue_series(
+        self,
+        overview_url: str,
+        *,
+        minimum_start_date: date,
+    ) -> RevenueMetricSeriesResult:
+        """抓取项目当前可用统计日所在自然月的每日总收入序列。"""
+
+        resolved_overview_url = overview_url.strip()
+        if not resolved_overview_url:
+            raise RobloxCreatorMetricsClientError("ROBLOX_CREATOR_OVERVIEW_URL 未配置")
+        if not self.config.roblox_creator_cookie.strip():
+            raise RobloxCreatorMetricsClientError("ROBLOX_CREATOR_COOKIE 未配置")
+
+        project_id = _extract_project_id(resolved_overview_url)
+        business_timezone = _resolve_business_timezone(self.config.feishu_timezone)
+        business_midnight = _business_midnight_now(business_timezone)
+        latest_allowed_date = (business_midnight - timedelta(days=1)).date()
+        attempts: list[QueryAttempt] = []
+        metadata_by_metric = self._fetch_metric_metadata_for_metrics(
+            ROBLOX_MONEY_REVENUE_METRIC_CANDIDATES,
+            attempts,
+        )
+
+        collected_values: dict[str, dict[str, float]] = {}
+        for metric in ROBLOX_MONEY_REVENUE_METRIC_CANDIDATES:
+            metadata_latest_date = metadata_by_metric.get(metric)
+            report_end_date = latest_allowed_date
+            if metadata_latest_date is not None:
+                report_end_date = min(report_end_date, metadata_latest_date)
+            if report_end_date < minimum_start_date:
+                continue
+
+            report_start_date = max(minimum_start_date, report_end_date.replace(day=1))
+            values = self._query_revenue_metric_series_for_range(
+                project_id,
+                metric,
+                report_start_date,
+                report_end_date,
+                business_timezone,
+                attempts,
+            )
+            filtered_values = {
+                report_date: value
+                for report_date, value in values.items()
+                if report_start_date.isoformat() <= report_date <= report_end_date.isoformat()
+            }
+            if filtered_values:
+                return RevenueMetricSeriesResult(metric=metric, values=dict(sorted(filtered_values.items())))
+            collected_values[metric] = filtered_values
+
+        debug_payload = {
+            metric: {
+                report_date: _format_count(value)
+                for report_date, value in values.items()
+            }
+            for metric, values in collected_values.items()
+        }
+        debug_path = self._write_debug_snapshot(project_id, "", debug_payload, ["revenue"], attempts)
+        detail = f"；debug snapshot: {debug_path}" if debug_path else ""
+        raise RobloxCreatorMetricsClientError(f"未找到 Roblox 总收入指标数据{detail}")
 
     def _fetch_project_daily_metrics_window(
         self,
@@ -725,6 +796,69 @@ class RobloxCreatorMetricsClient:
             ranks.update(series.ranks)
         return MetricSeriesResult(values=values, ranks=ranks)
 
+    def _query_revenue_metric_series_for_range(
+        self,
+        project_id: str,
+        metric: str,
+        start_date: date,
+        end_date: date,
+        business_timezone: timezone | ZoneInfo,
+        attempts: list[QueryAttempt],
+    ) -> dict[str, float]:
+        """按稳定窗口拆分查询总收入指标，并返回每日 Robux 数值。"""
+
+        values: dict[str, float] = {}
+        normalized_dates = [
+            start_date + timedelta(days=offset)
+            for offset in range((end_date - start_date).days + 1)
+        ]
+        for range_start, range_end in _split_dates_into_query_ranges(normalized_dates, PROJECT_METRICS_MAX_QUERY_WINDOW_DAYS):
+            range_start_time, range_end_time, _, _ = _build_project_query_window(range_start, range_end, business_timezone)
+            values.update(
+                self._query_revenue_metric_series(
+                    project_id,
+                    metric,
+                    range_start_time,
+                    range_end_time,
+                    business_timezone,
+                    attempts,
+                )
+            )
+        return values
+
+    def _query_revenue_metric_series(
+        self,
+        project_id: str,
+        metric: str,
+        start_time: datetime,
+        end_time: datetime,
+        business_timezone: timezone | ZoneInfo,
+        attempts: list[QueryAttempt],
+    ) -> dict[str, float]:
+        """请求单个总收入指标窗口，并按业务日期聚合 Robux 收入。"""
+
+        spec = MetricQuerySpec(
+            "revenue",
+            metric,
+            "METRIC_GRANULARITY_ONE_DAY",
+            PROJECT_METRICS_MAX_QUERY_WINDOW_DAYS,
+            "daily_sum",
+        )
+        url = ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE.format(resource_type=ANALYTICS_RESOURCE_TYPE, resource_id=project_id)
+        request_payload = self._build_metric_request_payload(project_id, spec, start_time, end_time)
+        try:
+            payload = self._request_json("POST", url, json_body=request_payload)
+            payload = self._poll_query_result(url, request_payload, payload)
+        except RobloxCreatorMetricsClientError as exc:
+            attempts.append(QueryAttempt(metric, url, "POST", f"error: {exc}", _truncate_json(request_payload), ""))
+            return {}
+        attempts.append(QueryAttempt(metric, url, "POST", "ok", _truncate_json(request_payload), _truncate_json(payload)))
+        values = self._extract_query_values(payload)
+        datapoints = _flatten_numeric_datapoints(values)
+        if not datapoints:
+            return {}
+        return _aggregate_daily_values(datapoints, "sum", business_timezone)
+
     def _fetch_feature_permissions(self, project_id: str, attempts: list[QueryAttempt]) -> None:
         """探测项目是否拥有 analytics 页面权限。"""
 
@@ -752,7 +886,19 @@ class RobloxCreatorMetricsClient:
 
         del project_id
         requested_metrics = sorted({spec.metric for spec in DIRECT_QUERY_SPECS + DIRECT_QUERY_FALLBACK_SPECS + (COHORT_RETENTION_SPEC, FIVE_MINUTE_RETENTION_SPEC, HOME_RECOMMENDATIONS_SPEC)})
-        request_payload = {"query": {"metrics": requested_metrics}}
+        return self._fetch_metric_metadata_for_metrics(requested_metrics, attempts)
+
+    def _fetch_metric_metadata_for_metrics(
+        self,
+        requested_metrics: Iterable[str],
+        attempts: list[QueryAttempt],
+    ) -> dict[str, date]:
+        """按指定指标集合抓取最新可用日期。"""
+
+        normalized_metrics = sorted({metric.strip() for metric in requested_metrics if metric.strip()})
+        if not normalized_metrics:
+            return {}
+        request_payload = {"query": {"metrics": normalized_metrics}}
         try:
             payload = self._request_json("POST", ANALYTICS_METADATA_URL, json_body=request_payload)
         except RobloxCreatorMetricsClientError as exc:

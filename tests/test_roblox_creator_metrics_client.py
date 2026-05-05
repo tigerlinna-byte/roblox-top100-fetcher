@@ -74,6 +74,64 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         self.assertEqual((date(2026, 3, 17), date(2026, 5, 4)), bounds)
 
+    def test_fetch_project_revenue_series_uses_latest_available_revenue_month(self) -> None:
+        session = Mock()
+
+        def request(method: str, url: str, **kwargs):
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({
+                    "operation": {
+                        "done": True,
+                        "metricMetadataResult": {
+                            "metadata": [
+                                {"metric": "Revenue", "latestAvailableTime": "2026-05-04T00:00:00Z"},
+                            ]
+                        },
+                    }
+                })
+            if method == "POST" and "analytics-query-gateway" in url:
+                metric = kwargs["json"]["query"]["metric"]
+                self.assertEqual("Revenue", metric)
+                return _build_json_response(
+                    _wrap_query_result(
+                        {"breakdownValue": [], "dataPoints": [
+                            {"time": "2026-05-01T00:00:00Z", "value": 1000},
+                            {"time": "2026-05-02T00:00:00Z", "value": 2000},
+                            {"time": "2026-05-03T00:00:00Z", "value": 3000},
+                            {"time": "2026-05-04T00:00:00Z", "value": 4000},
+                        ]}
+                    )
+                )
+            raise AssertionError(f"Unexpected request {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                roblox_creator_cookie="cookie",
+                feishu_timezone="UTC",
+            ),
+            session=session,
+        )
+        mocked_midnight = datetime(2026, 5, 5, 0, 0, tzinfo=timezone.utc)
+
+        with patch("app.roblox_creator_metrics_client._business_midnight_now", return_value=mocked_midnight):
+            series = client.fetch_project_revenue_series(
+                "https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                minimum_start_date=date(2026, 5, 1),
+            )
+
+        self.assertEqual("Revenue", series.metric)
+        self.assertEqual(
+            {
+                "2026-05-01": 1000,
+                "2026-05-02": 2000,
+                "2026-05-03": 3000,
+                "2026-05-04": 4000,
+            },
+            series.values,
+        )
+
     def test_fetch_project_daily_metrics_extracts_recent_series(self) -> None:
         session = Mock()
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .models import GameRecord
 from .project_metrics_models import ProjectDailyMetricsRecord
+from .roblox_money_models import RobloxMoneyProjectRevenue
 
 
 def write_outputs(
@@ -88,6 +89,47 @@ def write_project_metrics_output(
             source_url="",
             fetched_at="",
         ).to_dict().keys())
+        writer = csv.DictWriter(fp, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in payload:
+            writer.writerow(row)
+
+    return json_path, csv_path
+
+
+def write_roblox_money_output(
+    output_dir: str,
+    records: list[RobloxMoneyProjectRevenue],
+    *,
+    prefix: str = "roblox_money",
+) -> tuple[Path, Path]:
+    """将收入日报记录输出为 JSON 与 CSV 文件。"""
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    json_path = target / f"{prefix}_{date_str}.json"
+    csv_path = target / f"{prefix}_{date_str}.csv"
+    payload = [record.to_dict() for record in records]
+
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    with csv_path.open("w", newline="", encoding="utf-8") as fp:
+        fieldnames = list(payload[0].keys()) if payload else list(
+            RobloxMoneyProjectRevenue(
+                project_id="",
+                project_name="",
+                source_url="",
+                revenue_metric="",
+                report_date="",
+                month_start_date="",
+                month_end_date="",
+                daily_robux=0,
+                month_to_date_robux=0,
+                usd_per_100k_robux=0,
+                fetched_at="",
+            ).to_dict().keys()
+        )
         writer = csv.DictWriter(fp, fieldnames=fieldnames)
         writer.writeheader()
         for row in payload:

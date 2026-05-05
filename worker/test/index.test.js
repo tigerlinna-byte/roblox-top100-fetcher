@@ -236,6 +236,93 @@ test("dispatches Top Trending workflow for /roblox-top-day", async () => {
   assert.equal(dispatchBody.inputs.chat_id, "oc_test_chat");
 });
 
+test("dispatches Roblox money workflow only from configured test chat", async () => {
+  const calls = [];
+  const ctx = buildCtx();
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, init });
+
+    if (String(url).includes("/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+
+    if (String(url).includes("/tenant_access_token/internal")) {
+      return Response.json({ code: 0, tenant_access_token: "tenant-token" });
+    }
+
+    if (String(url).includes("/im/v1/messages")) {
+      return Response.json({ code: 0, data: { message_id: "om_test" } });
+    }
+
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+
+  const response = await handleRequest(
+    buildRequest({
+      header: { token: "verify-me", event_id: "evt_roblox_money" },
+      event: {
+        sender: {
+          sender_id: {
+            open_id: "ou_test_user",
+          },
+        },
+        message: {
+          message_id: "om_message_roblox_money",
+          chat_id: "oc_test_chat",
+          message_type: "text",
+          content: JSON.stringify({ text: "/roblox-money" }),
+        },
+      },
+    }),
+    buildEnv({ ROBLOX_MONEY_TEST_CHAT_IDS: "oc_test_chat" }),
+    ctx,
+    fetchImpl,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, dispatched: true });
+  await Promise.all(ctx.tasks);
+
+  const dispatchBody = JSON.parse(calls[0].init.body);
+  assert.equal(dispatchBody.inputs.report_mode, "roblox_money");
+  assert.equal(dispatchBody.inputs.chat_id, "oc_test_chat");
+});
+
+test("ignores Roblox money command outside configured test chat", async () => {
+  let called = false;
+  const response = await handleRequest(
+    buildRequest({
+      header: { token: "verify-me", event_id: "evt_roblox_money_denied" },
+      event: {
+        sender: {
+          sender_id: {
+            open_id: "ou_test_user",
+          },
+        },
+        message: {
+          message_id: "om_message_roblox_money_denied",
+          chat_id: "oc_other_chat",
+          message_type: "text",
+          content: JSON.stringify({ text: "/roblox-money" }),
+        },
+      },
+    }),
+    buildEnv({
+      ALLOWED_CHAT_IDS: "",
+      ROBLOX_MONEY_TEST_CHAT_IDS: "oc_test_chat",
+    }),
+    buildCtx(),
+    async () => {
+      called = true;
+      return new Response(null, { status: 204 });
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, ignored: "roblox_money_chat_not_allowed" });
+  assert.equal(called, false);
+});
+
 test("ignores command from unauthorized chat", async () => {
   let called = false;
   const response = await handleRequest(
@@ -371,6 +458,34 @@ test("dispatches scheduled project metrics workflow", async () => {
   assert.equal(dispatchBody.inputs.chat_id, "oc_chat_a,oc_chat_b");
 });
 
+test("dispatches scheduled Roblox money workflow only to test chats", async () => {
+  const calls = [];
+  const ctx = buildCtx();
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (String(url).includes("/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+
+  await handleScheduled(
+    { cron: "20 1 * * *" },
+    buildEnv({
+      SCHEDULE_CHAT_IDS: "oc_formal_chat",
+      ROBLOX_MONEY_TEST_CHAT_IDS: "oc_test_chat",
+    }),
+    ctx,
+    fetchImpl,
+  );
+
+  assert.equal(calls.length, 1);
+  const dispatchBody = JSON.parse(calls[0].init.body);
+  assert.equal(dispatchBody.inputs.report_mode, "roblox_money");
+  assert.equal(dispatchBody.inputs.trigger_source, "cloudflare_cron");
+  assert.equal(dispatchBody.inputs.chat_id, "oc_test_chat");
+});
+
 test("skips scheduled top_trending dispatch when no schedule chats configured", async () => {
   let called = false;
   await handleScheduled(
@@ -391,6 +506,21 @@ test("skips scheduled project metrics dispatch when no schedule chats configured
   await handleScheduled(
     { cron: "10 1 * * *" },
     buildEnv({ SCHEDULE_CHAT_IDS: "" }),
+    buildCtx(),
+    async () => {
+      called = true;
+      return new Response(null, { status: 204 });
+    },
+  );
+
+  assert.equal(called, false);
+});
+
+test("skips scheduled Roblox money dispatch when no test chats configured", async () => {
+  let called = false;
+  await handleScheduled(
+    { cron: "20 1 * * *" },
+    buildEnv({ ROBLOX_MONEY_TEST_CHAT_IDS: "" }),
     buildCtx(),
     async () => {
       called = true;

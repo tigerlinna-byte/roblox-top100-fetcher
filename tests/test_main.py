@@ -12,6 +12,11 @@ from app.main import (
 )
 from app.models import GameRecord
 from app.project_metrics_models import ProjectDailyMetricsRecord
+from app.roblox_money_models import (
+    RobloxMoneyFetchFailure,
+    RobloxMoneyProjectRevenue,
+    RobloxMoneyReportPayload,
+)
 from app.roblox_creator_metrics_client import RobloxCreatorMetricsClientError
 
 
@@ -272,6 +277,141 @@ class MainTests(unittest.TestCase):
         message = feishu_client.send_group_markdown.call_args.args[0]
         self.assertIn("项目日报抓取异常", message)
         self.assertIn("项目 9682356542", message)
+
+    @patch("app.main.RobloxCreatorMetricsClient")
+    def test_roblox_money_payload_uses_single_report_date_and_month_to_date(
+        self,
+        client_cls,
+    ) -> None:
+        cfg = Config(
+            run_report_mode="roblox_money",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_money_start_date="2026-05-01",
+            roblox_money_usd_per_100k_robux="350",
+            feishu_project_metrics_spreadsheet_title="Shoot Or Shot",
+        )
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_project_revenue_series.return_value = MagicMock(
+            metric="Revenue",
+            values={
+                "2026-05-01": 1000,
+                "2026-05-02": 2000,
+                "2026-05-03": 3000,
+                "2026-05-04": 4000,
+            },
+        )
+
+        payload = _fetch_report_payload(cfg)
+
+        revenue = payload.project_revenues[0]
+        self.assertEqual("2026-05-04", revenue.report_date)
+        self.assertEqual("2026-05-01", revenue.month_start_date)
+        self.assertEqual(4000, revenue.daily_robux)
+        self.assertEqual(10000, revenue.month_to_date_robux)
+        self.assertEqual(14.0, revenue.daily_usd)
+        self.assertEqual(35.0, revenue.month_to_date_usd)
+
+    @patch("app.main.RobloxCreatorMetricsClient")
+    def test_roblox_money_payload_uses_natural_month_after_may(
+        self,
+        client_cls,
+    ) -> None:
+        cfg = Config(
+            run_report_mode="roblox_money",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_money_start_date="2026-05-01",
+            roblox_money_usd_per_100k_robux="350",
+        )
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_project_revenue_series.return_value = MagicMock(
+            metric="Revenue",
+            values={
+                "2026-05-31": 9000,
+                "2026-06-01": 1000,
+                "2026-06-02": 2000,
+            },
+        )
+
+        payload = _fetch_report_payload(cfg)
+
+        revenue = payload.project_revenues[0]
+        self.assertEqual("2026-06-02", revenue.report_date)
+        self.assertEqual("2026-06-01", revenue.month_start_date)
+        self.assertEqual(2000, revenue.daily_robux)
+        self.assertEqual(3000, revenue.month_to_date_robux)
+
+    @patch("app.main.RobloxCreatorMetricsClient")
+    def test_roblox_money_payload_keeps_failure_when_project_fetch_fails(
+        self,
+        client_cls,
+    ) -> None:
+        cfg = Config(
+            run_report_mode="roblox_money",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_money_usd_per_100k_robux="350",
+        )
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_project_revenue_series.side_effect = RobloxCreatorMetricsClientError("未找到 Roblox 总收入指标数据")
+
+        payload = _fetch_report_payload(cfg)
+
+        self.assertEqual((), payload.project_revenues)
+        self.assertEqual(1, len(payload.failures))
+        self.assertIn("总收入", payload.failures[0].reason)
+
+    def test_roblox_money_payload_requires_usd_conversion_rate(self) -> None:
+        cfg = Config(
+            run_report_mode="roblox_money",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_money_usd_per_100k_robux="",
+        )
+
+        with self.assertRaisesRegex(RobloxCreatorMetricsClientError, "ROBLOX_MONEY_USD_PER_100K_ROBUX 未配置"):
+            _fetch_report_payload(cfg)
+
+    @patch("app.main.FeishuClient")
+    def test_roblox_money_success_sends_text_only(self, feishu_client_cls) -> None:
+        cfg = Config(run_report_mode="roblox_money")
+        report_payload = RobloxMoneyReportPayload(
+            project_revenues=(
+                RobloxMoneyProjectRevenue(
+                    project_id="9682356542",
+                    project_name="Shoot Or Shot",
+                    source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                    revenue_metric="Revenue",
+                    report_date="2026-05-04",
+                    month_start_date="2026-05-01",
+                    month_end_date="2026-05-04",
+                    daily_robux=4000,
+                    month_to_date_robux=10000,
+                    usd_per_100k_robux=350,
+                    fetched_at="2026-05-05T01:20:00Z",
+                ),
+            ),
+            failures=(
+                RobloxMoneyFetchFailure(
+                    project_id="9707829514",
+                    project_name="项目 9707829514",
+                    overview_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+                    reason="未找到 Roblox 总收入指标数据",
+                ),
+            ),
+        )
+        feishu_client = MagicMock()
+        feishu_client_cls.return_value = feishu_client
+
+        _notify_success(cfg, report_payload)
+
+        feishu_client.send_group_markdown.assert_called_once()
+        feishu_client.send_group_card.assert_not_called()
+        message = feishu_client.send_group_markdown.call_args.args[0]
+        self.assertIn("Roblox 收入日报（2026-05-04）", message)
+        self.assertIn("$14.00（4,000 Robux）", message)
+        self.assertIn("$35.00（10,000 Robux）", message)
+        self.assertIn("抓取异常", message)
 
 
 if __name__ == "__main__":
