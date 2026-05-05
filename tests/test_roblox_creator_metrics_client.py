@@ -9,7 +9,11 @@ from unittest.mock import Mock, patch
 
 from app.config import Config
 from app.project_metrics_models import get_project_required_fields
-from app.roblox_creator_metrics_client import RobloxCreatorMetricsClient, RobloxCreatorMetricsClientError
+from app.roblox_creator_metrics_client import (
+    RobloxCreatorMetricsClient,
+    RobloxCreatorMetricsClientError,
+    resolve_project_metrics_query_date_bounds,
+)
 
 
 def _build_json_response(payload: dict, *, status_code: int = 200, headers: dict[str, str] | None = None) -> Mock:
@@ -53,6 +57,22 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
     def test_get_project_required_fields_returns_project_specific_override(self) -> None:
         self.assertEqual(("peak_ccu",), get_project_required_fields("9682356542"))
         self.assertEqual((), get_project_required_fields("9707829514"))
+
+    def test_resolve_project_metrics_query_date_bounds_respects_required_peak_ccu_retention(self) -> None:
+        mocked_midnight = datetime(2026, 5, 5, 0, 0, tzinfo=timezone.utc)
+
+        with patch("app.roblox_creator_metrics_client._business_midnight_now", return_value=mocked_midnight):
+            bounds = resolve_project_metrics_query_date_bounds("9682356542", "UTC")
+
+        self.assertEqual((date(2026, 4, 7), date(2026, 5, 4)), bounds)
+
+    def test_resolve_project_metrics_query_date_bounds_keeps_full_backfill_for_non_required_peak_ccu(self) -> None:
+        mocked_midnight = datetime(2026, 5, 5, 0, 0, tzinfo=timezone.utc)
+
+        with patch("app.roblox_creator_metrics_client._business_midnight_now", return_value=mocked_midnight):
+            bounds = resolve_project_metrics_query_date_bounds("9707829514", "UTC")
+
+        self.assertEqual((date(2026, 3, 17), date(2026, 5, 4)), bounds)
 
     def test_fetch_project_daily_metrics_extracts_recent_series(self) -> None:
         session = Mock()

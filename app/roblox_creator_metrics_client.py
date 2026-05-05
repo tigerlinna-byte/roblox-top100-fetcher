@@ -110,6 +110,8 @@ ACRONYM_BOUNDARY_PATTERN = re.compile(r"([A-Z]+)([A-Z][a-z])")
 DEBUG_HTML_MAX_LENGTH = 120_000
 DEBUG_PAYLOAD_MAX_LENGTH = 20_000
 PROJECT_METRICS_MAX_QUERY_WINDOW_DAYS = 14
+# Roblox 当前对 PeakConcurrentPlayers 只保留最近 28 天，早于该范围会直接返回 400。
+PEAK_CONCURRENT_PLAYERS_RETENTION_DAYS = 28
 
 ANALYTICS_STATUS_CONFIG_URL_TEMPLATE = (
     "https://apis.roblox.com/analytics-query-gateway/v1/status-config?universeId={resource_id}"
@@ -1368,6 +1370,10 @@ def resolve_project_metrics_query_date_bounds(
     end_date = (business_midnight - timedelta(days=1)).date()
     project_start_date = get_project_start_date(project_id)
     start_date = project_start_date or (end_date - timedelta(days=9))
+    if "peak_ccu" in get_project_required_fields(project_id):
+        peak_ccu_retention_start_date = end_date - timedelta(days=PEAK_CONCURRENT_PLAYERS_RETENTION_DAYS - 1)
+        if peak_ccu_retention_start_date > start_date:
+            start_date = peak_ccu_retention_start_date
     if start_date > end_date:
         return None
     return start_date, end_date

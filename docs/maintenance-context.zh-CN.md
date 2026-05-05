@@ -242,6 +242,7 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 
 - 以业务时区午夜为界
 - 默认范围是“项目起始日到昨天”
+- 如果项目仍强制要求 `peak_ccu`，最早回查日期还会受 `PeakConcurrentPlayers` 最近 28 天保留期限制，避免请求 Roblox 已明确不可查的历史日期
 - 只查询飞书表中不存在的日期，或已有日期行中仍有指标为空的日期
 - 已有完整数据的日期不会重复查询，已有非空单元格不会被新结果覆盖
 - 若没有已保存的飞书表目标，则按项目起始日到昨天补齐当前表格容量内的日期
@@ -313,9 +314,9 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - `9707829514` 当前在 Roblox analytics 接口中长期缺失 `PeakConcurrentPlayers`，因此显式放宽为不校验 `peak_ccu`，仍允许写入其他指标。
 - 非核心指标缺失时仍会留空，并写出调试快照用于排查。
 
-当项目日报缺少任意指标时，会在 `OUTPUT_DIR` 下写出：
+当项目日报缺少任意指标时，会在 `OUTPUT_DIR` 下按项目写出：
 
-- `data/creator_overview_debug.json`
+- `data/creator_overview_debug_<project_id>.json`
 
 这个文件包含：
 
@@ -465,7 +466,7 @@ Worker 当前必需配置：
 - `top100_YYYY-MM-DD.json/csv`
 - `top_trending_YYYY-MM-DD.json/csv`
 - `project_metrics_YYYY-MM-DD.json/csv`
-- `creator_overview_debug.json`（仅项目日报缺关键指标时）
+- `creator_overview_debug_<project_id>.json`（仅项目日报缺关键指标时）
 
 GitHub Actions 会上传：
 
@@ -594,7 +595,7 @@ Worker 事件去重默认使用 Cloudflare KV：
 
 - 项目日报全部失败
 - 榜单里明显缺登录态内容
-- `creator_overview_debug.json` 里只剩未登录页面壳
+- `creator_overview_debug_<project_id>.json` 里只剩未登录页面壳
 - GitHub Actions 日志出现 `401` / `403`
 
 处理步骤：
@@ -690,7 +691,7 @@ Worker 事件去重默认使用 Cloudflare KV：
 
 1. `project-metrics-data` artifact
 2. `data/project_metrics_*.json`
-3. `data/creator_overview_debug.json`
+3. `data/creator_overview_debug_<project_id>.json`
 4. 对应项目是否被放宽了核心字段要求
 5. `metrics/metadata` 是否显示该指标当天尚未成熟
 
