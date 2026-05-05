@@ -26,7 +26,7 @@
 - `/roblox-top-day` 的手动触发默认写“测试表”，只有 `trigger_source=cloudflare_cron` 时才会写“正式表”。
 - 项目日报当前只支持两个项目入口：`ROBLOX_CREATOR_OVERVIEW_URL` 和 `ROBLOX_CREATOR_OVERVIEW_URL_2`。如果要接第三个项目，需要改代码和工作流，不是只加变量就够。
 - `/roblox-money` 复用这两个项目入口，但手动和定时都只允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 中的 test 群触发和接收。
-- 收入日报只展示 Roblox Analytics 当前最新可用统计日的一天收入；月累计按该统计日所在自然月从 1 日累计，2026 年 5 月从 `2026-05-01` 开始。
+- 收入日报只展示业务时区昨天的一天收入；月累计按昨天所在自然月从 1 日累计到昨天，2026 年 5 月从 `2026-05-01` 开始。
 - 收入日报不使用 ARPPU 推算总收入；如果 Roblox 返回 Robux 总收入，必须配置 `ROBLOX_MONEY_USD_PER_100K_ROBUX` 才能换算美元。
 - `ROBLOX_CREATOR_COOKIE` 对项目日报是必需项；对榜单链路虽然不是硬性必需，但没有它时容易漏掉需要登录态才能看到的游戏。
 

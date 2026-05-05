@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 import logging
 import sys
 import time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Config, load_config
 from .feishu_client import FeishuClient, FeishuClientError
@@ -231,6 +232,12 @@ def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
         raise RobloxCreatorMetricsClientError(str(exc)) from exc
 
     client = RobloxCreatorMetricsClient(cfg)
+    report_date = _resolve_roblox_money_report_date(cfg)
+    if report_date < minimum_start_date:
+        raise RobloxCreatorMetricsClientError(
+            f"收入日报统计日 {report_date.isoformat()} 早于 ROBLOX_MONEY_START_DATE {minimum_start_date.isoformat()}"
+        )
+
     project_revenues: list[RobloxMoneyProjectRevenue] = []
     failures: list[RobloxMoneyFetchFailure] = []
     for variables in variables_list:
@@ -242,12 +249,14 @@ def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
             )
             if not series.values:
                 raise RobloxCreatorMetricsClientError("未找到 Roblox 总收入指标数据")
-            report_date = max(series.values)
-            month_start_date = max(minimum_start_date, date.fromisoformat(report_date).replace(day=1))
+            report_date_text = report_date.isoformat()
+            if report_date_text not in series.values:
+                raise RobloxCreatorMetricsClientError(f"{report_date_text} 收入数据暂不可用")
+            month_start_date = max(minimum_start_date, report_date.replace(day=1))
             month_values = {
                 item_date: value
                 for item_date, value in series.values.items()
-                if month_start_date.isoformat() <= item_date <= report_date
+                if month_start_date.isoformat() <= item_date <= report_date_text
             }
             project_revenues.append(
                 RobloxMoneyProjectRevenue(
@@ -255,10 +264,10 @@ def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
                     project_name=project_name,
                     source_url=variables.overview_url,
                     revenue_metric=series.metric,
-                    report_date=report_date,
+                    report_date=report_date_text,
                     month_start_date=month_start_date.isoformat(),
-                    month_end_date=report_date,
-                    daily_robux=series.values[report_date],
+                    month_end_date=report_date_text,
+                    daily_robux=series.values[report_date_text],
                     month_to_date_robux=sum(month_values.values()),
                     usd_per_100k_robux=usd_per_100k_robux,
                     fetched_at=now_iso(),
@@ -289,6 +298,18 @@ def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
         project_revenues=tuple(project_revenues),
         failures=tuple(failures),
     )
+
+
+def _resolve_roblox_money_report_date(cfg: Config) -> date:
+    """按业务时区解析收入日报统计日，固定统计昨天的收入。"""
+
+    timezone_name = cfg.feishu_timezone.strip() or "UTC"
+    try:
+        business_timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        business_timezone = timezone.utc
+    business_midnight = datetime.now(business_timezone).replace(hour=0, minute=0, second=0, microsecond=0)
+    return (business_midnight - timedelta(days=1)).date()
 
 
 def _build_project_metrics_query_plan_for_project(

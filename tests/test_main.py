@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -278,11 +279,14 @@ class MainTests(unittest.TestCase):
         self.assertIn("项目日报抓取异常", message)
         self.assertIn("项目 9682356542", message)
 
+    @patch("app.main._resolve_roblox_money_report_date")
     @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_uses_single_report_date_and_month_to_date(
         self,
         client_cls,
+        resolve_report_date,
     ) -> None:
+        resolve_report_date.return_value = date(2026, 5, 4)
         cfg = Config(
             run_report_mode="roblox_money",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
@@ -312,11 +316,14 @@ class MainTests(unittest.TestCase):
         self.assertEqual(14.0, revenue.daily_usd)
         self.assertEqual(35.0, revenue.month_to_date_usd)
 
+    @patch("app.main._resolve_roblox_money_report_date")
     @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_uses_natural_month_after_may(
         self,
         client_cls,
+        resolve_report_date,
     ) -> None:
+        resolve_report_date.return_value = date(2026, 6, 2)
         cfg = Config(
             run_report_mode="roblox_money",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
@@ -341,6 +348,53 @@ class MainTests(unittest.TestCase):
         self.assertEqual("2026-06-01", revenue.month_start_date)
         self.assertEqual(2000, revenue.daily_robux)
         self.assertEqual(3000, revenue.month_to_date_robux)
+
+    @patch("app.main._resolve_roblox_money_report_date")
+    @patch("app.main.RobloxCreatorMetricsClient")
+    def test_roblox_money_payload_fails_when_yesterday_revenue_is_missing(
+        self,
+        client_cls,
+        resolve_report_date,
+    ) -> None:
+        resolve_report_date.return_value = date(2026, 5, 4)
+        cfg = Config(
+            run_report_mode="roblox_money",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_money_start_date="2026-05-01",
+            roblox_money_usd_per_100k_robux="350",
+        )
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_project_revenue_series.return_value = MagicMock(
+            metric="Revenue",
+            values={
+                "2026-05-01": 1000,
+                "2026-05-02": 2000,
+                "2026-05-03": 3000,
+            },
+        )
+
+        payload = _fetch_report_payload(cfg)
+
+        self.assertEqual((), payload.project_revenues)
+        self.assertEqual(1, len(payload.failures))
+        self.assertIn("2026-05-04 收入数据暂不可用", payload.failures[0].reason)
+
+    @patch("app.main._resolve_roblox_money_report_date")
+    def test_roblox_money_payload_rejects_report_date_before_start_date(
+        self,
+        resolve_report_date,
+    ) -> None:
+        resolve_report_date.return_value = date(2026, 4, 30)
+        cfg = Config(
+            run_report_mode="roblox_money",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_money_start_date="2026-05-01",
+            roblox_money_usd_per_100k_robux="350",
+        )
+
+        with self.assertRaisesRegex(RobloxCreatorMetricsClientError, "早于 ROBLOX_MONEY_START_DATE"):
+            _fetch_report_payload(cfg)
 
     @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_keeps_failure_when_project_fetch_fails(
