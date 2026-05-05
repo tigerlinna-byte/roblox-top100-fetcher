@@ -11,18 +11,16 @@ MONEY_MONTH_VALUE_COLOR = "blue"
 MONEY_FAILURE_COLOR = "red"
 
 
-def build_roblox_money_markdown(cfg: Config, payload: RobloxMoneyReportPayload) -> str:
-    """构造 Roblox 收入日报飞书文本消息。"""
+def build_roblox_money_card(cfg: Config, payload: RobloxMoneyReportPayload) -> dict[str, object]:
+    """构造 Roblox 收入日报飞书卡片消息。"""
 
     title = _build_money_title(payload)
     lines = [
-        f"## **{title}**",
-        "",
         f"- 时间: {_format_now(cfg.feishu_timezone)} ({cfg.feishu_timezone})",
         f"- 触发: {_format_trigger(cfg)}",
     ]
     if payload.project_revenues:
-        lines.extend(["", "## **收入概览**"])
+        lines.extend(["", "**收入概览**"])
         for revenue in payload.project_revenues:
             lines.extend(
                 [
@@ -41,7 +39,7 @@ def build_roblox_money_markdown(cfg: Config, payload: RobloxMoneyReportPayload) 
             )
 
     if payload.failures:
-        lines.extend(["", "## **抓取异常**"])
+        lines.extend(["", "**抓取异常**"])
         for failure in payload.failures:
             project_label = failure.project_name or f"项目 {failure.project_id or '-'}"
             lines.append(
@@ -52,7 +50,21 @@ def build_roblox_money_markdown(cfg: Config, payload: RobloxMoneyReportPayload) 
     if not payload.project_revenues and not payload.failures:
         lines.extend(["", "没有可发送的收入数据。"])
 
-    return "\n".join(lines)
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {
+                "tag": "plain_text",
+                "content": title,
+            }
+        },
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": "\n".join(lines),
+            }
+        ],
+    }
 
 
 def _build_money_title(payload: RobloxMoneyReportPayload) -> str:

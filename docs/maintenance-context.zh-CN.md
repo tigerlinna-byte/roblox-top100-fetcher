@@ -15,7 +15,7 @@
 | `top100_message` | 本地运行、GitHub Actions 手动触发、飞书 `/roblox-top100` | Roblox 榜单接口 | 输出 JSON/CSV，并发送 Top100 文本摘要 |
 | `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron `0 1 * * *` | Roblox 榜单接口 | 更新 Top Trending 多 Sheet 飞书表，发送 `今日关注` 卡片和表格链接 |
 | `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron `10 1 * * *` | Roblox Creator Analytics 接口 | 更新每个项目自己的飞书表，并发送表格链接 |
-| `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron `20 1 * * *` | Roblox Creator Analytics 收入指标 | 发送两个项目的收入文本日报，并输出 JSON/CSV |
+| `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron `20 1 * * *` | Roblox Creator Analytics 收入指标 | 发送两个项目的收入卡片日报，并输出 JSON/CSV |
 
 如果有人还把它理解成“抓一下 Top100 然后发群”，那已经是过时认知。
 
@@ -342,7 +342,7 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 2. `app/main.py` 调用 `resolve_project_metrics_variables()` 复用现有两个项目 overview URL
 3. `RobloxCreatorMetricsClient.fetch_project_revenue_series()` 查询 Creator Analytics 总收入候选指标
 4. Python 侧按配置 `ROBLOX_MONEY_USD_PER_100K_ROBUX` 将 Robux 换算成美元
-5. 发送纯文本收入日报，不创建或更新飞书表格
+5. 发送收入日报飞书卡片，不创建或更新飞书表格
 6. 输出 `data/roblox_money_YYYY-MM-DD.json/csv`
 
 #### 收入口径
@@ -617,7 +617,7 @@ Worker 事件去重默认使用 Cloudflare KV：
   - 汇率与起始日期配置解析
 
 - [`app/roblox_money_summary.py`](../app/roblox_money_summary.py)
-  - 收入日报飞书文本构建
+  - 收入日报飞书卡片构建
 
 ### 飞书与 GitHub
 

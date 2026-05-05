@@ -27,7 +27,7 @@ from .roblox_money_models import (
     parse_roblox_money_start_date,
     parse_usd_per_100k_robux,
 )
-from .roblox_money_summary import build_roblox_money_markdown
+from .roblox_money_summary import build_roblox_money_card
 from .roblox_client import RobloxClient, RobloxClientError
 from .roblox_creator_metrics_client import (
     RobloxCreatorMetricsClient,
@@ -357,7 +357,7 @@ def _read_project_metrics_existing_rows(
 def _notify_success(cfg: Config, report_payload) -> None:
     feishu_client = FeishuClient(cfg)
     if cfg.run_report_mode == ROBLOX_MONEY_REPORT_MODE:
-        feishu_client.send_group_markdown(build_roblox_money_markdown(cfg, report_payload))
+        feishu_client.send_group_card(build_roblox_money_card(cfg, report_payload))
         return
 
     if cfg.run_report_mode == "top_trending_sheet":

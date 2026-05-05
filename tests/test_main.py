@@ -433,7 +433,7 @@ class MainTests(unittest.TestCase):
             _fetch_report_payload(cfg)
 
     @patch("app.main.FeishuClient")
-    def test_roblox_money_success_sends_text_only(self, feishu_client_cls) -> None:
+    def test_roblox_money_success_sends_card(self, feishu_client_cls) -> None:
         cfg = Config(run_report_mode="roblox_money")
         report_payload = RobloxMoneyReportPayload(
             project_revenues=(
@@ -465,14 +465,16 @@ class MainTests(unittest.TestCase):
 
         _notify_success(cfg, report_payload)
 
-        feishu_client.send_group_markdown.assert_called_once()
-        feishu_client.send_group_card.assert_not_called()
-        message = feishu_client.send_group_markdown.call_args.args[0]
-        self.assertIn("## **Roblox 收入日报（2026-05-04）**", message)
+        feishu_client.send_group_card.assert_called_once()
+        feishu_client.send_group_markdown.assert_not_called()
+        card = feishu_client.send_group_card.call_args.args[0]
+        self.assertEqual("Roblox 收入日报（2026-05-04）", card["header"]["title"]["content"])
+        message = card["elements"][0]["content"]
+        self.assertIn("**收入概览**", message)
         self.assertIn("**<font color='blue'>Shoot Or Shot</font>**", message)
         self.assertIn("**<font color='green'>$14.00</font>**（4,000 Robux）", message)
         self.assertIn("**<font color='blue'>$35.00</font>**（10,000 Robux）", message)
-        self.assertIn("## **抓取异常**", message)
+        self.assertIn("**抓取异常**", message)
         self.assertIn("**<font color='red'>项目 1234567890</font>**", message)
 
 
