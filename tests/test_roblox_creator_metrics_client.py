@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 from unittest.mock import Mock, patch
 
 from app.config import Config
+from app.project_metrics_models import get_project_required_fields
 from app.roblox_creator_metrics_client import RobloxCreatorMetricsClient, RobloxCreatorMetricsClientError
 
 
@@ -48,6 +49,10 @@ def _build_benchmark_scorecard_payload(
 
 
 class RobloxCreatorMetricsClientTests(unittest.TestCase):
+    def test_get_project_required_fields_returns_project_specific_override(self) -> None:
+        self.assertEqual(("peak_ccu",), get_project_required_fields("9682356542"))
+        self.assertEqual((), get_project_required_fields("9707829514"))
+
     def test_fetch_project_daily_metrics_extracts_recent_series(self) -> None:
         session = Mock()
 
@@ -93,6 +98,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                     return _build_json_response(
                         _wrap_query_result(
                             {"breakdownValue": [], "dataPoints": [
+                                {"time": "2026-03-09T00:00:00Z", "value": 7.4},
                                 {"time": "2026-03-10T00:00:00Z", "value": 8.2},
                                 {"time": "2026-03-11T00:00:00Z", "value": 10.1},
                             ]}
@@ -311,6 +317,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 metric = kwargs["json"]["query"]["metric"]
                 if metric == "PeakConcurrentPlayers":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-05T00:00:00Z", "value": 7.6},
                         {"time": "2026-03-10T00:00:00Z", "value": 11.1},
                     ]}))
                 if metric == "AveragePlayTimeMinutesPerDAU":
@@ -446,7 +453,10 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 metric = kwargs["json"]["query"]["metric"]
                 query_counts[metric] = query_counts.get(metric, 0) + 1
                 if metric == "PeakConcurrentPlayers":
-                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [{"time": "2026-03-12T00:00:00Z", "value": 12.2}]}))
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 10.5},
+                        {"time": "2026-03-12T00:00:00Z", "value": 12.2},
+                    ]}))
                 if metric == "DailyCohortRetention":
                     if query_counts[metric] == 1:
                         return _build_json_response({"operation": {"path": "async-retention", "done": False}})
@@ -489,7 +499,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual(2, query_counts["DailyCohortRetention"])
         self.assertEqual(2, query_counts["UniqueUsersWithImpressions"])
 
-    def test_fetch_project_daily_metrics_writes_debug_snapshot_when_metrics_missing(self) -> None:
+    def test_fetch_project_daily_metrics_writes_debug_snapshot_when_core_metrics_missing(self) -> None:
         session = Mock()
         output_dir = Path(".test-output")
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -520,10 +530,58 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             session=session,
         )
 
-        records = client.fetch_project_daily_metrics()
+        with self.assertRaisesRegex(RobloxCreatorMetricsClientError, "核心指标"):
+            client.fetch_project_daily_metrics()
 
-        self.assertEqual([], records)
         self.assertTrue(debug_path.exists())
+
+    def test_fetch_project_daily_metrics_rejects_dates_missing_required_peak_ccu(self) -> None:
+        session = Mock()
+
+        def request(method: str, url: str, **kwargs):
+            if method == "GET" and ("feature-permissions" in url or "status-config" in url):
+                return _build_json_response({})
+            if method == "GET" and "benchmark-scorecard" in url:
+                return _build_json_response({})
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({
+                    "operation": {
+                        "done": True,
+                        "metricMetadataResult": {
+                            "metadata": [
+                                {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-10T00:00:00Z"},
+                                {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                            ]
+                        },
+                    }
+                })
+            if method == "POST" and "analytics-query-gateway" in url:
+                metric = kwargs["json"]["query"]["metric"]
+                if metric == "PeakConcurrentPlayers":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 8.2},
+                    ]}))
+                if metric == "AveragePlayTimeMinutesPerDAU":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 12.5},
+                        {"time": "2026-03-11T00:00:00Z", "value": 15.0},
+                    ]}))
+                return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=1,
+                feishu_timezone="Asia/Shanghai",
+            ),
+            session=session,
+        )
+
+        with self.assertRaisesRegex(RobloxCreatorMetricsClientError, "2026-03-11: peak_ccu"):
+            client.fetch_project_daily_metrics()
 
     def test_fetch_project_daily_metrics_allows_project_without_required_peak_ccu(self) -> None:
         session = Mock()

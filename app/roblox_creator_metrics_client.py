@@ -16,6 +16,7 @@ import requests
 from .config import Config
 from .project_metrics_models import (
     ProjectDailyMetricsRecord,
+    get_project_required_fields,
     get_project_start_date,
     now_iso,
 )
@@ -389,6 +390,35 @@ class RobloxCreatorMetricsClient:
             {report_date for series in metrics_by_field.values() for report_date in series.keys()},
             reverse=True,
         )
+        required_fields = get_project_required_fields(project_id)
+        missing_required_fields = tuple(
+            field_name
+            for field_name in required_fields
+            if not metrics_by_field.get(field_name)
+        )
+        if missing_required_fields:
+            if not debug_path:
+                debug_path = self._write_debug_snapshot("", metrics_by_field, list(missing_required_fields), direct_attempts)
+            raise RobloxCreatorMetricsClientError(
+                _format_missing_required_fields_error({"全部日期": missing_required_fields}, debug_path)
+            )
+        missing_required_fields_by_date = _find_missing_required_fields_by_date(
+            report_dates,
+            metrics_by_field,
+            required_fields,
+        )
+        if missing_required_fields_by_date:
+            required_missing_fields = sorted({
+                field_name
+                for field_names in missing_required_fields_by_date.values()
+                for field_name in field_names
+            })
+            if not debug_path:
+                debug_path = self._write_debug_snapshot("", metrics_by_field, required_missing_fields, direct_attempts)
+            raise RobloxCreatorMetricsClientError(
+                _format_missing_required_fields_error(missing_required_fields_by_date, debug_path)
+            )
+
         fetched_at = now_iso()
         records: list[ProjectDailyMetricsRecord] = []
         for report_date in report_dates:
@@ -1464,6 +1494,44 @@ def _filter_metric_series(
             continue
         filtered[report_date] = value
     return filtered
+
+
+def _find_missing_required_fields_by_date(
+    report_dates: Iterable[str],
+    metrics_by_field: dict[str, dict[str, str]],
+    required_fields: tuple[str, ...],
+) -> dict[str, tuple[str, ...]]:
+    """按日期检查核心字段，避免把缺关键指标的日报行写入表格。"""
+
+    if not required_fields:
+        return {}
+
+    missing_by_date: dict[str, tuple[str, ...]] = {}
+    for report_date in report_dates:
+        missing_fields = tuple(
+            field_name
+            for field_name in required_fields
+            if not metrics_by_field.get(field_name, {}).get(report_date, "")
+        )
+        if missing_fields:
+            missing_by_date[report_date] = missing_fields
+    return missing_by_date
+
+
+def _format_missing_required_fields_error(
+    missing_required_fields_by_date: dict[str, tuple[str, ...]],
+    debug_path: str,
+) -> str:
+    """生成包含日期维度的核心字段缺失错误，方便直接定位缺口。"""
+
+    details = "；".join(
+        f"{report_date}: {', '.join(field_names)}"
+        for report_date, field_names in sorted(missing_required_fields_by_date.items(), reverse=True)
+    )
+    message = f"Creator overview 页面缺少核心指标: {details}"
+    if debug_path:
+        return f"{message}；已输出调试样本: {debug_path}"
+    return message
 
 
 def _format_series(series: dict[str, float], formatter) -> dict[str, str]:
