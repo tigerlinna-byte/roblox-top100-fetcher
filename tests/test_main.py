@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -15,7 +14,6 @@ from app.models import GameRecord
 from app.project_metrics_models import ProjectDailyMetricsRecord
 from app.roblox_money_models import (
     RobloxMoneyFetchFailure,
-    RobloxMoneyPendingRevenue,
     RobloxMoneyProjectRevenue,
     RobloxMoneyReportPayload,
 )
@@ -280,14 +278,11 @@ class MainTests(unittest.TestCase):
         self.assertIn("项目日报抓取异常", message)
         self.assertIn("项目 9682356542", message)
 
-    @patch("app.main._resolve_roblox_money_report_date")
     @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_uses_single_report_date_and_month_to_date(
         self,
         client_cls,
-        resolve_report_date,
     ) -> None:
-        resolve_report_date.return_value = date(2026, 5, 4)
         cfg = Config(
             run_report_mode="roblox_money",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
@@ -317,14 +312,11 @@ class MainTests(unittest.TestCase):
         self.assertEqual(14.0, revenue.daily_usd)
         self.assertEqual(35.0, revenue.month_to_date_usd)
 
-    @patch("app.main._resolve_roblox_money_report_date")
     @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_uses_natural_month_after_may(
         self,
         client_cls,
-        resolve_report_date,
     ) -> None:
-        resolve_report_date.return_value = date(2026, 6, 2)
         cfg = Config(
             run_report_mode="roblox_money",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
@@ -350,14 +342,11 @@ class MainTests(unittest.TestCase):
         self.assertEqual(2000, revenue.daily_robux)
         self.assertEqual(3000, revenue.month_to_date_robux)
 
-    @patch("app.main._resolve_roblox_money_report_date")
     @patch("app.main.RobloxCreatorMetricsClient")
-    def test_roblox_money_payload_marks_pending_when_yesterday_revenue_is_missing(
+    def test_roblox_money_payload_uses_latest_available_revenue_date(
         self,
         client_cls,
-        resolve_report_date,
     ) -> None:
-        resolve_report_date.return_value = date(2026, 5, 4)
         cfg = Config(
             run_report_mode="roblox_money",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
@@ -377,27 +366,41 @@ class MainTests(unittest.TestCase):
 
         payload = _fetch_report_payload(cfg)
 
-        self.assertEqual("2026-05-04", payload.report_date)
-        self.assertEqual((), payload.project_revenues)
-        self.assertEqual(1, len(payload.pending_items))
+        revenue = payload.project_revenues[0]
+        self.assertEqual("2026-05-03", revenue.report_date)
+        self.assertEqual("2026-05-01", revenue.month_start_date)
+        self.assertEqual(3000, revenue.daily_robux)
+        self.assertEqual(6000, revenue.month_to_date_robux)
         self.assertEqual((), payload.failures)
-        self.assertIn("2026-05-04 收入数据暂未产出", payload.pending_items[0].reason)
 
-    @patch("app.main._resolve_roblox_money_report_date")
-    def test_roblox_money_payload_rejects_report_date_before_start_date(
+    @patch("app.main.RobloxCreatorMetricsClient")
+    def test_roblox_money_payload_ignores_values_before_start_date(
         self,
-        resolve_report_date,
+        client_cls,
     ) -> None:
-        resolve_report_date.return_value = date(2026, 4, 30)
         cfg = Config(
             run_report_mode="roblox_money",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
             roblox_money_start_date="2026-05-01",
             roblox_money_usd_per_100k_robux="350",
         )
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_project_revenue_series.return_value = MagicMock(
+            metric="Revenue",
+            values={
+                "2026-04-30": 9000,
+                "2026-05-01": 1000,
+            },
+        )
 
-        with self.assertRaisesRegex(RobloxCreatorMetricsClientError, "早于 ROBLOX_MONEY_START_DATE"):
-            _fetch_report_payload(cfg)
+        payload = _fetch_report_payload(cfg)
+
+        revenue = payload.project_revenues[0]
+        self.assertEqual("2026-05-01", revenue.report_date)
+        self.assertEqual("2026-05-01", revenue.month_start_date)
+        self.assertEqual(1000, revenue.daily_robux)
+        self.assertEqual(1000, revenue.month_to_date_robux)
 
     @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_keeps_failure_when_project_fetch_fails(
@@ -433,7 +436,6 @@ class MainTests(unittest.TestCase):
     def test_roblox_money_success_sends_text_only(self, feishu_client_cls) -> None:
         cfg = Config(run_report_mode="roblox_money")
         report_payload = RobloxMoneyReportPayload(
-            report_date="2026-05-04",
             project_revenues=(
                 RobloxMoneyProjectRevenue(
                     project_id="9682356542",
@@ -447,15 +449,6 @@ class MainTests(unittest.TestCase):
                     month_to_date_robux=10000,
                     usd_per_100k_robux=350,
                     fetched_at="2026-05-05T01:20:00Z",
-                ),
-            ),
-            pending_items=(
-                RobloxMoneyPendingRevenue(
-                    project_id="9707829514",
-                    project_name="Jail League",
-                    overview_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
-                    report_date="2026-05-04",
-                    reason="2026-05-04 收入数据暂未产出",
                 ),
             ),
             failures=(
@@ -479,8 +472,6 @@ class MainTests(unittest.TestCase):
         self.assertIn("**<font color='blue'>Shoot Or Shot</font>**", message)
         self.assertIn("**<font color='green'>$14.00</font>**（4,000 Robux）", message)
         self.assertIn("**<font color='blue'>$35.00</font>**（10,000 Robux）", message)
-        self.assertIn("## **数据暂未产出**", message)
-        self.assertIn("**<font color='orange'>Jail League</font>**", message)
         self.assertIn("## **抓取异常**", message)
         self.assertIn("**<font color='red'>项目 1234567890</font>**", message)
 
