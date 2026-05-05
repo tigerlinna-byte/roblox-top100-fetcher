@@ -58,13 +58,13 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual(("peak_ccu",), get_project_required_fields("9682356542"))
         self.assertEqual((), get_project_required_fields("9707829514"))
 
-    def test_resolve_project_metrics_query_date_bounds_respects_required_peak_ccu_retention(self) -> None:
+    def test_resolve_project_metrics_query_date_bounds_keeps_full_project_backfill_window(self) -> None:
         mocked_midnight = datetime(2026, 5, 5, 0, 0, tzinfo=timezone.utc)
 
         with patch("app.roblox_creator_metrics_client._business_midnight_now", return_value=mocked_midnight):
             bounds = resolve_project_metrics_query_date_bounds("9682356542", "UTC")
 
-        self.assertEqual((date(2026, 4, 7), date(2026, 5, 4)), bounds)
+        self.assertEqual((date(2026, 3, 9), date(2026, 5, 4)), bounds)
 
     def test_resolve_project_metrics_query_date_bounds_keeps_full_backfill_for_non_required_peak_ccu(self) -> None:
         mocked_midnight = datetime(2026, 5, 5, 0, 0, tzinfo=timezone.utc)
@@ -605,6 +605,60 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RobloxCreatorMetricsClientError, "2026-03-11: peak_ccu"):
             client.fetch_project_daily_metrics()
+
+    def test_fetch_project_daily_metrics_skips_peak_ccu_when_field_plan_does_not_request_it(self) -> None:
+        session = Mock()
+        queried_metrics: list[str] = []
+
+        def request(method: str, url: str, **kwargs):
+            if method == "GET" and ("feature-permissions" in url or "status-config" in url):
+                return _build_json_response({})
+            if method == "GET" and "benchmark-scorecard" in url:
+                raise AssertionError("benchmark rank should not be queried")
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({
+                    "operation": {
+                        "done": True,
+                        "metricMetadataResult": {
+                            "metadata": [
+                                {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-10T00:00:00Z"},
+                            ]
+                        },
+                    }
+                })
+            if method == "POST" and "analytics-query-gateway" in url:
+                metric = kwargs["json"]["query"]["metric"]
+                queried_metrics.append(metric)
+                if metric == "PeakConcurrentPlayers":
+                    raise AssertionError("peak_ccu should not be queried")
+                if metric == "AveragePlayTimeMinutesPerDAU":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 12.5},
+                    ]}))
+                raise AssertionError(f"unexpected metric query: {metric}")
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=1,
+                feishu_timezone="UTC",
+            ),
+            session=session,
+        )
+
+        records = client.fetch_project_daily_metrics(
+            report_dates=[date(2026, 3, 10)],
+            requested_fields_by_date={date(2026, 3, 10): ("average_session_time",)},
+        )
+
+        self.assertEqual(["AveragePlayTimeMinutesPerDAU"], queried_metrics)
+        self.assertEqual(1, len(records))
+        self.assertEqual("2026-03-10", records[0].report_date)
+        self.assertEqual("", records[0].peak_ccu)
+        self.assertEqual("12m 30s", records[0].average_session_time)
 
     def test_fetch_project_daily_metrics_allows_project_without_required_peak_ccu(self) -> None:
         session = Mock()

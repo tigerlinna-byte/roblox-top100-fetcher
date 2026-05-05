@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 import json
 import logging
 import re
@@ -110,7 +110,8 @@ ACRONYM_BOUNDARY_PATTERN = re.compile(r"([A-Z]+)([A-Z][a-z])")
 DEBUG_HTML_MAX_LENGTH = 120_000
 DEBUG_PAYLOAD_MAX_LENGTH = 20_000
 PROJECT_METRICS_MAX_QUERY_WINDOW_DAYS = 14
-# Roblox 当前对 PeakConcurrentPlayers 只保留最近 28 天，早于该范围会直接返回 400。
+# Roblox 当前对 PeakConcurrentPlayers 只保留最近 28 个 UTC 日期。
+# 中国时区业务日起点会落到前一日 16:00Z，因此回查下限需要留出 1 天安全余量。
 PEAK_CONCURRENT_PLAYERS_RETENTION_DAYS = 28
 
 ANALYTICS_STATUS_CONFIG_URL_TEMPLATE = (
@@ -317,6 +318,7 @@ class RobloxCreatorMetricsClient:
         overview_url: str | None = None,
         *,
         report_dates: Iterable[date] | None = None,
+        requested_fields_by_date: Mapping[date, Iterable[str]] | None = None,
     ) -> list[ProjectDailyMetricsRecord]:
         """按默认窗口或指定日期集合抓取项目真实日期指标序列。"""
 
@@ -328,11 +330,19 @@ class RobloxCreatorMetricsClient:
 
         project_id = _extract_project_id(resolved_overview_url)
         business_timezone = _resolve_business_timezone(self.config.feishu_timezone)
+        normalized_requested_fields = _normalize_requested_fields_by_date(
+            requested_fields_by_date,
+            business_timezone,
+        )
+        effective_report_dates = normalized_requested_fields.keys() if normalized_requested_fields is not None else report_dates
         if report_dates is None:
-            window = _resolve_project_query_window(project_id, business_timezone)
-            windows = () if window is None else (window,)
+            if normalized_requested_fields is None:
+                window = _resolve_project_query_window(project_id, business_timezone)
+                windows = () if window is None else (window,)
+            else:
+                windows = _resolve_project_query_windows(project_id, business_timezone, effective_report_dates)
         else:
-            windows = _resolve_project_query_windows(project_id, business_timezone, report_dates)
+            windows = _resolve_project_query_windows(project_id, business_timezone, effective_report_dates)
         if not windows:
             return []
 
@@ -343,6 +353,7 @@ class RobloxCreatorMetricsClient:
                 project_id,
                 business_timezone,
                 window,
+                normalized_requested_fields,
             )
             for record in records:
                 records_by_date[record.report_date] = record
@@ -354,6 +365,7 @@ class RobloxCreatorMetricsClient:
         project_id: str,
         business_timezone: timezone | ZoneInfo,
         window: tuple[datetime, datetime, date, date],
+        requested_fields_by_date: Mapping[date, tuple[str, ...]] | None,
     ) -> list[ProjectDailyMetricsRecord]:
         """抓取一个连续日期窗口内的项目日报指标。"""
 
@@ -367,6 +379,7 @@ class RobloxCreatorMetricsClient:
             business_timezone,
             start_date,
             end_date,
+            requested_fields_by_date,
         )
         benchmark_metric_ranks = self._fetch_benchmark_metric_ranks(
             project_id,
@@ -374,11 +387,22 @@ class RobloxCreatorMetricsClient:
             business_timezone,
             start_date,
             end_date,
+            requested_fields_by_date,
         )
         for field_name, rank_series in benchmark_metric_ranks.items():
             if rank_series:
                 metric_ranks_by_field[field_name] = rank_series
-        missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if not metrics_by_field.get(definition.field_name)]
+        missing_fields = [
+            definition.field_name
+            for definition in METRIC_DEFINITIONS
+            if _is_field_requested_in_window(
+                requested_fields_by_date,
+                start_date,
+                end_date,
+                (definition.field_name,),
+            )
+            and not metrics_by_field.get(definition.field_name)
+        ]
         debug_path = ""
         if missing_fields:
             debug_path = self._write_debug_snapshot(project_id, "", metrics_by_field, missing_fields, direct_attempts)
@@ -394,9 +418,15 @@ class RobloxCreatorMetricsClient:
             reverse=True,
         )
         required_fields = get_project_required_fields(project_id)
+        effective_required_fields = _filter_required_fields_by_request(
+            required_fields,
+            requested_fields_by_date,
+            start_date,
+            end_date,
+        )
         missing_required_fields = tuple(
             field_name
-            for field_name in required_fields
+            for field_name in effective_required_fields
             if not metrics_by_field.get(field_name)
         )
         if missing_required_fields:
@@ -408,7 +438,8 @@ class RobloxCreatorMetricsClient:
         missing_required_fields_by_date = _find_missing_required_fields_by_date(
             report_dates,
             metrics_by_field,
-            required_fields,
+            effective_required_fields,
+            requested_fields_by_date,
         )
         if missing_required_fields_by_date:
             required_missing_fields = sorted({
@@ -465,6 +496,7 @@ class RobloxCreatorMetricsClient:
         business_timezone: timezone | ZoneInfo,
         start_date: date,
         end_date: date,
+        requested_fields_by_date: Mapping[date, tuple[str, ...]] | None,
     ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
         """优先通过真实内部 analytics 接口抓取最近窗口内的日期序列。"""
 
@@ -475,7 +507,15 @@ class RobloxCreatorMetricsClient:
         metadata_by_metric = self._fetch_metric_metadata(project_id, attempts)
 
         for spec in DIRECT_QUERY_SPECS:
-            series = self._query_metric_series(
+            requested_dates = _resolve_requested_dates_for_fields(
+                requested_fields_by_date,
+                start_date,
+                end_date,
+                _metric_spec_requested_fields(spec),
+            )
+            if requested_fields_by_date is not None and not requested_dates:
+                continue
+            series = self._query_metric_series_for_dates(
                 project_id,
                 spec,
                 start_time,
@@ -485,6 +525,7 @@ class RobloxCreatorMetricsClient:
                 start_date,
                 end_date,
                 metadata_by_metric,
+                requested_dates,
             )
             if series.values:
                 metrics[spec.field_name] = series.values
@@ -493,7 +534,15 @@ class RobloxCreatorMetricsClient:
         for spec in DIRECT_QUERY_FALLBACK_SPECS:
             if metrics.get(spec.field_name):
                 continue
-            series = self._query_metric_series(
+            requested_dates = _resolve_requested_dates_for_fields(
+                requested_fields_by_date,
+                start_date,
+                end_date,
+                _metric_spec_requested_fields(spec),
+            )
+            if requested_fields_by_date is not None and not requested_dates:
+                continue
+            series = self._query_metric_series_for_dates(
                 project_id,
                 spec,
                 start_time,
@@ -503,66 +552,91 @@ class RobloxCreatorMetricsClient:
                 start_date,
                 end_date,
                 metadata_by_metric,
+                requested_dates,
             )
             if series.values:
                 metrics[spec.field_name] = series.values
             if spec.field_name in PROJECT_METRIC_RANK_FIELDS and series.ranks:
                 metric_ranks[spec.field_name] = series.ranks
-        cohort_retention = self._query_metric_series(
-            project_id,
-            COHORT_RETENTION_SPEC,
-            start_time,
-            end_time,
-            attempts,
-            business_timezone,
+        cohort_requested_dates = _resolve_requested_dates_for_fields(
+            requested_fields_by_date,
             start_date,
             end_date,
-            metadata_by_metric,
+            ("day1_retention", "day1_retention_rank", "day7_retention", "day7_retention_rank"),
         )
+        cohort_retention = MetricSeriesResult(values={}, ranks={})
+        if requested_fields_by_date is None or cohort_requested_dates:
+            cohort_retention = self._query_metric_series_for_dates(
+                project_id,
+                COHORT_RETENTION_SPEC,
+                start_time,
+                end_time,
+                attempts,
+                business_timezone,
+                start_date,
+                end_date,
+                metadata_by_metric,
+                cohort_requested_dates,
+            )
         if cohort_retention.values:
-            metrics["day1_retention"] = _filter_metric_series(
-                _extract_cohort_retention_day(cohort_retention.values, 1),
-                "day1_retention",
-                project_id,
-                start_date,
-                end_date,
-                metadata_by_metric,
-                source_metric="DailyCohortRetention",
-                cohort_day=1,
-            )
-            metrics["day7_retention"] = _filter_metric_series(
-                _extract_cohort_retention_day(cohort_retention.values, 7),
-                "day7_retention",
-                project_id,
-                start_date,
-                end_date,
-                metadata_by_metric,
-                source_metric="DailyCohortRetention",
-                cohort_day=7,
-            )
+            if _is_field_requested_in_window(requested_fields_by_date, start_date, end_date, ("day1_retention",)):
+                metrics["day1_retention"] = _filter_metric_series(
+                    _extract_cohort_retention_day(cohort_retention.values, 1),
+                    "day1_retention",
+                    project_id,
+                    start_date,
+                    end_date,
+                    metadata_by_metric,
+                    source_metric="DailyCohortRetention",
+                    cohort_day=1,
+                )
+            if _is_field_requested_in_window(requested_fields_by_date, start_date, end_date, ("day7_retention",)):
+                metrics["day7_retention"] = _filter_metric_series(
+                    _extract_cohort_retention_day(cohort_retention.values, 7),
+                    "day7_retention",
+                    project_id,
+                    start_date,
+                    end_date,
+                    metadata_by_metric,
+                    source_metric="DailyCohortRetention",
+                    cohort_day=7,
+                )
         if cohort_retention.ranks:
-            metric_ranks["day1_retention"] = _filter_metric_series(
-                _extract_cohort_retention_day(cohort_retention.ranks, 1),
-                "day1_retention",
-                project_id,
+            if _is_field_requested_in_window(requested_fields_by_date, start_date, end_date, ("day1_retention_rank",)):
+                metric_ranks["day1_retention"] = _filter_metric_series(
+                    _extract_cohort_retention_day(cohort_retention.ranks, 1),
+                    "day1_retention",
+                    project_id,
+                    start_date,
+                    end_date,
+                    metadata_by_metric,
+                    source_metric="DailyCohortRetention",
+                    cohort_day=1,
+                )
+            if _is_field_requested_in_window(requested_fields_by_date, start_date, end_date, ("day7_retention_rank",)):
+                metric_ranks["day7_retention"] = _filter_metric_series(
+                    _extract_cohort_retention_day(cohort_retention.ranks, 7),
+                    "day7_retention",
+                    project_id,
+                    start_date,
+                    end_date,
+                    metadata_by_metric,
+                    source_metric="DailyCohortRetention",
+                    cohort_day=7,
+                )
+        if not metrics.get("five_minute_retention") and _is_field_requested_in_window(
+            requested_fields_by_date,
+            start_date,
+            end_date,
+            ("five_minute_retention",),
+        ):
+            requested_dates = _resolve_requested_dates_for_fields(
+                requested_fields_by_date,
                 start_date,
                 end_date,
-                metadata_by_metric,
-                source_metric="DailyCohortRetention",
-                cohort_day=1,
+                ("five_minute_retention",),
             )
-            metric_ranks["day7_retention"] = _filter_metric_series(
-                _extract_cohort_retention_day(cohort_retention.ranks, 7),
-                "day7_retention",
-                project_id,
-                start_date,
-                end_date,
-                metadata_by_metric,
-                source_metric="DailyCohortRetention",
-                cohort_day=7,
-            )
-        if not metrics.get("five_minute_retention"):
-            series = self._query_metric_series(
+            series = self._query_metric_series_for_dates(
                 project_id,
                 FIVE_MINUTE_RETENTION_SPEC,
                 start_time,
@@ -572,23 +646,84 @@ class RobloxCreatorMetricsClient:
                 start_date,
                 end_date,
                 metadata_by_metric,
+                requested_dates,
             )
             if series.values:
                 metrics["five_minute_retention"] = series.values
-        home_recommendations = self._query_metric_series(
-            project_id,
-            HOME_RECOMMENDATIONS_SPEC,
-            start_time,
-            end_time,
-            attempts,
-            business_timezone,
+        if _is_field_requested_in_window(
+            requested_fields_by_date,
             start_date,
             end_date,
-            metadata_by_metric,
-        )
-        if home_recommendations.values:
-            metrics["home_recommendations"] = home_recommendations.values
+            ("home_recommendations",),
+        ):
+            requested_dates = _resolve_requested_dates_for_fields(
+                requested_fields_by_date,
+                start_date,
+                end_date,
+                ("home_recommendations",),
+            )
+            home_recommendations = self._query_metric_series_for_dates(
+                project_id,
+                HOME_RECOMMENDATIONS_SPEC,
+                start_time,
+                end_time,
+                attempts,
+                business_timezone,
+                start_date,
+                end_date,
+                metadata_by_metric,
+                requested_dates,
+            )
+            if home_recommendations.values:
+                metrics["home_recommendations"] = home_recommendations.values
         return metrics, metric_ranks
+
+    def _query_metric_series_for_dates(
+        self,
+        project_id: str,
+        spec: MetricQuerySpec,
+        start_time: datetime,
+        end_time: datetime,
+        attempts: list[QueryAttempt],
+        business_timezone: timezone | ZoneInfo,
+        start_date: date,
+        end_date: date,
+        metadata_by_metric: dict[str, date],
+        requested_dates: tuple[date, ...] | None,
+    ) -> MetricSeriesResult:
+        """按字段级日期计划请求指标；未传计划时保持原窗口查询行为。"""
+
+        if requested_dates is None:
+            return self._query_metric_series(
+                project_id,
+                spec,
+                start_time,
+                end_time,
+                attempts,
+                business_timezone,
+                start_date,
+                end_date,
+                metadata_by_metric,
+            )
+
+        values: dict[str, str] = {}
+        ranks: dict[str, str] = {}
+        for range_start, range_end in _split_dates_into_query_ranges(list(requested_dates), PROJECT_METRICS_MAX_QUERY_WINDOW_DAYS):
+            range_start_time, range_end_time, _, _ = _build_project_query_window(range_start, range_end, business_timezone)
+            series = self._query_metric_series(
+                project_id,
+                spec,
+                range_start_time,
+                range_end_time,
+                attempts,
+                business_timezone,
+                range_start,
+                range_end,
+                metadata_by_metric,
+            )
+            values.update(series.values)
+            ranks.update(series.ranks)
+        return MetricSeriesResult(values=values, ranks=ranks)
 
     def _fetch_feature_permissions(self, project_id: str, attempts: list[QueryAttempt]) -> None:
         """探测项目是否拥有 analytics 页面权限。"""
@@ -809,12 +944,20 @@ class RobloxCreatorMetricsClient:
         business_timezone: timezone | ZoneInfo,
         start_date: date,
         end_date: date,
+        requested_fields_by_date: Mapping[date, tuple[str, ...]] | None,
     ) -> dict[str, dict[str, str]]:
         """抓取 overview 页面 benchmark-scorecard 接口返回的同类百分位。"""
 
         metric_ranks: dict[str, dict[str, str]] = {}
         empty_metadata: dict[str, date] = {}
         for spec in BENCHMARK_SCORECARD_SPECS:
+            if not _is_field_requested_in_window(
+                requested_fields_by_date,
+                start_date,
+                end_date,
+                (f"{spec.field_name}_rank",),
+            ):
+                continue
             url = ANALYTICS_BENCHMARK_SCORECARD_URL_TEMPLATE.format(
                 resource_id=project_id,
                 metric=spec.metric,
@@ -1370,13 +1513,52 @@ def resolve_project_metrics_query_date_bounds(
     end_date = (business_midnight - timedelta(days=1)).date()
     project_start_date = get_project_start_date(project_id)
     start_date = project_start_date or (end_date - timedelta(days=9))
-    if "peak_ccu" in get_project_required_fields(project_id):
-        peak_ccu_retention_start_date = end_date - timedelta(days=PEAK_CONCURRENT_PLAYERS_RETENTION_DAYS - 1)
-        if peak_ccu_retention_start_date > start_date:
-            start_date = peak_ccu_retention_start_date
     if start_date > end_date:
         return None
     return start_date, end_date
+
+
+def _normalize_requested_fields_by_date(
+    requested_fields_by_date: Mapping[date, Iterable[str]] | None,
+    business_timezone: timezone | ZoneInfo,
+) -> dict[date, tuple[str, ...]] | None:
+    """规范化字段级回查计划，并剔除 Roblox 已不可查的 peak_ccu 日期。"""
+
+    if requested_fields_by_date is None:
+        return None
+
+    retention_reference_date = (_business_midnight_now(business_timezone) - timedelta(days=1)).date()
+    normalized: dict[date, tuple[str, ...]] = {}
+    for raw_report_date, raw_fields in requested_fields_by_date.items():
+        report_date = raw_report_date.date() if isinstance(raw_report_date, datetime) else raw_report_date
+        if not isinstance(report_date, date):
+            continue
+        fields = {
+            str(field_name).strip()
+            for field_name in raw_fields
+            if str(field_name).strip()
+        }
+        if "peak_ccu" in fields and not _is_peak_ccu_queryable_date(
+            report_date,
+            business_timezone,
+            retention_reference_date,
+        ):
+            fields.remove("peak_ccu")
+        if fields:
+            normalized[report_date] = tuple(sorted(fields))
+    return dict(sorted(normalized.items()))
+
+
+def _is_peak_ccu_queryable_date(
+    report_date: date,
+    business_timezone: timezone | ZoneInfo,
+    retention_reference_date: date,
+) -> bool:
+    """判断业务日期起点是否仍在 PeakConcurrentPlayers 的 UTC 保留窗口内。"""
+
+    retention_start_utc_date = retention_reference_date - timedelta(days=PEAK_CONCURRENT_PLAYERS_RETENTION_DAYS - 1)
+    business_start_utc_date = datetime.combine(report_date, datetime.min.time(), tzinfo=business_timezone).astimezone(timezone.utc).date()
+    return business_start_utc_date >= retention_start_utc_date
 
 
 def _resolve_project_query_windows(
@@ -1540,10 +1722,71 @@ def _filter_metric_series(
     return filtered
 
 
+def _metric_spec_requested_fields(spec: MetricQuerySpec) -> tuple[str, ...]:
+    """返回一个 direct 指标可满足的日报字段集合。"""
+
+    fields = [spec.field_name]
+    if spec.field_name in PROJECT_METRIC_RANK_FIELDS:
+        fields.append(f"{spec.field_name}_rank")
+    return tuple(fields)
+
+
+def _resolve_requested_dates_for_fields(
+    requested_fields_by_date: Mapping[date, tuple[str, ...]] | None,
+    start_date: date,
+    end_date: date,
+    field_names: tuple[str, ...],
+) -> tuple[date, ...] | None:
+    """按字段级计划筛出当前指标真正需要查询的业务日期。"""
+
+    if requested_fields_by_date is None:
+        return None
+    target_fields = set(field_names)
+    return tuple(
+        report_date
+        for report_date, requested_fields in sorted(requested_fields_by_date.items())
+        if start_date <= report_date <= end_date
+        and target_fields.intersection(requested_fields)
+    )
+
+
+def _is_field_requested_in_window(
+    requested_fields_by_date: Mapping[date, tuple[str, ...]] | None,
+    start_date: date,
+    end_date: date,
+    field_names: tuple[str, ...],
+) -> bool:
+    """判断当前窗口是否需要抓取指定字段。"""
+
+    if requested_fields_by_date is None:
+        return True
+    return bool(_resolve_requested_dates_for_fields(requested_fields_by_date, start_date, end_date, field_names))
+
+
+def _filter_required_fields_by_request(
+    required_fields: tuple[str, ...],
+    requested_fields_by_date: Mapping[date, tuple[str, ...]] | None,
+    start_date: date,
+    end_date: date,
+) -> tuple[str, ...]:
+    """只校验本次实际请求过的核心字段，避免已有单元格触发重复失败。"""
+
+    if requested_fields_by_date is None:
+        return required_fields
+    requested_fields = {
+        field_name
+        for report_date, field_names in requested_fields_by_date.items()
+        if start_date <= report_date <= end_date
+        for field_name in field_names
+    }
+    return tuple(field_name for field_name in required_fields if field_name in requested_fields)
+
+
 def _find_missing_required_fields_by_date(
     report_dates: Iterable[str],
     metrics_by_field: dict[str, dict[str, str]],
     required_fields: tuple[str, ...],
+    requested_fields_by_date: Mapping[date, tuple[str, ...]] | None = None,
 ) -> dict[str, tuple[str, ...]]:
     """按日期检查核心字段，避免把缺关键指标的日报行写入表格。"""
 
@@ -1552,9 +1795,23 @@ def _find_missing_required_fields_by_date(
 
     missing_by_date: dict[str, tuple[str, ...]] = {}
     for report_date in report_dates:
+        effective_required_fields = required_fields
+        if requested_fields_by_date is not None:
+            try:
+                current_date = date.fromisoformat(report_date)
+            except ValueError:
+                current_date = None
+            requested_fields = requested_fields_by_date.get(current_date, ()) if current_date is not None else ()
+            effective_required_fields = tuple(
+                field_name
+                for field_name in required_fields
+                if field_name in requested_fields
+            )
+        if not effective_required_fields:
+            continue
         missing_fields = tuple(
             field_name
-            for field_name in required_fields
+            for field_name in effective_required_fields
             if not metrics_by_field.get(field_name, {}).get(report_date, "")
         )
         if missing_fields:

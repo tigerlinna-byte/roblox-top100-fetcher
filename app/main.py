@@ -13,7 +13,7 @@ from .project_metrics_models import ProjectDailyMetricsRecord
 from .project_metrics_sheet import (
     ProjectMetricsSheetVariables,
     ProjectMetricsSpreadsheetTarget,
-    build_project_metrics_query_dates,
+    build_project_metrics_query_plan,
     build_project_metrics_rank_color_cells,
     build_project_metrics_rebuild_rows,
     get_saved_project_metrics_target,
@@ -142,15 +142,16 @@ def _fetch_report_payload(cfg: Config):
         failures: list[ProjectMetricsFetchFailure] = []
         for variables in variables_list:
             try:
-                query_dates = _build_project_metrics_query_dates_for_project(
+                query_plan = _build_project_metrics_query_plan_for_project(
                     cfg,
                     feishu_client,
                     variables,
                 )
-                if query_dates:
+                if query_plan:
                     records_by_project_id[variables.project_id] = client.fetch_project_daily_metrics(
                         variables.overview_url,
-                        report_dates=query_dates,
+                        report_dates=query_plan.keys(),
+                        requested_fields_by_date=query_plan,
                     )
                 else:
                     records_by_project_id[variables.project_id] = []
@@ -204,28 +205,29 @@ def _fetch_report_payload(cfg: Config):
     return client.fetch_top_games()
 
 
-def _build_project_metrics_query_dates_for_project(
+def _build_project_metrics_query_plan_for_project(
     cfg: Config,
     feishu_client: FeishuClient,
     variables: ProjectMetricsSheetVariables,
-) -> tuple[date, ...]:
-    """读取项目日报旧表，并生成本次需要向 Roblox 查询的日期。"""
+) -> dict[date, tuple[str, ...]]:
+    """读取项目日报旧表，并生成本次需要向 Roblox 查询的日期和字段。"""
 
     bounds = resolve_project_metrics_query_date_bounds(
         variables.project_id,
         cfg.feishu_timezone,
     )
     if bounds is None:
-        return ()
+        return {}
 
     existing_rows = _read_project_metrics_existing_rows(cfg, feishu_client, variables)
     start_date, end_date = bounds
-    query_dates = build_project_metrics_query_dates(
+    query_plan = build_project_metrics_query_plan(
         existing_rows,
         start_date,
         end_date,
         max_data_rows=PROJECT_METRICS_SHEET_MAX_ROWS - 1,
     )
+    query_dates = tuple(query_plan)
     logging.info(
         "Project metrics %s needs %s date(s) from %s to %s.",
         variables.project_id,
@@ -233,7 +235,7 @@ def _build_project_metrics_query_dates_for_project(
         start_date.isoformat(),
         end_date.isoformat(),
     )
-    return query_dates
+    return query_plan
 
 
 def _read_project_metrics_existing_rows(

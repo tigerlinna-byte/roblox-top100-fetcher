@@ -309,8 +309,26 @@ def build_project_metrics_query_dates(
 ) -> tuple[date, ...]:
     """根据已有表格内容生成需要向 Roblox 回查的日期集合。"""
 
+    query_plan = build_project_metrics_query_plan(
+        existing_rows,
+        start_date,
+        end_date,
+        max_data_rows=max_data_rows,
+    )
+    return tuple(sorted(query_plan))
+
+
+def build_project_metrics_query_plan(
+    existing_rows: list[list[object]],
+    start_date: date,
+    end_date: date,
+    *,
+    max_data_rows: int,
+) -> dict[date, tuple[str, ...]]:
+    """根据已有表格内容生成需要向 Roblox 回查的日期和字段集合。"""
+
     if start_date > end_date or max_data_rows <= 0:
-        return ()
+        return {}
 
     normalized_rows = _normalize_existing_rows(existing_rows)
     row_by_date = {
@@ -324,12 +342,13 @@ def build_project_metrics_query_dates(
         end_date,
         max_data_rows=max_data_rows,
     )
-    query_dates: list[date] = []
+    query_plan: dict[date, tuple[str, ...]] = {}
     for report_date in candidate_dates:
         row = row_by_date.get(report_date.isoformat())
-        if row is None or not _project_metrics_row_has_all_backfill_fields(row):
-            query_dates.append(report_date)
-    return tuple(sorted(query_dates))
+        missing_fields = PROJECT_METRICS_BACKFILL_FIELD_NAMES if row is None else _project_metrics_missing_backfill_fields(row)
+        if missing_fields:
+            query_plan[report_date] = tuple(missing_fields)
+    return dict(sorted(query_plan.items()))
 
 
 def build_project_metrics_rank_color_cells(rows: list[list[object]]) -> list[ProjectMetricsRankColorCell]:
@@ -419,12 +438,17 @@ def _build_project_metrics_candidate_dates(
 
 
 def _project_metrics_row_has_all_backfill_fields(row: list[object]) -> bool:
+    return not _project_metrics_missing_backfill_fields(row)
+
+
+def _project_metrics_missing_backfill_fields(row: list[object]) -> tuple[str, ...]:
+    missing_fields: list[str] = []
     for field_name in PROJECT_METRICS_BACKFILL_FIELD_NAMES:
         column_index = PROJECT_METRICS_HEADERS.index(PROJECT_METRICS_FIELD_TO_HEADER[field_name])
         value = str(row[column_index]).strip() if column_index < len(row) else ""
         if not value:
-            return False
-    return True
+            missing_fields.append(field_name)
+    return tuple(missing_fields)
 
 
 def _normalize_existing_row(header_row: list[str], row: list[object]) -> list[str]:

@@ -9,6 +9,7 @@ from app.project_metrics_sheet import (
     LEGACY_PROJECT_METRICS_HEADERS,
     PROJECT_METRICS_HEADERS,
     build_project_metrics_query_dates,
+    build_project_metrics_query_plan,
     build_project_metrics_rank_color_cells,
     build_project_metrics_rebuild_rows,
     build_project_metrics_table,
@@ -320,6 +321,23 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             (date(2026, 3, 9), date(2026, 3, 10), date(2026, 3, 12)),
             query_dates,
         )
+
+    def test_build_project_metrics_query_plan_tracks_missing_fields_per_date(self) -> None:
+        existing_rows = [
+            PROJECT_METRICS_HEADERS.copy(),
+            ["2026-03-10（周二）", "180", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+        ]
+
+        query_plan = build_project_metrics_query_plan(
+            existing_rows,
+            date(2026, 3, 10),
+            date(2026, 3, 10),
+            max_data_rows=1,
+        )
+
+        self.assertNotIn("peak_ccu", query_plan[date(2026, 3, 10)])
+        self.assertIn("average_session_time", query_plan[date(2026, 3, 10)])
+        self.assertIn("day1_retention", query_plan[date(2026, 3, 10)])
 
     def test_build_project_metrics_rank_color_cells_maps_thresholds_and_gradients(self) -> None:
         rows = [
