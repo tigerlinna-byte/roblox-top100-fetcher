@@ -20,7 +20,7 @@ from .project_metrics_models import (
     get_project_start_date,
     now_iso,
 )
-from .retry import with_retry
+from .retry import RetryError, with_retry
 
 
 ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE = (
@@ -109,6 +109,7 @@ CAMEL_CASE_BOUNDARY_PATTERN = re.compile(r"([a-z0-9])([A-Z])")
 ACRONYM_BOUNDARY_PATTERN = re.compile(r"([A-Z]+)([A-Z][a-z])")
 DEBUG_HTML_MAX_LENGTH = 120_000
 DEBUG_PAYLOAD_MAX_LENGTH = 20_000
+PROJECT_METRICS_MAX_QUERY_WINDOW_DAYS = 14
 
 ANALYTICS_STATUS_CONFIG_URL_TEMPLATE = (
     "https://apis.roblox.com/analytics-query-gateway/v1/status-config?universeId={resource_id}"
@@ -872,8 +873,12 @@ class RobloxCreatorMetricsClient:
             )
         except RobloxCreatorMetricsClientError:
             raise
+        except RetryError as exc:
+            detail = _format_exception_detail(exc)
+            raise RobloxCreatorMetricsClientError(f"请求 analytics 接口失败: {url}: {detail}") from exc
         except Exception as exc:  # noqa: BLE001
-            raise RobloxCreatorMetricsClientError(f"请求 analytics 接口失败: {url}") from exc
+            detail = _format_exception_detail(exc)
+            raise RobloxCreatorMetricsClientError(f"请求 analytics 接口失败: {url}: {detail}") from exc
 
     def _send_json_request(self, method: str, url: str, json_body: dict[str, object] | None):
         """执行一次真实 HTTP 请求。"""
@@ -1145,6 +1150,14 @@ def _parse_report_date_candidate(
     return ""
 
 
+def _format_exception_detail(exc: Exception) -> str:
+    """保留重试包装中的根因，便于从 debug artifact 判断接口失败机制。"""
+
+    root_error = exc.__cause__ or exc
+    detail = str(root_error).strip()
+    return detail or root_error.__class__.__name__
+
+
 def _is_retryable_exception(exc: Exception) -> bool:
     if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
         return True
@@ -1380,21 +1393,36 @@ def _resolve_project_query_windows(
     if not normalized_dates:
         return ()
 
+    ranges = _split_dates_into_query_ranges(normalized_dates, PROJECT_METRICS_MAX_QUERY_WINDOW_DAYS)
+    return tuple(
+        _build_project_query_window(start_date, end_date, business_timezone)
+        for start_date, end_date in ranges
+    )
+
+
+def _split_dates_into_query_ranges(
+    normalized_dates: list[date],
+    max_window_days: int,
+) -> tuple[tuple[date, date], ...]:
+    """把已排序日期拆成连续且不超过接口稳定窗口的查询范围。"""
+
+    if not normalized_dates:
+        return ()
+    effective_max_window_days = max(1, max_window_days)
     ranges: list[tuple[date, date]] = []
     range_start = normalized_dates[0]
     previous_date = normalized_dates[0]
     for current_date in normalized_dates[1:]:
-        if current_date == previous_date + timedelta(days=1):
+        is_next_day = current_date == previous_date + timedelta(days=1)
+        current_window_days = (current_date - range_start).days + 1
+        if is_next_day and current_window_days <= effective_max_window_days:
             previous_date = current_date
             continue
         ranges.append((range_start, previous_date))
         range_start = current_date
         previous_date = current_date
     ranges.append((range_start, previous_date))
-    return tuple(
-        _build_project_query_window(start_date, end_date, business_timezone)
-        for start_date, end_date in ranges
-    )
+    return tuple(ranges)
 
 
 def _build_project_query_window(

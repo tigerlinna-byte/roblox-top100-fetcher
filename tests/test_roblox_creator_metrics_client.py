@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import Mock, patch
@@ -668,6 +668,73 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("", records[0].peak_ccu)
         self.assertEqual("5m 12s", records[0].average_session_time)
         self.assertEqual("0%", records[0].payer_conversion_rate)
+
+    def test_fetch_project_daily_metrics_splits_large_peak_ccu_backfill_windows(self) -> None:
+        session = Mock()
+        peak_windows: list[tuple[datetime, datetime]] = []
+
+        def request(method: str, url: str, **kwargs):
+            if method == "GET" and "feature-permissions" in url:
+                return _build_json_response({"userCanViewAnalyticsForUniverse": True})
+            if method == "GET" and "status-config" in url:
+                return _build_json_response({"annotationConfigurations": []})
+            if method == "GET" and "benchmark-scorecard" in url:
+                return _build_json_response({})
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({"operation": {"done": True, "metricMetadataResult": {"metadata": []}}})
+            if method == "POST" and "analytics-query-gateway" in url:
+                query = kwargs["json"]["query"]
+                metric = query["metric"]
+                if metric != "PeakConcurrentPlayers":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
+
+                start_time = datetime.fromisoformat(query["startTime"].replace("Z", "+00:00"))
+                end_time = datetime.fromisoformat(query["endTime"].replace("Z", "+00:00"))
+                peak_windows.append((start_time, end_time))
+                if end_time - start_time > timedelta(days=14):
+                    return _build_json_response({"errors": [{"message": "window too large"}]}, status_code=500)
+
+                data_points = []
+                if start_time.date() <= date(2026, 5, 4) < end_time.date():
+                    data_points.append({"time": "2026-05-04T00:00:00Z", "value": 569})
+                return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": data_points}))
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                output_dir=".test-output",
+                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=1,
+                retry_backoff_seconds=0,
+                feishu_timezone="UTC",
+            ),
+            session=session,
+        )
+        report_dates = [date(2026, 3, 17) + timedelta(days=index) for index in range(49)]
+
+        records = client.fetch_project_daily_metrics(report_dates=report_dates)
+
+        self.assertTrue(peak_windows)
+        self.assertTrue(all(end_time - start_time <= timedelta(days=14) for start_time, end_time in peak_windows))
+        record_map = {record.report_date: record for record in records}
+        self.assertEqual("569", record_map["2026-05-04"].peak_ccu)
+
+    def test_request_json_preserves_retry_cause(self) -> None:
+        session = Mock()
+        session.request.return_value = _build_json_response({"errors": [{"message": "server failed"}]}, status_code=500)
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=1,
+                retry_backoff_seconds=0,
+            ),
+            session=session,
+        )
+
+        with self.assertRaisesRegex(RobloxCreatorMetricsClientError, "HTTP 500"):
+            client._request_json("GET", "https://apis.roblox.com/failing", json_body=None)
 
 
 if __name__ == "__main__":
