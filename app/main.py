@@ -23,6 +23,7 @@ from .project_metrics_sheet import (
 )
 from .roblox_money_models import (
     RobloxMoneyFetchFailure,
+    RobloxMoneyPendingRevenue,
     RobloxMoneyProjectRevenue,
     RobloxMoneyReportPayload,
     parse_roblox_money_start_date,
@@ -239,6 +240,7 @@ def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
         )
 
     project_revenues: list[RobloxMoneyProjectRevenue] = []
+    pending_items: list[RobloxMoneyPendingRevenue] = []
     failures: list[RobloxMoneyFetchFailure] = []
     for variables in variables_list:
         project_name = variables.spreadsheet_title or f"项目 {variables.project_id}"
@@ -251,7 +253,16 @@ def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
                 raise RobloxCreatorMetricsClientError("未找到 Roblox 总收入指标数据")
             report_date_text = report_date.isoformat()
             if report_date_text not in series.values:
-                raise RobloxCreatorMetricsClientError(f"{report_date_text} 收入数据暂不可用")
+                pending_items.append(
+                    RobloxMoneyPendingRevenue(
+                        project_id=variables.project_id,
+                        project_name=project_name,
+                        overview_url=variables.overview_url,
+                        report_date=report_date_text,
+                        reason=f"{report_date_text} 收入数据暂未产出",
+                    )
+                )
+                continue
             month_start_date = max(minimum_start_date, report_date.replace(day=1))
             month_values = {
                 item_date: value
@@ -295,7 +306,9 @@ def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
             )
 
     return RobloxMoneyReportPayload(
+        report_date=report_date.isoformat(),
         project_revenues=tuple(project_revenues),
+        pending_items=tuple(pending_items),
         failures=tuple(failures),
     )
 

@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 from .config import Config
-from .roblox_money_models import RobloxMoneyFetchFailure, RobloxMoneyProjectRevenue, RobloxMoneyReportPayload
+from .roblox_money_models import RobloxMoneyReportPayload
 from .summary import _format_now, _format_trigger
 
 
 MONEY_PROJECT_NAME_COLOR = "blue"
 MONEY_DAILY_VALUE_COLOR = "green"
 MONEY_MONTH_VALUE_COLOR = "blue"
+MONEY_PENDING_COLOR = "orange"
 MONEY_FAILURE_COLOR = "red"
 
 
 def build_roblox_money_markdown(cfg: Config, payload: RobloxMoneyReportPayload) -> str:
     """构造 Roblox 收入日报飞书文本消息。"""
 
-    title = _build_money_title(payload.project_revenues)
+    title = _build_money_title(payload)
     lines = [
         f"## **{title}**",
         "",
@@ -40,6 +41,15 @@ def build_roblox_money_markdown(cfg: Config, payload: RobloxMoneyReportPayload) 
                 ]
             )
 
+    if payload.pending_items:
+        lines.extend(["", "## **数据暂未产出**"])
+        for item in payload.pending_items:
+            project_label = item.project_name or f"项目 {item.project_id or '-'}"
+            lines.append(
+                f"- **{_color_text(project_label, MONEY_PENDING_COLOR)}**: "
+                f"{_color_text(item.reason, MONEY_PENDING_COLOR)}"
+            )
+
     if payload.failures:
         lines.extend(["", "## **抓取异常**"])
         for failure in payload.failures:
@@ -49,14 +59,16 @@ def build_roblox_money_markdown(cfg: Config, payload: RobloxMoneyReportPayload) 
                 f"{_color_text(failure.reason, MONEY_FAILURE_COLOR)}"
             )
 
-    if not payload.project_revenues and not payload.failures:
+    if not payload.project_revenues and not payload.pending_items and not payload.failures:
         lines.extend(["", "没有可发送的收入数据。"])
 
     return "\n".join(lines)
 
 
-def _build_money_title(project_revenues: tuple[RobloxMoneyProjectRevenue, ...]) -> str:
-    report_dates = {item.report_date for item in project_revenues if item.report_date}
+def _build_money_title(payload: RobloxMoneyReportPayload) -> str:
+    if payload.report_date:
+        return f"Roblox 收入日报（{payload.report_date}）"
+    report_dates = {item.report_date for item in payload.project_revenues if item.report_date}
     if len(report_dates) == 1:
         return f"Roblox 收入日报（{next(iter(report_dates))}）"
     return "Roblox 收入日报"

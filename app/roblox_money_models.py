@@ -61,10 +61,23 @@ class RobloxMoneyFetchFailure:
 
 
 @dataclass(frozen=True)
+class RobloxMoneyPendingRevenue:
+    """描述单个项目指定统计日收入数据尚未产出的状态。"""
+
+    project_id: str
+    project_name: str
+    overview_url: str
+    report_date: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class RobloxMoneyReportPayload:
     """聚合收入日报抓取结果，允许部分项目失败。"""
 
+    report_date: str
     project_revenues: tuple[RobloxMoneyProjectRevenue, ...]
+    pending_items: tuple[RobloxMoneyPendingRevenue, ...]
     failures: tuple[RobloxMoneyFetchFailure, ...]
 
 

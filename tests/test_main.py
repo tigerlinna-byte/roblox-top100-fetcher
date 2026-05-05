@@ -15,6 +15,7 @@ from app.models import GameRecord
 from app.project_metrics_models import ProjectDailyMetricsRecord
 from app.roblox_money_models import (
     RobloxMoneyFetchFailure,
+    RobloxMoneyPendingRevenue,
     RobloxMoneyProjectRevenue,
     RobloxMoneyReportPayload,
 )
@@ -351,7 +352,7 @@ class MainTests(unittest.TestCase):
 
     @patch("app.main._resolve_roblox_money_report_date")
     @patch("app.main.RobloxCreatorMetricsClient")
-    def test_roblox_money_payload_fails_when_yesterday_revenue_is_missing(
+    def test_roblox_money_payload_marks_pending_when_yesterday_revenue_is_missing(
         self,
         client_cls,
         resolve_report_date,
@@ -376,9 +377,11 @@ class MainTests(unittest.TestCase):
 
         payload = _fetch_report_payload(cfg)
 
+        self.assertEqual("2026-05-04", payload.report_date)
         self.assertEqual((), payload.project_revenues)
-        self.assertEqual(1, len(payload.failures))
-        self.assertIn("2026-05-04 收入数据暂不可用", payload.failures[0].reason)
+        self.assertEqual(1, len(payload.pending_items))
+        self.assertEqual((), payload.failures)
+        self.assertIn("2026-05-04 收入数据暂未产出", payload.pending_items[0].reason)
 
     @patch("app.main._resolve_roblox_money_report_date")
     def test_roblox_money_payload_rejects_report_date_before_start_date(
@@ -430,6 +433,7 @@ class MainTests(unittest.TestCase):
     def test_roblox_money_success_sends_text_only(self, feishu_client_cls) -> None:
         cfg = Config(run_report_mode="roblox_money")
         report_payload = RobloxMoneyReportPayload(
+            report_date="2026-05-04",
             project_revenues=(
                 RobloxMoneyProjectRevenue(
                     project_id="9682356542",
@@ -445,11 +449,20 @@ class MainTests(unittest.TestCase):
                     fetched_at="2026-05-05T01:20:00Z",
                 ),
             ),
+            pending_items=(
+                RobloxMoneyPendingRevenue(
+                    project_id="9707829514",
+                    project_name="Jail League",
+                    overview_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+                    report_date="2026-05-04",
+                    reason="2026-05-04 收入数据暂未产出",
+                ),
+            ),
             failures=(
                 RobloxMoneyFetchFailure(
-                    project_id="9707829514",
-                    project_name="项目 9707829514",
-                    overview_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+                    project_id="1234567890",
+                    project_name="项目 1234567890",
+                    overview_url="https://create.roblox.com/dashboard/creations/experiences/1234567890/overview",
                     reason="未找到 Roblox 总收入指标数据",
                 ),
             ),
@@ -466,8 +479,10 @@ class MainTests(unittest.TestCase):
         self.assertIn("**<font color='blue'>Shoot Or Shot</font>**", message)
         self.assertIn("**<font color='green'>$14.00</font>**（4,000 Robux）", message)
         self.assertIn("**<font color='blue'>$35.00</font>**（10,000 Robux）", message)
+        self.assertIn("## **数据暂未产出**", message)
+        self.assertIn("**<font color='orange'>Jail League</font>**", message)
         self.assertIn("## **抓取异常**", message)
-        self.assertIn("**<font color='red'>项目 9707829514</font>**", message)
+        self.assertIn("**<font color='red'>项目 1234567890</font>**", message)
 
 
 if __name__ == "__main__":
