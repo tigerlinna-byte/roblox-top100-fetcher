@@ -462,10 +462,12 @@ class MainTests(unittest.TestCase):
         feishu_client.send_group_markdown.assert_called_once()
         feishu_client.send_group_card.assert_not_called()
         message = feishu_client.send_group_markdown.call_args.args[0]
-        self.assertIn("Roblox 收入日报（2026-05-04）", message)
-        self.assertIn("$14.00（4,000 Robux）", message)
-        self.assertIn("$35.00（10,000 Robux）", message)
-        self.assertIn("抓取异常", message)
+        self.assertIn("## **Roblox 收入日报（2026-05-04）**", message)
+        self.assertIn("**<font color='blue'>Shoot Or Shot</font>**", message)
+        self.assertIn("**<font color='green'>$14.00</font>**（4,000 Robux）", message)
+        self.assertIn("**<font color='blue'>$35.00</font>**（10,000 Robux）", message)
+        self.assertIn("## **抓取异常**", message)
+        self.assertIn("**<font color='red'>项目 9707829514</font>**", message)
 
 
 if __name__ == "__main__":
