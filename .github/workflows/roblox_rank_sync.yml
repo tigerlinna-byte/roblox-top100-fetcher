@@ -103,4 +103,4 @@ jobs:
           path: |
             data/project_metrics_*.json
             data/project_metrics_*.csv
-            data/creator_overview_debug.json
+            data/creator_overview_debug*.json

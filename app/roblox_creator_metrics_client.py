@@ -379,7 +379,7 @@ class RobloxCreatorMetricsClient:
         missing_fields = [definition.field_name for definition in METRIC_DEFINITIONS if not metrics_by_field.get(definition.field_name)]
         debug_path = ""
         if missing_fields:
-            debug_path = self._write_debug_snapshot("", metrics_by_field, missing_fields, direct_attempts)
+            debug_path = self._write_debug_snapshot(project_id, "", metrics_by_field, missing_fields, direct_attempts)
             logging.warning(
                 "Creator overview metrics missing for project %s: %s%s",
                 project_id,
@@ -399,7 +399,7 @@ class RobloxCreatorMetricsClient:
         )
         if missing_required_fields:
             if not debug_path:
-                debug_path = self._write_debug_snapshot("", metrics_by_field, list(missing_required_fields), direct_attempts)
+                debug_path = self._write_debug_snapshot(project_id, "", metrics_by_field, list(missing_required_fields), direct_attempts)
             raise RobloxCreatorMetricsClientError(
                 _format_missing_required_fields_error({"全部日期": missing_required_fields}, debug_path)
             )
@@ -415,7 +415,7 @@ class RobloxCreatorMetricsClient:
                 for field_name in field_names
             })
             if not debug_path:
-                debug_path = self._write_debug_snapshot("", metrics_by_field, required_missing_fields, direct_attempts)
+                debug_path = self._write_debug_snapshot(project_id, "", metrics_by_field, required_missing_fields, direct_attempts)
             raise RobloxCreatorMetricsClientError(
                 _format_missing_required_fields_error(missing_required_fields_by_date, debug_path)
             )
@@ -923,6 +923,7 @@ class RobloxCreatorMetricsClient:
 
     def _write_debug_snapshot(
         self,
+        project_id: str,
         html_text: str,
         metrics: dict[str, str],
         missing_fields: list[str],
@@ -930,10 +931,12 @@ class RobloxCreatorMetricsClient:
     ) -> str:
         target_dir = Path(self.config.output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
-        debug_path = target_dir / "creator_overview_debug.json"
+        debug_suffix = _sanitize_debug_file_suffix(project_id)
+        debug_path = target_dir / f"creator_overview_debug_{debug_suffix}.json"
         parser = _VisibleTextParser()
         parser.feed(html_text)
         payload = {
+            "project_id": project_id,
             "captured_metrics": metrics,
             "missing_fields": missing_fields,
             "direct_query_attempts": [
@@ -964,6 +967,13 @@ def _extract_project_id(overview_url: str) -> str:
     if not match:
         return ""
     return match.group(1)
+
+
+def _sanitize_debug_file_suffix(project_id: str) -> str:
+    """生成安全的调试文件后缀，避免多项目运行时互相覆盖。"""
+
+    suffix = re.sub(r"[^A-Za-z0-9_-]+", "_", project_id.strip())
+    return suffix or "unknown"
 
 
 def _extract_script_contents(html_text: str) -> list[str]:

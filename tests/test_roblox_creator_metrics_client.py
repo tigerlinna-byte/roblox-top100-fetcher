@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -503,8 +504,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         session = Mock()
         output_dir = Path(".test-output")
         output_dir.mkdir(parents=True, exist_ok=True)
-        debug_path = output_dir / "creator_overview_debug.json"
-        if debug_path.exists():
+        for debug_path in output_dir.glob("creator_overview_debug*.json"):
             debug_path.unlink()
 
         def request(method: str, url: str, **kwargs):
@@ -533,7 +533,10 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         with self.assertRaisesRegex(RobloxCreatorMetricsClientError, "核心指标"):
             client.fetch_project_daily_metrics()
 
+        debug_path = output_dir / "creator_overview_debug_9682356542.json"
         self.assertTrue(debug_path.exists())
+        payload = json.loads(debug_path.read_text(encoding="utf-8"))
+        self.assertEqual("9682356542", payload["project_id"])
 
     def test_fetch_project_daily_metrics_rejects_dates_missing_required_peak_ccu(self) -> None:
         session = Mock()
