@@ -299,16 +299,11 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {"time": "2026-03-11T12:00:00Z", "value": 3},
                     ]}))
                 if metric == "ServerMemoryUsageV2":
-                    return _build_json_response(_wrap_query_result([
-                        {
-                            "breakdownValue": [{"dimension": "CrashType", "value": "NoCrash"}],
-                            "dataPoints": [
-                                {"time": "2026-03-10T00:00:00Z", "value": 500},
-                                {"time": "2026-03-11T00:00:00Z", "value": 512},
-                                {"time": "2026-03-11T12:00:00Z", "value": 514},
-                            ],
-                        }
-                    ]))
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 500},
+                        {"time": "2026-03-11T00:00:00Z", "value": 512},
+                        {"time": "2026-03-11T12:00:00Z", "value": 514},
+                    ]}))
                 if metric == "ServerFrameRateAvg":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 60.0},
@@ -371,7 +366,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             and json_payload.get("query", {}).get("metric") == "ServerMemoryUsageV2"
         ]
         self.assertTrue(server_memory_requests)
-        self.assertTrue(all(request["breakdown"] == [{"dimensions": ["CrashType"]}] for request in server_memory_requests))
+        self.assertTrue(all(request["breakdown"] == [] for request in server_memory_requests))
 
     def test_fetch_project_daily_metrics_uses_benchmark_scorecard_for_ranks(self) -> None:
         session = Mock()

@@ -206,7 +206,6 @@ DIRECT_QUERY_SPECS = (
         "METRIC_GRANULARITY_ONE_DAY",
         14,
         "memory",
-        breakdown_dimensions=("CrashType",),
     ),
     MetricQuerySpec("server_frame_rate", "ServerFrameRateAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
 )
