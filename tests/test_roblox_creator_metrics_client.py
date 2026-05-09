@@ -166,7 +166,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "ClientMemoryUsagePercentageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientFpsAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ServerCrashCount", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ServerMemoryUsageV2", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "MemoryUsageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ServerFrameRateAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                             ]
                         },
@@ -298,7 +298,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {"time": "2026-03-11T00:00:00Z", "value": 2},
                         {"time": "2026-03-11T12:00:00Z", "value": 3},
                     ]}))
-                if metric == "ServerMemoryUsageV2":
+                if metric == "MemoryUsageAvg":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 500},
                         {"time": "2026-03-11T00:00:00Z", "value": 512},
@@ -363,7 +363,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             json_payload["query"]
             for call in session.request.call_args_list
             if isinstance((json_payload := call.kwargs.get("json")), dict)
-            and json_payload.get("query", {}).get("metric") == "ServerMemoryUsageV2"
+            and json_payload.get("query", {}).get("metric") == "MemoryUsageAvg"
         ]
         self.assertTrue(server_memory_requests)
         self.assertTrue(all(request["breakdown"] == [] for request in server_memory_requests))

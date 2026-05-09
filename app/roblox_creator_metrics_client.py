@@ -202,7 +202,7 @@ DIRECT_QUERY_SPECS = (
     MetricQuerySpec("server_crashes", "ServerCrashCount", "METRIC_GRANULARITY_ONE_DAY", 14, "daily_sum"),
     MetricQuerySpec(
         "server_memory",
-        "ServerMemoryUsageV2",
+        "MemoryUsageAvg",
         "METRIC_GRANULARITY_ONE_DAY",
         14,
         "memory",

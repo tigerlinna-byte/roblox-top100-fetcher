@@ -270,7 +270,7 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - `ClientMemoryUsageAvg`
 - `ClientFpsAvg`
 - `ServerCrashCount`
-- `ServerMemoryUsageV2`
+- `MemoryUsageAvg`（Creator Dashboard URL 中展示为 `ServerMemoryUsageV2`，前端会映射到该 API 指标）
 - `ServerFrameRateAvg`
 
 同时还会查询：
