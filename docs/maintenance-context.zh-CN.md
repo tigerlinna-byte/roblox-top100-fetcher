@@ -270,7 +270,7 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - `ClientMemoryUsageAvg`
 - `ClientFpsAvg`
 - `ServerCrashCount`
-- `ServerMemoryUsageAvg`
+- `ServerMemoryUsageV2`（按 `CrashType` breakdown 查询，用于“服务器内存”列）
 - `ServerFrameRateAvg`
 
 同时还会查询：

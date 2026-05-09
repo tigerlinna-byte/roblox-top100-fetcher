@@ -166,6 +166,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "ClientMemoryUsagePercentageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientFpsAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ServerCrashCount", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ServerMemoryUsageV2", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ServerFrameRateAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                             ]
                         },
@@ -297,6 +298,17 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {"time": "2026-03-11T00:00:00Z", "value": 2},
                         {"time": "2026-03-11T12:00:00Z", "value": 3},
                     ]}))
+                if metric == "ServerMemoryUsageV2":
+                    return _build_json_response(_wrap_query_result([
+                        {
+                            "breakdownValue": [{"dimension": "CrashType", "value": "NoCrash"}],
+                            "dataPoints": [
+                                {"time": "2026-03-10T00:00:00Z", "value": 500},
+                                {"time": "2026-03-11T00:00:00Z", "value": 512},
+                                {"time": "2026-03-11T12:00:00Z", "value": 514},
+                            ],
+                        }
+                    ]))
                 if metric == "ServerFrameRateAvg":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 60.0},
@@ -332,6 +344,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("61%", record_map["2026-03-11"].phone_memory_percentage)
         self.assertEqual("59.5 FPS", record_map["2026-03-11"].client_frame_rate)
         self.assertEqual("5", record_map["2026-03-11"].server_crashes)
+        self.assertEqual("513 MB", record_map["2026-03-11"].server_memory)
         self.assertEqual("59.75 FPS", record_map["2026-03-11"].server_frame_rate)
         self.assertEqual("6.77%", record_map["2026-03-10"].day1_retention)
         self.assertEqual("72th", record_map["2026-03-10"].day1_retention_rank)
@@ -351,6 +364,14 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         ]
         self.assertTrue(memory_requests)
         self.assertTrue(all(request["breakdown"] == [{"dimensions": ["Platform"]}] for request in memory_requests))
+        server_memory_requests = [
+            json_payload["query"]
+            for call in session.request.call_args_list
+            if isinstance((json_payload := call.kwargs.get("json")), dict)
+            and json_payload.get("query", {}).get("metric") == "ServerMemoryUsageV2"
+        ]
+        self.assertTrue(server_memory_requests)
+        self.assertTrue(all(request["breakdown"] == [{"dimensions": ["CrashType"]}] for request in server_memory_requests))
 
     def test_fetch_project_daily_metrics_uses_benchmark_scorecard_for_ranks(self) -> None:
         session = Mock()

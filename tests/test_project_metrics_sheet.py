@@ -58,6 +58,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             phone_memory_percentage="61%",
             client_frame_rate="59.5 FPS",
             server_crashes="2",
+            server_memory="512 MB",
             server_frame_rate="60 FPS",
             project_id="9682356542",
             source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
@@ -81,8 +82,9 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("61%", row[18])
         self.assertEqual("59.5 FPS", row[19])
         self.assertEqual("2", row[20])
-        self.assertEqual("60 FPS", row[21])
-        self.assertEqual("2026-03-12T01:02:03Z", row[22])
+        self.assertEqual("512 MB", row[21])
+        self.assertEqual("60 FPS", row[22])
+        self.assertEqual("2026-03-12T01:02:03Z", row[23])
 
     def test_build_project_metrics_table_adds_rows_in_date_desc_order(self) -> None:
         records = [
@@ -128,8 +130,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_table_merges_existing_rows_without_clearing_history(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11", "200", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
-            ["2026-03-10", "180", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "2026-03-10T01:02:03Z"],
+            ["2026-03-11", "200"] + [""] * 21 + ["2026-03-11T01:02:03Z"],
+            ["2026-03-10", "180"] + [""] * 21 + ["2026-03-10T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
@@ -179,7 +181,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_table_clears_existing_value_when_new_value_missing(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11", "200", "15m", "", "31%", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
+            ["2026-03-11", "200", "15m", "", "31%"] + [""] * 18 + ["2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
@@ -206,7 +208,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("200", table_state.rows[1][1])
         self.assertEqual("15m", table_state.rows[1][2])
         self.assertEqual("31%", table_state.rows[1][4])
-        self.assertEqual("2026-03-11T01:02:03Z", table_state.rows[1][22])
+        self.assertEqual("2026-03-11T01:02:03Z", table_state.rows[1][23])
 
     def test_build_project_metrics_rebuild_rows_pads_blank_rows_to_fixed_height(self) -> None:
         records = [
@@ -238,7 +240,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_rebuild_rows_preserves_existing_non_empty_cells(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11（周三）", "200", "15m", "82th", "31%", "71th", "", "", "", "", "", "", "4.5%", "", "88", "0.10%", "42%", "55%", "61%", "58 FPS", "1", "60 FPS", "2026-03-11T01:02:03Z"],
+            ["2026-03-11（周三）", "200", "15m", "82th", "31%", "71th", "", "", "", "", "", "", "4.5%", "", "88", "0.10%", "42%", "55%", "61%", "58 FPS", "1", "512 MB", "60 FPS", "2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
@@ -275,8 +277,9 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("61%", rows[1][18])
         self.assertEqual("58 FPS", rows[1][19])
         self.assertEqual("1", rows[1][20])
-        self.assertEqual("60 FPS", rows[1][21])
-        self.assertEqual("2026-03-11T01:02:03Z", rows[1][22])
+        self.assertEqual("512 MB", rows[1][21])
+        self.assertEqual("60 FPS", rows[1][22])
+        self.assertEqual("2026-03-11T01:02:03Z", rows[1][23])
 
     def test_build_project_metrics_query_dates_skips_complete_existing_rows(self) -> None:
         complete_row = [
@@ -301,13 +304,14 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             "61%",
             "58 FPS",
             "1",
+            "512 MB",
             "60 FPS",
             "2026-03-12T01:02:03Z",
         ]
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
             complete_row,
-            ["2026-03-10（周二）", "180", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+            ["2026-03-10（周二）", "180"] + [""] * 22,
         ]
 
         query_dates = build_project_metrics_query_dates(
@@ -325,7 +329,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_query_plan_tracks_missing_fields_per_date(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-10（周二）", "180", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+            ["2026-03-10（周二）", "180"] + [""] * 22,
         ]
 
         query_plan = build_project_metrics_query_plan(
@@ -342,8 +346,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_rank_color_cells_maps_thresholds_and_gradients(self) -> None:
         rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-12", "", "", "90th", "", "50th", "", "25th", "", "0th", "", "同类 70th", "", "", "", "", "", "", "", "", "", "", ""],
-            ["2026-03-11", "", "", "10th", "", "40th", "", "bad", "", "", "", "-3th", "", "", "", "", "", "", "", "", "", "", ""],
+            ["2026-03-12", "", "", "90th", "", "50th", "", "25th", "", "0th", "", "同类 70th"] + [""] * 12,
+            ["2026-03-11", "", "", "10th", "", "40th", "", "bad", "", "", "", "-3th"] + [""] * 12,
         ]
 
         cells = build_project_metrics_rank_color_cells(rows)
@@ -365,7 +369,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_table_updates_existing_rows_with_weekday_suffix(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11（周三）", "200", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "2026-03-11T01:02:03Z"],
+            ["2026-03-11（周三）", "200"] + [""] * 21 + ["2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
@@ -422,7 +426,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("", table_state.rows[1][19])
         self.assertEqual("", table_state.rows[1][20])
         self.assertEqual("", table_state.rows[1][21])
-        self.assertEqual("2026-03-10T01:02:03Z", table_state.rows[1][22])
+        self.assertEqual("", table_state.rows[1][22])
+        self.assertEqual("2026-03-10T01:02:03Z", table_state.rows[1][23])
 
     def test_build_project_metrics_table_repairs_shifted_legacy_rows_under_new_header(self) -> None:
         existing_rows = [
@@ -454,7 +459,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("", table_state.rows[1][19])
         self.assertEqual("", table_state.rows[1][20])
         self.assertEqual("", table_state.rows[1][21])
-        self.assertEqual("2026-03-10T01:02:03Z", table_state.rows[1][22])
+        self.assertEqual("", table_state.rows[1][22])
+        self.assertEqual("2026-03-10T01:02:03Z", table_state.rows[1][23])
 
 
 if __name__ == "__main__":

@@ -103,6 +103,7 @@ METRIC_DEFINITIONS = (
     MetricDefinition("phone_memory_percentage", ("phone memory percentage", "mobile memory usage percentage", "phone memory usage percentage")),
     MetricDefinition("client_frame_rate", ("client frame rate", "client fps", "frame rate", "fps")),
     MetricDefinition("server_crashes", ("server crashes", "server crash count")),
+    MetricDefinition("server_memory", ("server memory", "server memory usage")),
     MetricDefinition("server_frame_rate", ("server frame rate", "server fps")),
 )
 INLINE_JSON_PATTERN = re.compile(r"<script[^>]*>(?P<content>.*?)</script>", re.IGNORECASE | re.DOTALL)
@@ -199,6 +200,14 @@ DIRECT_QUERY_SPECS = (
     ),
     MetricQuerySpec("client_frame_rate", "ClientFpsAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
     MetricQuerySpec("server_crashes", "ServerCrashCount", "METRIC_GRANULARITY_ONE_DAY", 14, "daily_sum"),
+    MetricQuerySpec(
+        "server_memory",
+        "ServerMemoryUsageV2",
+        "METRIC_GRANULARITY_ONE_DAY",
+        14,
+        "memory",
+        breakdown_dimensions=("CrashType",),
+    ),
     MetricQuerySpec("server_frame_rate", "ServerFrameRateAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
 )
 DIRECT_QUERY_FALLBACK_SPECS = (
@@ -550,6 +559,7 @@ class RobloxCreatorMetricsClient:
                     phone_memory_percentage=metrics_by_field.get("phone_memory_percentage", {}).get(report_date, ""),
                     client_frame_rate=metrics_by_field.get("client_frame_rate", {}).get(report_date, ""),
                     server_crashes=metrics_by_field.get("server_crashes", {}).get(report_date, ""),
+                    server_memory=metrics_by_field.get("server_memory", {}).get(report_date, ""),
                     server_frame_rate=metrics_by_field.get("server_frame_rate", {}).get(report_date, ""),
                     project_id=project_id,
                     source_url=resolved_overview_url,

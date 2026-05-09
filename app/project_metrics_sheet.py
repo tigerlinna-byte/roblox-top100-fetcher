@@ -36,6 +36,7 @@ PROJECT_METRICS_HEADERS = [
     "手机内存",
     "客户端帧率",
     "服务器崩溃数",
+    "服务器内存",
     "服务器帧率",
     "更新时间",
 ]
@@ -75,6 +76,7 @@ PROJECT_METRICS_FIELD_TO_HEADER = {
     "phone_memory_percentage": "手机内存",
     "client_frame_rate": "客户端帧率",
     "server_crashes": "服务器崩溃数",
+    "server_memory": "服务器内存",
     "server_frame_rate": "服务器帧率",
     "fetched_at": "更新时间",
 }
@@ -102,6 +104,7 @@ PROJECT_METRICS_PERFORMANCE_FIELD_NAMES = {
     "phone_memory_percentage",
     "client_frame_rate",
     "server_crashes",
+    "server_memory",
     "server_frame_rate",
 }
 PROJECT_METRICS_RANK_FIELD_NAMES = (
@@ -267,6 +270,7 @@ def build_project_metrics_values(record: ProjectDailyMetricsRecord) -> list[obje
         record.phone_memory_percentage,
         record.client_frame_rate,
         record.server_crashes,
+        record.server_memory,
         record.server_frame_rate,
         record.fetched_at,
     ]
@@ -524,6 +528,7 @@ def _extract_shifted_legacy_row_field_values(row_cells: list[str]) -> dict[str, 
         "phone_memory_percentage": current_values.get("phone_memory_percentage", ""),
         "client_frame_rate": current_values.get("client_frame_rate", ""),
         "server_crashes": current_values.get("server_crashes", ""),
+        "server_memory": current_values.get("server_memory", ""),
         "server_frame_rate": current_values.get("server_frame_rate", ""),
         "fetched_at": current_values.get("fetched_at", legacy_values.get("fetched_at", "")),
     }

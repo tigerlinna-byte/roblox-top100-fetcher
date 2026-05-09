@@ -85,6 +85,7 @@ def write_project_metrics_output(
             five_minute_retention="",
             home_recommendations="",
             client_crash_rate="",
+            server_memory="",
             project_id="",
             source_url="",
             fetched_at="",

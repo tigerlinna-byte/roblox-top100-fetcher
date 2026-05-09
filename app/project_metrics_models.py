@@ -36,6 +36,7 @@ PROJECT_METRICS_FIELD_NAMES = (
     "phone_memory_percentage",
     "client_frame_rate",
     "server_crashes",
+    "server_memory",
     "server_frame_rate",
 )
 
@@ -65,6 +66,7 @@ class ProjectDailyMetricsRecord:
     phone_memory_percentage: str = ""
     client_frame_rate: str = ""
     server_crashes: str = ""
+    server_memory: str = ""
     server_frame_rate: str = ""
     project_id: str = ""
     source_url: str = ""
