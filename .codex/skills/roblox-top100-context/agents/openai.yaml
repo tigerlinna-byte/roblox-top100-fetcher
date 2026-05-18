@@ -1,0 +1,7 @@
+interface:
+  display_name: "Roblox Top100 Context"
+  short_description: "按需读取项目文档并判断新需求影响面"
+  default_prompt: "Use $roblox-top100-context to classify the new roblox-top100-fetcher request, read only the required docs, and report the affected areas before implementation."
+
+policy:
+  allow_implicit_invocation: true
