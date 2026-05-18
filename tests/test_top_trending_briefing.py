@@ -204,6 +204,35 @@ class TopTrendingBriefingTests(unittest.TestCase):
         self.assertIn("｜Survival｜", content)
         self.assertIn("<font color='red'>热门榜 #1</font>", content)
 
+    def test_briefing_includes_top_earning_label_for_new_games(self) -> None:
+        card = build_top_trending_briefing_card(
+            {
+                "top_trending_v4": [],
+                "up_and_coming_v4": [],
+                "top_playing_now": [],
+                "top_earning": [
+                    GameRecord(
+                        rank=12,
+                        place_id=501,
+                        name="Earn Game",
+                        genre="Tycoon",
+                        playing=4567,
+                        fetched_at="2026-03-14T00:00:00Z",
+                        created_at="2026-03-10T00:00:00Z",
+                    )
+                ],
+            },
+            {
+                "top_trending_v4": set(),
+                "up_and_coming_v4": set(),
+                "top_playing_now": set(),
+                "top_earning": set(),
+            },
+        )
+
+        content = card["elements"][0]["content"]
+        self.assertIn("<font color='red'>收入榜 #12</font>", content)
+
     def test_briefing_limits_visible_entries_to_ten(self) -> None:
         records = [
             GameRecord(

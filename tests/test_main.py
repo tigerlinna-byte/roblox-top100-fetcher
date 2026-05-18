@@ -38,6 +38,7 @@ class MainTests(unittest.TestCase):
             ],
             "up_and_coming_v4": [],
             "top_playing_now": [],
+            "top_earning": [],
         }
         feishu_client = MagicMock()
         feishu_client_cls.return_value = feishu_client
@@ -51,6 +52,33 @@ class MainTests(unittest.TestCase):
         url_text = feishu_client.send_group_markdown.call_args.args[0]
         self.assertEqual("今日关注（2026-03-14）", briefing_card["header"]["title"]["content"])
         self.assertEqual("https://feishu.cn/sheets/test", url_text)
+
+    @patch("app.main.FeishuClient")
+    def test_top100_success_does_not_send_feishu_message(self, feishu_client_cls) -> None:
+        cfg = Config(run_report_mode="top100_message")
+
+        _notify_success(cfg, [GameRecord(rank=1, place_id=101, name="Game A")])
+
+        feishu_client_cls.assert_not_called()
+
+    @patch("app.main.RobloxClient")
+    def test_fetch_top_trending_payload_includes_top_earning_300(self, client_cls) -> None:
+        cfg = Config(run_report_mode="top_trending_sheet")
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_games_by_sort_id.side_effect = [
+            [GameRecord(rank=1, place_id=101, name="Trending")],
+            [GameRecord(rank=1, place_id=201, name="Coming")],
+            [GameRecord(rank=1, place_id=301, name="Playing")],
+        ]
+        client.fetch_top_earning_games.return_value = [
+            GameRecord(rank=1, place_id=401, name="Earning"),
+        ]
+
+        report_payload = _fetch_report_payload(cfg)
+
+        self.assertEqual(["top_trending_v4", "up_and_coming_v4", "top_playing_now", "top_earning"], list(report_payload))
+        client.fetch_top_earning_games.assert_called_once_with(limit=300)
 
     @patch("app.main._sync_project_metrics_sheet")
     @patch("app.main.FeishuClient")

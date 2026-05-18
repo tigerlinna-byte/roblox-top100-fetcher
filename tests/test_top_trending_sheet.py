@@ -328,11 +328,11 @@ class TopTrendingSheetTests(unittest.TestCase):
         specs = build_default_sheet_specs()
 
         self.assertEqual(
-            ["top_trending_v4", "up_and_coming_v4", "top_playing_now"],
+            ["top_trending_v4", "up_and_coming_v4", "top_playing_now", "top_earning"],
             [item["title"] for item in specs],
         )
         self.assertEqual(
-            ["Top_Trending_V4", "Up_And_Coming_V4", "top-playing-now"],
+            ["Top_Trending_V4", "Up_And_Coming_V4", "top-playing-now", "top-earning"],
             [item["sort_id"] for item in specs],
         )
 
@@ -341,6 +341,7 @@ class TopTrendingSheetTests(unittest.TestCase):
             feishu_top_trending_prev_ranks='{"101":1,"102":2}',
             feishu_up_and_coming_prev_ranks='{"201":5}',
             feishu_top_playing_now_prev_ranks='{"301":7}',
+            feishu_top_earning_prev_ranks='{"401":9}',
         )
 
         previous_ranks = get_previous_ranks(cfg)
@@ -348,12 +349,14 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertEqual({101: 1, 102: 2}, previous_ranks["top_trending_v4"])
         self.assertEqual({201: 5}, previous_ranks["up_and_coming_v4"])
         self.assertEqual({301: 7}, previous_ranks["top_playing_now"])
+        self.assertEqual({401: 9}, previous_ranks["top_earning"])
 
     def test_get_recent_place_ids_by_sheet_supports_new_history_payload(self) -> None:
         cfg = Config(
             feishu_top_trending_prev_ranks='{"history":[{"place_ids":[101,102],"ranks":{"101":1,"102":2}},{"place_ids":[103],"ranks":{"103":5}}]}',
             feishu_up_and_coming_prev_ranks='{"history":[{"place_ids":[201],"ranks":{"201":5}}]}',
             feishu_top_playing_now_prev_ranks='{"301":7}',
+            feishu_top_earning_prev_ranks='{"history":[{"place_ids":[401],"ranks":{"401":9}}]}',
         )
 
         recent_place_ids = get_recent_place_ids_by_sheet(cfg)
@@ -361,6 +364,7 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertEqual({101, 102, 103}, recent_place_ids["top_trending_v4"])
         self.assertEqual({201}, recent_place_ids["up_and_coming_v4"])
         self.assertEqual({301}, recent_place_ids["top_playing_now"])
+        self.assertEqual({401}, recent_place_ids["top_earning"])
 
     def test_data_rows_keep_same_column_representation(self) -> None:
         cfg = Config()
@@ -489,6 +493,7 @@ class TopTrendingSheetTests(unittest.TestCase):
             feishu_top_trending_test_prev_ranks='{"401":9}',
             feishu_up_and_coming_test_prev_ranks='{"402":8}',
             feishu_top_playing_now_test_prev_ranks='{"403":7}',
+            feishu_top_earning_test_prev_ranks='{"404":6}',
         )
 
         previous_ranks = get_previous_ranks(cfg)
@@ -496,6 +501,7 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertEqual({401: 9}, previous_ranks["top_trending_v4"])
         self.assertEqual({402: 8}, previous_ranks["up_and_coming_v4"])
         self.assertEqual({403: 7}, previous_ranks["top_playing_now"])
+        self.assertEqual({404: 6}, previous_ranks["top_earning"])
 
     def test_resolve_spreadsheet_variables_routes_cron_to_formal_sheet(self) -> None:
         cfg = Config(
@@ -529,6 +535,7 @@ class TopTrendingSheetTests(unittest.TestCase):
             feishu_top_trending_test_sheet_id="sheet_test_1",
             feishu_up_and_coming_test_sheet_id="sheet_test_2",
             feishu_top_playing_now_test_sheet_id="sheet_test_3",
+            feishu_top_earning_test_sheet_id="sheet_test_4",
         )
 
         target = get_saved_spreadsheet_target(cfg)
@@ -537,7 +544,7 @@ class TopTrendingSheetTests(unittest.TestCase):
         assert target is not None
         self.assertEqual("shtcn_test", target.spreadsheet_token)
         self.assertEqual(
-            ("sheet_test_1", "sheet_test_2", "sheet_test_3"),
+            ("sheet_test_1", "sheet_test_2", "sheet_test_3", "sheet_test_4"),
             tuple(sheet.sheet_id for sheet in target.sheets),
         )
 
@@ -557,6 +564,7 @@ class TopTrendingSheetTests(unittest.TestCase):
                 feishu_top_trending_test_sheet_id="sheet_test_1",
                 feishu_up_and_coming_test_sheet_id="sheet_test_2",
                 feishu_top_playing_now_test_sheet_id="sheet_test_3",
+                feishu_top_earning_test_sheet_id="sheet_test_4",
             )
         )
 
@@ -564,7 +572,7 @@ class TopTrendingSheetTests(unittest.TestCase):
         saved = save_spreadsheet_target(github_client, target, variables)
 
         self.assertTrue(saved)
-        self.assertEqual(4, github_client.upsert_repository_variable.call_count)
+        self.assertEqual(5, github_client.upsert_repository_variable.call_count)
         first_call = github_client.upsert_repository_variable.call_args_list[0].args
         self.assertEqual(
             ("FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN", "shtcn_test"),

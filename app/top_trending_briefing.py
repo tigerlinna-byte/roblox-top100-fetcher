@@ -14,6 +14,7 @@ SHEET_LABELS = {
     "top_trending_v4": "热门榜",
     "up_and_coming_v4": "新秀榜",
     "top_playing_now": "在玩榜",
+    "top_earning": "收入榜",
 }
 SHEET_ORDER = tuple(SHEET_LABELS.keys())
 

@@ -218,6 +218,58 @@ class RobloxClientTests(unittest.TestCase):
         self.assertEqual(10, len(items))
         self.assertEqual(10, items[-1].rank)
 
+    def test_fetch_games_by_sort_id_uses_page_token_until_limit(self) -> None:
+        first_page = {
+            "nextPageToken": "page-2",
+            "games": [
+                {"universeId": 101, "rootPlaceId": 1, "name": "A", "playerCount": 99},
+                {"universeId": 102, "rootPlaceId": 2, "name": "B", "playerCount": 88},
+            ],
+        }
+        second_page = {
+            "games": [
+                {"universeId": 103, "rootPlaceId": 3, "name": "C", "playerCount": 77},
+            ],
+        }
+        details_payload = {
+            "data": [
+                {"id": 101, "name": "A", "visits": 100, "playing": 99, "creator": {"name": "S1"}},
+                {"id": 102, "name": "B", "visits": 200, "playing": 88, "creator": {"name": "S2"}},
+                {"id": 103, "name": "C", "visits": 300, "playing": 77, "creator": {"name": "S3"}},
+            ]
+        }
+
+        session = Mock()
+        responses = []
+        for payload in (
+            first_page,
+            second_page,
+            details_payload,
+            {"data": []},
+            {"data": []},
+            {"data": []},
+            {"data": []},
+        ):
+            response = Mock()
+            response.status_code = 200
+            response.json.return_value = payload
+            responses.append(response)
+        session.request.side_effect = responses
+
+        client = RobloxClient(
+            config=Config(api_limit=100, roblox_sort_id="top-playing-now"),
+            session=session,
+        )
+
+        items = client.fetch_games_by_sort_id("top-earning", limit=3, allow_fallbacks=False)
+
+        self.assertEqual(["A", "B", "C"], [item.name for item in items])
+        self.assertEqual(3, items[-1].rank)
+        first_params = session.request.call_args_list[0].kwargs["params"]
+        second_params = session.request.call_args_list[1].kwargs["params"]
+        self.assertNotIn("pageToken", first_params)
+        self.assertEqual("page-2", second_params["pageToken"])
+
     def test_fetch_top_trending_discovers_sort_by_name(self) -> None:
         session = Mock()
 

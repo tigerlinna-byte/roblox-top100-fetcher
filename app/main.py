@@ -38,7 +38,6 @@ from .storage import write_outputs, write_project_metrics_output, write_roblox_m
 from .summary import (
     build_failure_markdown,
     build_project_metrics_partial_failure_markdown,
-    build_success_markdown,
 )
 from .top_trending_briefing import build_top_trending_briefing_card
 from .top_trending_sheet import (
@@ -63,6 +62,8 @@ PROJECT_METRICS_REPORT_MODE = "roblox_project_daily_metrics"
 ROBLOX_MONEY_REPORT_MODE = "roblox_money"
 PROJECT_METRICS_SHEET_MAX_ROWS = 365
 PROJECT_METRICS_SHEET_END_COLUMN = "X"
+# Top Earning 今日关注需要覆盖前 300 名，用于发现收入榜新上榜游戏。
+TOP_EARNING_FETCH_LIMIT = 300
 
 
 @dataclass(frozen=True)
@@ -213,6 +214,7 @@ def _fetch_report_payload(cfg: Config):
             "top_trending_v4": client.fetch_games_by_sort_id("Top_Trending_V4"),
             "up_and_coming_v4": client.fetch_games_by_sort_id("Up_And_Coming_V4"),
             "top_playing_now": client.fetch_games_by_sort_id("top-playing-now"),
+            "top_earning": client.fetch_top_earning_games(limit=TOP_EARNING_FETCH_LIMIT),
         }
     return client.fetch_top_games()
 
@@ -355,12 +357,13 @@ def _read_project_metrics_existing_rows(
 
 
 def _notify_success(cfg: Config, report_payload) -> None:
-    feishu_client = FeishuClient(cfg)
     if cfg.run_report_mode == ROBLOX_MONEY_REPORT_MODE:
+        feishu_client = FeishuClient(cfg)
         feishu_client.send_group_card(build_roblox_money_card(cfg, report_payload))
         return
 
     if cfg.run_report_mode == "top_trending_sheet":
+        feishu_client = FeishuClient(cfg)
         recent_place_ids_by_sheet = get_recent_place_ids_by_sheet(cfg)
         target = _sync_top_trending_sheet(cfg, report_payload, feishu_client)
         feishu_client.send_group_card(
@@ -373,6 +376,7 @@ def _notify_success(cfg: Config, report_payload) -> None:
         return
 
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
+        feishu_client = FeishuClient(cfg)
         for variables in resolve_project_metrics_variables(cfg):
             if variables.project_id not in report_payload.records_by_project_id:
                 continue
@@ -392,7 +396,7 @@ def _notify_success(cfg: Config, report_payload) -> None:
             )
         return
 
-    feishu_client.send_group_markdown(build_success_markdown(cfg, report_payload))
+    logging.info("Top100 report outputs updated; success Feishu notification is disabled.")
 
 
 

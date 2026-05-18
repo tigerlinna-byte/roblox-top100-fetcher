@@ -15,16 +15,24 @@ SPREADSHEET_TOKEN_VAR = "FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN"
 TOP_TRENDING_SHEET_ID_VAR = "FEISHU_TOP_TRENDING_SHEET_ID"
 UP_AND_COMING_SHEET_ID_VAR = "FEISHU_UP_AND_COMING_SHEET_ID"
 TOP_PLAYING_NOW_SHEET_ID_VAR = "FEISHU_TOP_PLAYING_NOW_SHEET_ID"
+# Top Earning 榜正式表 Sheet ID，用于收入榜每日监控。
+TOP_EARNING_SHEET_ID_VAR = "FEISHU_TOP_EARNING_SHEET_ID"
 TOP_TRENDING_PREV_RANKS_VAR = "FEISHU_TOP_TRENDING_PREV_RANKS"
 UP_AND_COMING_PREV_RANKS_VAR = "FEISHU_UP_AND_COMING_PREV_RANKS"
 TOP_PLAYING_NOW_PREV_RANKS_VAR = "FEISHU_TOP_PLAYING_NOW_PREV_RANKS"
+# Top Earning 榜正式表历史排名，用于判断收入榜新上榜游戏。
+TOP_EARNING_PREV_RANKS_VAR = "FEISHU_TOP_EARNING_PREV_RANKS"
 TEST_SPREADSHEET_TOKEN_VAR = "FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN"
 TEST_TOP_TRENDING_SHEET_ID_VAR = "FEISHU_TOP_TRENDING_TEST_SHEET_ID"
 TEST_UP_AND_COMING_SHEET_ID_VAR = "FEISHU_UP_AND_COMING_TEST_SHEET_ID"
 TEST_TOP_PLAYING_NOW_SHEET_ID_VAR = "FEISHU_TOP_PLAYING_NOW_TEST_SHEET_ID"
+# Top Earning 榜测试表 Sheet ID，用于手动触发验证收入榜写入。
+TEST_TOP_EARNING_SHEET_ID_VAR = "FEISHU_TOP_EARNING_TEST_SHEET_ID"
 TEST_TOP_TRENDING_PREV_RANKS_VAR = "FEISHU_TOP_TRENDING_TEST_PREV_RANKS"
 TEST_UP_AND_COMING_PREV_RANKS_VAR = "FEISHU_UP_AND_COMING_TEST_PREV_RANKS"
 TEST_TOP_PLAYING_NOW_PREV_RANKS_VAR = "FEISHU_TOP_PLAYING_NOW_TEST_PREV_RANKS"
+# Top Earning 榜测试表历史排名，用于手动触发时判断收入榜新上榜游戏。
+TEST_TOP_EARNING_PREV_RANKS_VAR = "FEISHU_TOP_EARNING_TEST_PREV_RANKS"
 
 MIN_RENDER_ROWS = 140
 RECENT_NEW_ENTRY_LOOKBACK_DAYS = 7
@@ -84,6 +92,7 @@ FORMAL_SORT_SHEETS = (
     ("Top_Trending_V4", "top_trending_v4", TOP_TRENDING_SHEET_ID_VAR, TOP_TRENDING_PREV_RANKS_VAR),
     ("Up_And_Coming_V4", "up_and_coming_v4", UP_AND_COMING_SHEET_ID_VAR, UP_AND_COMING_PREV_RANKS_VAR),
     ("top-playing-now", "top_playing_now", TOP_PLAYING_NOW_SHEET_ID_VAR, TOP_PLAYING_NOW_PREV_RANKS_VAR),
+    ("top-earning", "top_earning", TOP_EARNING_SHEET_ID_VAR, TOP_EARNING_PREV_RANKS_VAR),
 )
 TEST_SORT_SHEETS = (
     (
@@ -104,6 +113,12 @@ TEST_SORT_SHEETS = (
         TEST_TOP_PLAYING_NOW_SHEET_ID_VAR,
         TEST_TOP_PLAYING_NOW_PREV_RANKS_VAR,
     ),
+    (
+        "top-earning",
+        "top_earning",
+        TEST_TOP_EARNING_SHEET_ID_VAR,
+        TEST_TOP_EARNING_PREV_RANKS_VAR,
+    ),
 )
 
 
@@ -118,6 +133,7 @@ def resolve_spreadsheet_variables(cfg: Config) -> SpreadsheetVariableSet:
                 TOP_TRENDING_PREV_RANKS_VAR: cfg.feishu_top_trending_prev_ranks,
                 UP_AND_COMING_PREV_RANKS_VAR: cfg.feishu_up_and_coming_prev_ranks,
                 TOP_PLAYING_NOW_PREV_RANKS_VAR: cfg.feishu_top_playing_now_prev_ranks,
+                TOP_EARNING_PREV_RANKS_VAR: cfg.feishu_top_earning_prev_ranks,
             },
         )
     return SpreadsheetVariableSet(
@@ -129,6 +145,7 @@ def resolve_spreadsheet_variables(cfg: Config) -> SpreadsheetVariableSet:
             TEST_TOP_TRENDING_PREV_RANKS_VAR: cfg.feishu_top_trending_test_prev_ranks,
             TEST_UP_AND_COMING_PREV_RANKS_VAR: cfg.feishu_up_and_coming_test_prev_ranks,
             TEST_TOP_PLAYING_NOW_PREV_RANKS_VAR: cfg.feishu_top_playing_now_test_prev_ranks,
+            TEST_TOP_EARNING_PREV_RANKS_VAR: cfg.feishu_top_earning_test_prev_ranks,
         },
     )
 
@@ -527,8 +544,10 @@ def _get_sheet_id_from_config(cfg: Config, variable_name: str) -> str:
         TOP_TRENDING_SHEET_ID_VAR: cfg.feishu_top_trending_sheet_id,
         UP_AND_COMING_SHEET_ID_VAR: cfg.feishu_up_and_coming_sheet_id,
         TOP_PLAYING_NOW_SHEET_ID_VAR: cfg.feishu_top_playing_now_sheet_id,
+        TOP_EARNING_SHEET_ID_VAR: cfg.feishu_top_earning_sheet_id,
         TEST_TOP_TRENDING_SHEET_ID_VAR: cfg.feishu_top_trending_test_sheet_id,
         TEST_UP_AND_COMING_SHEET_ID_VAR: cfg.feishu_up_and_coming_test_sheet_id,
         TEST_TOP_PLAYING_NOW_SHEET_ID_VAR: cfg.feishu_top_playing_now_test_sheet_id,
+        TEST_TOP_EARNING_SHEET_ID_VAR: cfg.feishu_top_earning_test_sheet_id,
     }
     return values.get(variable_name, "")

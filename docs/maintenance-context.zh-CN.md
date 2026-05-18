@@ -85,19 +85,18 @@
 2. `RobloxClient` 根据 `ROBLOX_SORT_ID` 决定榜单，默认 `top-playing-now`
 3. 拉取榜单、游戏详情、本地化名称、缩略图
 4. 写入 `data/top100_YYYY-MM-DD.json` 和 `data/top100_YYYY-MM-DD.csv`
-5. 发送飞书 Markdown 摘要消息
+5. 成功时不再发送飞书摘要消息，只保留本地产物更新；失败通知仍走飞书失败消息
 
 配置要点：
 
 - `ROBLOX_SORT_ID` 当前只对这个模式生效
 - `ROBLOX_CREATOR_COOKIE` 在这个模式下不是强制必需，但建议配置，否则容易漏掉登录态可见内容
-- 如果 `RUN_CHAT_ID` 有值且配置了 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`，会按聊天 ID 发消息
-- 如果没有 `RUN_CHAT_ID`，则退回 `FEISHU_BOT_WEBHOOK`
+- 成功通知已关闭，`RUN_CHAT_ID` / `FEISHU_BOT_WEBHOOK` 只影响失败通知兜底
 
 输出特点：
 
-- 只发文本摘要，不写飞书表格
-- 飞书文案由 [`app/summary.py`](../app/summary.py) 生成
+- 只写本地 JSON/CSV，不写飞书表格
+- 成功文案不再发送；失败文案仍由 [`app/summary.py`](../app/summary.py) 生成
 
 ### 3.2 `top_trending_sheet`
 
@@ -108,10 +107,11 @@
 
 执行路径：
 
-1. `app/main.py` 固定抓 3 个榜单：
+1. `app/main.py` 固定抓 4 个榜单：
    - `Top_Trending_V4`
    - `Up_And_Coming_V4`
    - `top-playing-now`
+   - `top-earning`
 2. 创建或复用飞书多 Sheet 表格
 3. 按榜单分别写入 Sheet
 4. 写缩略图、列宽、行高、颜色、高亮与排名变化
@@ -124,6 +124,7 @@
 - 当前主流程没有使用 `ROBLOX_TOP_TRENDING_SORT_ID`
 - 即使工作流里注入了 `ROBLOX_TOP_TRENDING_SORT_ID`，也不会改变这里实际抓取的 sort id
 - 真正决定 sort id 的是 [`app/main.py`](../app/main.py) 里的硬编码分流
+- `top-earning` 会通过 `pageToken` 尽量分页抓取前 300 名；如果 Roblox Explore 接口返回不足 300 条，则按实际返回记录
 - 这个模式依赖飞书应用身份调用电子表格 API，只有 webhook 不能替代 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
 
 #### 正式表和测试表切换规则
@@ -151,9 +152,11 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - `FEISHU_TOP_TRENDING_SHEET_ID`
 - `FEISHU_UP_AND_COMING_SHEET_ID`
 - `FEISHU_TOP_PLAYING_NOW_SHEET_ID`
+- `FEISHU_TOP_EARNING_SHEET_ID`
 - `FEISHU_TOP_TRENDING_PREV_RANKS`
 - `FEISHU_UP_AND_COMING_PREV_RANKS`
 - `FEISHU_TOP_PLAYING_NOW_PREV_RANKS`
+- `FEISHU_TOP_EARNING_PREV_RANKS`
 - `FEISHU_TOP_TRENDING_SPREADSHEET_TITLE`
 
 测试表变量：
@@ -162,9 +165,11 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - `FEISHU_TOP_TRENDING_TEST_SHEET_ID`
 - `FEISHU_UP_AND_COMING_TEST_SHEET_ID`
 - `FEISHU_TOP_PLAYING_NOW_TEST_SHEET_ID`
+- `FEISHU_TOP_EARNING_TEST_SHEET_ID`
 - `FEISHU_TOP_TRENDING_TEST_PREV_RANKS`
 - `FEISHU_UP_AND_COMING_TEST_PREV_RANKS`
 - `FEISHU_TOP_PLAYING_NOW_TEST_PREV_RANKS`
+- `FEISHU_TOP_EARNING_TEST_PREV_RANKS`
 - `FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TITLE`
 
 #### 今日关注规则
@@ -172,16 +177,17 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 `今日关注` 卡片由 [`app/top_trending_briefing.py`](../app/top_trending_briefing.py) 构建，当前规则是：
 
 - 只关注“最近 7 天未上榜，且首次上线未满 90 天”的游戏
-- 聚合 3 个榜单后去重
+- 聚合 4 个榜单后去重
 - 优先显示排名更高的记录
 - 最多显示 10 条
 - 游戏名优先显示“英文名 + 中文名”
+- 如果新游戏同时进入 Top Earning，会在描述中显示 `收入榜 #排名`
 
 #### 表格表现层规则
 
 表格规则集中在 [`app/top_trending_sheet.py`](../app/top_trending_sheet.py)：
 
-- Sheet 固定 3 个
+- Sheet 固定 4 个
 - 每张表至少渲染 140 行
 - 缩略图写在 B 列
 - 排名变化写在 F 列
@@ -192,12 +198,12 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 
 #### 产物注意点
 
-虽然这个模式会更新 3 个 Sheet，但本地 JSON/CSV 产物当前只写 `top_trending_v4` 这一份榜单：
+虽然这个模式会更新 4 个 Sheet，但本地 JSON/CSV 产物当前只写 `top_trending_v4` 这一份榜单：
 
 - `data/top_trending_YYYY-MM-DD.json`
 - `data/top_trending_YYYY-MM-DD.csv`
 
-如果未来需要把 3 个榜单都落盘，目前要改 [`app/main.py`](../app/main.py) 和 [`app/storage.py`](../app/storage.py)。
+如果未来需要把 4 个榜单都落盘，目前要改 [`app/main.py`](../app/main.py) 和 [`app/storage.py`](../app/storage.py)。
 
 ### 3.3 `roblox_project_daily_metrics`
 
@@ -429,17 +435,21 @@ Worker 允许通过环境变量改命令文本：
 - `FEISHU_TOP_TRENDING_SHEET_ID`
 - `FEISHU_UP_AND_COMING_SHEET_ID`
 - `FEISHU_TOP_PLAYING_NOW_SHEET_ID`
+- `FEISHU_TOP_EARNING_SHEET_ID`
 - `FEISHU_TOP_TRENDING_PREV_RANKS`
 - `FEISHU_UP_AND_COMING_PREV_RANKS`
 - `FEISHU_TOP_PLAYING_NOW_PREV_RANKS`
+- `FEISHU_TOP_EARNING_PREV_RANKS`
 - `FEISHU_TOP_TRENDING_SPREADSHEET_TITLE`
 - `FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN`
 - `FEISHU_TOP_TRENDING_TEST_SHEET_ID`
 - `FEISHU_UP_AND_COMING_TEST_SHEET_ID`
 - `FEISHU_TOP_PLAYING_NOW_TEST_SHEET_ID`
+- `FEISHU_TOP_EARNING_TEST_SHEET_ID`
 - `FEISHU_TOP_TRENDING_TEST_PREV_RANKS`
 - `FEISHU_UP_AND_COMING_TEST_PREV_RANKS`
 - `FEISHU_TOP_PLAYING_NOW_TEST_PREV_RANKS`
+- `FEISHU_TOP_EARNING_TEST_PREV_RANKS`
 - `FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TITLE`
 
 ### 项目日报相关

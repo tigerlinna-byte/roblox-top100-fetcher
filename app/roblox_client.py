@@ -23,6 +23,8 @@ TOP_TRENDING_SORT_ID_CANDIDATES = (
     "top-charts",
     "charts",
 )
+# Top Earning 榜单用于收入榜监控，当前 Explore 接口使用 kebab-case sortId。
+TOP_EARNING_SORT_ID = "top-earning"
 PREFERRED_LOCALIZATION_CODES = (
     "zh-cn",
     "zh_hans_cn",
@@ -64,31 +66,45 @@ class RobloxClient:
         configured_sort_id = self._resolve_top_trending_sort_id()
         return self.fetch_games_by_sort_id(configured_sort_id)
 
-    def fetch_games_by_sort_id(self, sort_id: str) -> list[GameRecord]:
+    def fetch_games_by_sort_id(
+        self,
+        sort_id: str,
+        *,
+        limit: int | None = None,
+        allow_fallbacks: bool = True,
+    ) -> list[GameRecord]:
         candidate_sort_ids = [sort_id]
-        candidate_sort_ids.extend(
-            sort_id
-            for sort_id in TOP_TRENDING_SORT_ID_CANDIDATES
-            if sort_id != candidate_sort_ids[0]
-        )
+        if allow_fallbacks:
+            candidate_sort_ids.extend(
+                sort_id
+                for sort_id in TOP_TRENDING_SORT_ID_CANDIDATES
+                if sort_id != candidate_sort_ids[0]
+            )
 
         last_error: Exception | None = None
         for candidate_sort_id in candidate_sort_ids:
             try:
-                return self._fetch_games_for_sort(candidate_sort_id)
+                return self._fetch_games_for_sort(candidate_sort_id, limit=limit)
             except RobloxClientError as exc:
                 last_error = exc
                 continue
 
         raise RobloxClientError(f"Unable to fetch games for sort {sort_id}.") from last_error
 
-    def _fetch_games_for_sort(self, sort_id: str) -> list[GameRecord]:
-        payload = self._fetch_sort_content(sort_id)
-        games = self._extract_games(payload)
+    def fetch_top_earning_games(self, *, limit: int) -> list[GameRecord]:
+        return self.fetch_games_by_sort_id(
+            TOP_EARNING_SORT_ID,
+            limit=limit,
+            allow_fallbacks=False,
+        )
+
+    def _fetch_games_for_sort(self, sort_id: str, *, limit: int | None = None) -> list[GameRecord]:
+        requested_limit = limit or self.config.api_limit
+        games = self._fetch_games_for_sort_pages(sort_id, limit=requested_limit)
         if not games:
             raise RobloxClientError("No game entries found in Roblox response.")
 
-        games = games[: self.config.api_limit]
+        games = games[:requested_limit]
         universe_ids = [str(_as_int(_pick(item, "universeId", "universe_id"))) for item in games]
         details_map = self._fetch_game_details(universe_ids)
         localized_names = self._fetch_localized_names(universe_ids)
@@ -221,13 +237,36 @@ class RobloxClient:
         ]
         logging.info("Roblox explore sorts discovered: %s", summary)
 
-    def _fetch_sort_content(self, sort_id: str) -> dict[str, Any]:
+    def _fetch_games_for_sort_pages(self, sort_id: str, *, limit: int) -> list[dict[str, Any]]:
+        games: list[dict[str, Any]] = []
+        page_token = ""
+        seen_page_tokens: set[str] = set()
+
+        while len(games) < limit:
+            payload = self._fetch_sort_content(sort_id, page_token=page_token)
+            page_games = self._extract_games(payload)
+            games.extend(page_games)
+
+            next_page_token = str(_pick(payload, "nextPageToken", "next_page_token", default="")).strip()
+            if not next_page_token or next_page_token in seen_page_tokens:
+                break
+            seen_page_tokens.add(next_page_token)
+            page_token = next_page_token
+
+            if not page_games:
+                break
+
+        return games
+
+    def _fetch_sort_content(self, sort_id: str, *, page_token: str = "") -> dict[str, Any]:
         params = {
             "sessionId": str(uuid.uuid4()),
             "sortId": sort_id,
             "device": "all",
             "country": "all",
         }
+        if page_token:
+            params["pageToken"] = page_token
         return self._request_json("GET", GET_SORT_CONTENT_URL, params=params)
 
     def _fetch_game_details(self, universe_ids: list[str]) -> dict[int, dict[str, Any]]:
