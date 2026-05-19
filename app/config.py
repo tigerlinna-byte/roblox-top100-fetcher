@@ -15,6 +15,7 @@ class Config:
     roblox_top_trending_sort_id: str = ""
     roblox_creator_overview_url: str = ""
     roblox_creator_overview_url_2: str = ""
+    roblox_project_metrics_disable_second_project: bool = False
     roblox_creator_cookie: str = ""
     roblox_money_start_date: str = "2026-05-01"
     roblox_money_usd_per_100k_robux: str = ""
@@ -73,6 +74,18 @@ def _get_float(name: str, default: float) -> float:
     return float(value)
 
 
+def _get_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off", ""}:
+        return False
+    return default
+
+
 
 def _split_repository_slug(value: str) -> tuple[str, str]:
     parts = [part for part in value.split("/", 1) if part]
@@ -100,6 +113,10 @@ def load_config() -> Config:
         roblox_top_trending_sort_id=os.getenv("ROBLOX_TOP_TRENDING_SORT_ID", ""),
         roblox_creator_overview_url=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL", ""),
         roblox_creator_overview_url_2=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL_2", ""),
+        roblox_project_metrics_disable_second_project=_get_bool(
+            "ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT",
+            False,
+        ),
         roblox_creator_cookie=os.getenv("ROBLOX_CREATOR_COOKIE", ""),
         roblox_money_start_date=os.getenv("ROBLOX_MONEY_START_DATE", "2026-05-01"),
         roblox_money_usd_per_100k_robux=os.getenv("ROBLOX_MONEY_USD_PER_100K_ROBUX", ""),

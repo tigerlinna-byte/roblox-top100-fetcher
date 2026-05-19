@@ -10,6 +10,8 @@ from app.main import (
     _fetch_report_payload,
     _notify_success,
     _persist_top_trending_previous_ranks,
+    _resolve_project_metrics_report_variables,
+    _write_report_outputs,
 )
 from app.models import GameRecord
 from app.project_metrics_models import ProjectDailyMetricsRecord
@@ -232,6 +234,74 @@ class MainTests(unittest.TestCase):
             [call.args[0] for call in feishu_client.send_group_markdown.call_args_list],
         )
 
+    def test_project_metrics_report_variables_can_disable_second_project(self) -> None:
+        cfg = Config(
+            run_report_mode="roblox_project_daily_metrics",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+            roblox_project_metrics_disable_second_project=True,
+        )
+
+        variables = _resolve_project_metrics_report_variables(cfg)
+
+        self.assertEqual(["9682356542"], [item.project_id for item in variables])
+
+    @patch("app.main.write_project_metrics_output")
+    def test_project_metrics_output_ignores_disabled_second_project(self, write_project_metrics_output) -> None:
+        cfg = Config(
+            run_report_mode="roblox_project_daily_metrics",
+            output_dir="./data",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+            roblox_project_metrics_disable_second_project=True,
+        )
+        first_record = ProjectDailyMetricsRecord(
+            report_date="2026-03-18",
+            peak_ccu="100",
+            average_session_time="10m",
+            day1_retention="10%",
+            day7_retention="5%",
+            payer_conversion_rate="1%",
+            arppu="$1.00",
+            qptr="1",
+            five_minute_retention="20%",
+            home_recommendations="10",
+            client_crash_rate="0.10%",
+            project_id="9682356542",
+            source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            fetched_at="2026-03-18T01:02:03Z",
+        )
+        second_record = ProjectDailyMetricsRecord(
+            report_date="2026-03-18",
+            peak_ccu="200",
+            average_session_time="12m",
+            day1_retention="12%",
+            day7_retention="6%",
+            payer_conversion_rate="2%",
+            arppu="$2.00",
+            qptr="2",
+            five_minute_retention="25%",
+            home_recommendations="20",
+            client_crash_rate="0.20%",
+            project_id="9707829514",
+            source_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+            fetched_at="2026-03-18T01:02:03Z",
+        )
+        write_project_metrics_output.return_value = ("data/project_metrics_2026-03-18.json", "data/project_metrics_2026-03-18.csv")
+
+        _write_report_outputs(
+            cfg,
+            ProjectMetricsReportPayload(
+                records_by_project_id={
+                    "9682356542": [first_record],
+                    "9707829514": [second_record],
+                },
+                failures=(),
+            ),
+        )
+
+        write_project_metrics_output.assert_called_once_with("./data", [first_record], prefix="project_metrics")
+
     @patch("app.main._sync_project_metrics_sheet")
     @patch("app.main.FeishuClient")
     def test_project_metrics_partial_success_sends_sheet_urls_and_failure_summary(
@@ -426,6 +496,31 @@ class MainTests(unittest.TestCase):
         self.assertEqual(10000, revenue.month_to_date_robux)
         self.assertEqual(14.0, revenue.daily_usd)
         self.assertEqual(35.0, revenue.month_to_date_usd)
+
+    @patch("app.main.RobloxCreatorMetricsClient")
+    def test_roblox_money_payload_keeps_second_project_when_project_metrics_disable_is_enabled(
+        self,
+        client_cls,
+    ) -> None:
+        cfg = Config(
+            run_report_mode="roblox_money",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+            roblox_project_metrics_disable_second_project=True,
+            roblox_money_start_date="2026-05-01",
+            roblox_money_usd_per_100k_robux="350",
+        )
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_project_revenue_series.return_value = MagicMock(
+            metric="Revenue",
+            values={"2026-05-04": 4000},
+        )
+
+        payload = _fetch_report_payload(cfg)
+
+        self.assertEqual(["9682356542", "9707829514"], [item.project_id for item in payload.project_revenues])
+        self.assertEqual(2, client.fetch_project_revenue_series.call_count)
 
     @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_uses_natural_month_after_may(

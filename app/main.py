@@ -12,6 +12,7 @@ from .github_client import GitHubClient, GitHubClientError
 from .models import GameRecord
 from .project_metrics_models import ProjectDailyMetricsRecord, now_iso
 from .project_metrics_sheet import (
+    PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR,
     ProjectMetricsSheetVariables,
     ProjectMetricsSpreadsheetTarget,
     build_project_metrics_query_plan,
@@ -152,7 +153,7 @@ def _fetch_report_payload(cfg: Config):
         return _fetch_roblox_money_payload(cfg)
 
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
-        variables_list = resolve_project_metrics_variables(cfg)
+        variables_list = _resolve_project_metrics_report_variables(cfg)
         if not variables_list:
             raise RobloxCreatorMetricsClientError("未配置任何项目日报 overview 地址")
 
@@ -402,7 +403,7 @@ def _notify_success(cfg: Config, report_payload) -> None:
 
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
         feishu_client = FeishuClient(cfg)
-        for variables in resolve_project_metrics_variables(cfg):
+        for variables in _resolve_project_metrics_report_variables(cfg):
             if variables.project_id not in report_payload.records_by_project_id:
                 continue
             target = _sync_project_metrics_sheet(
@@ -621,6 +622,20 @@ def _sync_project_metrics_sheet(
 
 
 
+def _resolve_project_metrics_report_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
+    """解析项目日报本次实际启用的项目，允许临时屏蔽第二项目槽位。"""
+
+    variables_list = resolve_project_metrics_variables(cfg)
+    if not cfg.roblox_project_metrics_disable_second_project:
+        return variables_list
+    return tuple(
+        variables
+        for variables in variables_list
+        if variables.spreadsheet_token_variable_name != PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR
+    )
+
+
+
 def _apply_trending_sheet_presentation(spreadsheet_title: str, feishu_client, target) -> None:
     try:
         feishu_client.update_spreadsheet_title(
@@ -733,7 +748,7 @@ def _write_report_outputs(cfg: Config, report_payload):
             cfg.output_dir,
             [
                 record
-                for variables in resolve_project_metrics_variables(cfg)
+                for variables in _resolve_project_metrics_report_variables(cfg)
                 for record in report_payload.records_by_project_id.get(variables.project_id, [])
             ],
             prefix=_output_prefix(cfg),
