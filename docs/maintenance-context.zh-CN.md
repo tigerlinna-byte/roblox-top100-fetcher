@@ -472,6 +472,7 @@ Worker 允许通过环境变量改命令文本：
 - `AI_REVIEW_MAX_DIFF_CHARS`，可选，默认 `120000`
 - `AI_REVIEW_MAX_CONTEXT_CHARS`，可选，默认 `24000`
 - `AI_REVIEW_MAX_OUTPUT_TOKENS`，可选，默认 `4000`
+- `AI_REVIEW_FEISHU_CHAT_ID`，可选但建议配置，用于把审核结果发送到飞书 Test 对话窗
 
 AI 审核配置说明见 [`docs/ai-code-review.zh-CN.md`](./ai-code-review.zh-CN.md)。
 
@@ -646,9 +647,9 @@ Worker 事件去重默认使用 Cloudflare KV：
   - GitHub Variables 持久化
 
 - [`scripts/ai_code_review.py`](../scripts/ai_code_review.py)
-  - GitHub PR 自动代码审核
-  - 读取 PR diff、项目规范与维护上下文
-  - 调用 OpenAI Responses API 并更新 PR 评论
+  - GitHub push 后自动代码审核
+  - 读取 commit range diff、项目规范与维护上下文
+  - 调用 OpenAI Responses API，并把结果写入 Actions Summary 与飞书 Test 对话窗
 
 ### 部署与桥接
 
@@ -733,9 +734,10 @@ AI 自动代码审核不需要修改 Cloudflare Worker 或飞书配置。
 
 1. 在 GitHub Actions Secrets 中配置 `OPENAI_API_KEY`
 2. 按需在 GitHub Actions Variables 中配置 `OPENAI_REVIEW_MODEL`
-3. 新建或更新 PR，等待 `AI Code Review` 工作流在 PR 评论中写入审核结果
+3. 在 GitHub Actions Variables 中配置 `AI_REVIEW_FEISHU_CHAT_ID`，建议填当前 Test 对话窗 `chat_id`
+4. 向 `main` 分支 push 后，等待 `AI Code Review` 工作流在 Actions Summary 和飞书 Test 对话窗写入审核结果
 
-该工作流使用 `pull_request_target`，但只 checkout 默认分支里的可信审核脚本，不 checkout PR 头部代码。不要把执行 PR 代码、安装 PR 分支依赖或读取未受信任脚本的步骤加入这个工作流。
+该工作流不再绑定 Pull Request，也不再写 PR 评论。AI 审核发现风险只做通知，不作为提交阻断门禁。
 
 ## 9. 常见排查路径
 

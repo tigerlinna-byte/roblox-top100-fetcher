@@ -1,6 +1,6 @@
 # AI 自动代码审核配置说明
 
-本文说明 GitHub Pull Request 阶段的 AI 自动代码审核机制。
+本文说明 GitHub push 后的 AI 自动代码审核机制。
 
 ## 1. 触发方式
 
@@ -10,17 +10,16 @@
 
 触发场景：
 
-- PR 创建
-- PR 新增提交
-- PR 重新打开
-- PR 从 Draft 切换为可审核状态
-- GitHub Actions 页面手动触发，并传入 `pr_number`
+- 向 `main` 分支 push 后自动触发
+- GitHub Actions 页面手动触发，并传入 `base_sha` 与 `head_sha`
+
+当前项目不再把 AI 审核绑定到 Pull Request。日常流程是直接提交并推送到目标分支，由 push 后的 Actions 审核输出风险提示。
 
 ## 2. 安全边界
 
-该工作流使用 `pull_request_target`，但只 checkout 默认分支中的可信审核脚本，不 checkout PR 头部代码。
+该工作流运行在已推送的仓库代码上，使用 GitHub Compare API 读取 `base_sha...head_sha` 的统一 diff 和变更文件列表。
 
-审核输入来自 GitHub API 读取到的 PR diff、PR 元数据、变更文件摘要和项目规范文档。这样可以在 fork PR 中使用仓库 Secret，同时避免直接执行未受信任分支里的脚本。
+审核脚本不会执行被审核代码，只读取 diff、提交摘要和仓库内规范文档，然后调用 OpenAI Responses API 生成审核意见。
 
 ## 3. 必需配置
 
@@ -28,9 +27,20 @@
 
 `Settings -> Secrets and variables -> Actions`
 
-新增 Secret：
+新增或确认 Secret：
 
 - `OPENAI_API_KEY`：OpenAI API Key，用于调用 Responses API 生成审核意见。
+
+如果要把审核结果发送到飞书 Test 对话窗，还需要：
+
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+
+新增或确认 Variable：
+
+- `AI_REVIEW_FEISHU_CHAT_ID`：AI 审核结果发送到的飞书 Test 对话窗 `chat_id`。
+
+如果确实想把 `AI_REVIEW_FEISHU_CHAT_ID` 当作 Secret 管理，workflow 也支持同名 Secret。
 
 ## 4. 可选配置
 
@@ -41,7 +51,7 @@
 - `AI_REVIEW_MAX_CONTEXT_CHARS`：传给模型的项目规则上下文最大字符数，默认 `24000`。
 - `AI_REVIEW_MAX_OUTPUT_TOKENS`：模型最大输出 token 数，默认 `4000`。
 
-如果 PR diff 超过字符上限，脚本会保留首尾内容并截断中间部分。超大 PR 的审核结果只能作为辅助判断，不能视为完整覆盖。
+如果 diff 超过字符上限，脚本会保留首尾内容并截断中间部分。超大提交的审核结果只能作为辅助判断，不能视为完整覆盖。
 
 ## 5. 审核规则
 
@@ -60,18 +70,23 @@ AI 审核重点：
 
 ## 6. 输出方式
 
-审核结果会写入 PR 评论。脚本会更新同一条带有隐藏标记的评论，避免每次提交重复刷屏。
+审核结果会同时输出到：
 
-评论结构固定为：
+- GitHub Actions Summary
+- `AI_REVIEW_FEISHU_CHAT_ID` 指定的飞书 Test 对话窗
+
+飞书通知失败不会让 workflow 失败；脚本会在 Actions 日志中打印 warning。AI 审核发现风险也不会阻断提交，只作为自动风险提示。
+
+审核结果结构固定为：
 
 - 阻塞问题
 - 建议问题
 - 残余风险 / 人工确认点
 
-没有发现阻塞问题时，评论会明确写出“未发现阻塞问题”。
+没有发现阻塞问题时，结果会明确写出“未发现阻塞问题”。
 
 ## 7. 限制
 
-AI 审核不能替代确定性检查。类型检查、单元测试、Worker 测试和必要的人工 Review 仍然需要保留。
+AI 审核不能替代确定性检查。类型检查、单元测试、Worker 测试和必要的人工判断仍然需要保留。
 
-AI 审核结果不应直接作为唯一合并门禁。更适合的用法是让它暴露风险，再由维护者判断是否需要修复或补测。
+AI 审核结果不作为合并门禁。更适合的用法是让它在提交后暴露风险，再由维护者判断是否需要修复或补测。

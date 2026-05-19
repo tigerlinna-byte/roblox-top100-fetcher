@@ -34,11 +34,20 @@ class AiCodeReviewTest(unittest.TestCase):
             "阻塞问题：无\n\n建议问题：无",
         )
 
-    def test_build_comment_body_contains_stable_marker(self) -> None:
-        """PR 评论必须包含稳定标记，便于后续更新同一条评论。"""
-        body = ai_code_review.build_comment_body("未发现阻塞问题", "gpt-5.4-mini")
+    def test_build_review_body_contains_push_metadata(self) -> None:
+        """审核正文应包含 push 范围信息，供 Summary 和飞书通知复用。"""
+        target = ai_code_review.ReviewTarget(
+            base_sha="1" * 40,
+            head_sha="2" * 40,
+            ref_name="main",
+            actor="tester",
+            repository="owner/repo",
+        )
 
-        self.assertIn(ai_code_review.COMMENT_MARKER, body)
+        body = ai_code_review.build_review_body("未发现阻塞问题", "gpt-5.4-mini", target)
+
+        self.assertIn("`1111111`...`2222222`", body)
+        self.assertIn("owner/repo", body)
         self.assertIn("未发现阻塞问题", body)
         self.assertIn("gpt-5.4-mini", body)
 
