@@ -17,6 +17,7 @@ from app.roblox_money_models import (
     RobloxMoneyProjectRevenue,
     RobloxMoneyReportPayload,
 )
+from app.roblox_client import RobloxClientError
 from app.roblox_creator_metrics_client import RobloxCreatorMetricsClientError
 
 
@@ -79,6 +80,60 @@ class MainTests(unittest.TestCase):
 
         self.assertEqual(["top_trending_v4", "up_and_coming_v4", "top_playing_now", "top_earning"], list(report_payload))
         client.fetch_top_earning_games.assert_called_once_with(limit=300)
+
+    @patch("app.main.RobloxClient")
+    def test_fetch_top_trending_payload_omits_failed_top_earning(self, client_cls) -> None:
+        cfg = Config(run_report_mode="top_trending_sheet")
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_games_by_sort_id.side_effect = [
+            [GameRecord(rank=1, place_id=101, name="Trending")],
+            [GameRecord(rank=1, place_id=201, name="Coming")],
+            [GameRecord(rank=1, place_id=301, name="Playing")],
+        ]
+        client.fetch_top_earning_games.side_effect = RobloxClientError("Request failed")
+
+        report_payload = _fetch_report_payload(cfg)
+
+        self.assertEqual(["top_trending_v4", "up_and_coming_v4", "top_playing_now"], list(report_payload))
+
+    @patch("app.main.GitHubClient")
+    def test_sync_top_trending_sheet_skips_missing_sheet_payload(self, github_client_cls) -> None:
+        from app.main import _sync_top_trending_sheet
+        from app.top_trending_sheet import SheetTarget, SpreadsheetTarget
+
+        cfg = Config(run_report_mode="top_trending_sheet")
+        feishu_client = MagicMock()
+        target = SpreadsheetTarget(
+            spreadsheet_token="shtcn_test",
+            sheets=(
+                SheetTarget(
+                    sort_id="Top_Trending_V4",
+                    title="top_trending_v4",
+                    variable_name="FEISHU_TOP_TRENDING_SHEET_ID",
+                    previous_ranks_variable_name="FEISHU_TOP_TRENDING_PREV_RANKS",
+                    sheet_id="sheet_1",
+                ),
+                SheetTarget(
+                    sort_id="top-earning",
+                    title="top_earning",
+                    variable_name="FEISHU_TOP_EARNING_SHEET_ID",
+                    previous_ranks_variable_name="FEISHU_TOP_EARNING_PREV_RANKS",
+                    sheet_id="sheet_2",
+                ),
+            ),
+            url="https://feishu.cn/sheets/shtcn_test",
+        )
+        with patch("app.main.get_saved_spreadsheet_target", return_value=target):
+            _sync_top_trending_sheet(
+                cfg,
+                {"top_trending_v4": [GameRecord(rank=1, place_id=101, name="Game A")]},
+                feishu_client,
+            )
+
+        feishu_client.write_sheet_values.assert_called_once()
+        github_client = github_client_cls.return_value
+        github_client.upsert_repository_variable.assert_called_once()
 
     @patch("app.main._sync_project_metrics_sheet")
     @patch("app.main.FeishuClient")

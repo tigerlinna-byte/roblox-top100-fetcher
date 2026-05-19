@@ -9,7 +9,7 @@ import requests
 
 from .config import Config
 from .models import GameRecord, now_iso
-from .retry import with_retry
+from .retry import RetryError, with_retry
 
 
 GET_SORTS_URL = "https://apis.roblox.com/explore-api/v1/get-sorts"
@@ -89,9 +89,12 @@ class RobloxClient:
                 last_error = exc
                 continue
 
-        raise RobloxClientError(f"Unable to fetch games for sort {sort_id}.") from last_error
+        detail = f": {last_error}" if last_error else ""
+        raise RobloxClientError(f"Unable to fetch games for sort {sort_id}{detail}.") from last_error
 
     def fetch_top_earning_games(self, *, limit: int) -> list[GameRecord]:
+        """抓取 Top Earning 收入榜，失败时不回退到其他榜单。"""
+
         return self.fetch_games_by_sort_id(
             TOP_EARNING_SORT_ID,
             limit=limit,
@@ -238,6 +241,8 @@ class RobloxClient:
         logging.info("Roblox explore sorts discovered: %s", summary)
 
     def _fetch_games_for_sort_pages(self, sort_id: str, *, limit: int) -> list[dict[str, Any]]:
+        """按 Roblox Explore pageToken 分页抓取榜单，直到满足目标数量或没有下一页。"""
+
         games: list[dict[str, Any]] = []
         page_token = ""
         seen_page_tokens: set[str] = set()
@@ -369,7 +374,9 @@ class RobloxClient:
                 is_retryable=_is_retryable_exception,
             )
         except Exception as exc:  # noqa: BLE001
-            raise RobloxClientError(f"Request failed: {url}") from exc
+            request_context = _format_request_context(url, params)
+            root_cause = exc.__cause__ if isinstance(exc, RetryError) and exc.__cause__ else exc
+            raise RobloxClientError(f"Request failed: {request_context}: {root_cause}") from exc
 
     def _build_request_headers(self) -> dict[str, str]:
         """为榜单接口构造带登录态的浏览器请求头。"""
@@ -446,6 +453,20 @@ def _extract_list(data: dict[str, Any], *keys: str) -> list[dict[str, Any]]:
 
 def _chunked(items: list[str], *, size: int) -> list[list[str]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _format_request_context(url: str, params: dict[str, Any] | None) -> str:
+    if not params:
+        return url
+    visible_params = {
+        key: value
+        for key, value in params.items()
+        if key != "sessionId"
+    }
+    if not visible_params:
+        return url
+    param_text = "&".join(f"{key}={value}" for key, value in visible_params.items())
+    return f"{url}?{param_text}"
 
 
 def _resolve_game_genre(raw: dict[str, Any], details: dict[str, Any]) -> str:

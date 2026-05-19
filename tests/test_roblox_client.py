@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import Mock
 
 from app.config import Config
-from app.roblox_client import RobloxClient
+from app.roblox_client import RobloxClient, RobloxClientError
 
 
 class RobloxClientTests(unittest.TestCase):
@@ -269,6 +269,25 @@ class RobloxClientTests(unittest.TestCase):
         second_params = session.request.call_args_list[1].kwargs["params"]
         self.assertNotIn("pageToken", first_params)
         self.assertEqual("page-2", second_params["pageToken"])
+
+    def test_fetch_games_by_sort_id_preserves_request_failure_detail(self) -> None:
+        response = Mock()
+        response.status_code = 500
+        response.text = "temporary outage"
+        session = Mock()
+        session.request.return_value = response
+        client = RobloxClient(
+            config=Config(api_limit=100, roblox_sort_id="top-playing-now", retry_max_attempts=1),
+            session=session,
+        )
+
+        with self.assertRaises(RobloxClientError) as raised:
+            client.fetch_games_by_sort_id("top-earning", allow_fallbacks=False)
+
+        message = str(raised.exception)
+        self.assertIn("Unable to fetch games for sort top-earning", message)
+        self.assertIn("sortId=top-earning", message)
+        self.assertIn("HTTP 500", message)
 
     def test_fetch_top_trending_discovers_sort_by_name(self) -> None:
         session = Mock()

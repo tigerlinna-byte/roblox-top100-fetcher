@@ -210,12 +210,16 @@ def _fetch_report_payload(cfg: Config):
 
     client = RobloxClient(cfg)
     if cfg.run_report_mode == "top_trending_sheet":
-        return {
+        records_by_sheet = {
             "top_trending_v4": client.fetch_games_by_sort_id("Top_Trending_V4"),
             "up_and_coming_v4": client.fetch_games_by_sort_id("Up_And_Coming_V4"),
             "top_playing_now": client.fetch_games_by_sort_id("top-playing-now"),
-            "top_earning": client.fetch_top_earning_games(limit=TOP_EARNING_FETCH_LIMIT),
         }
+        try:
+            records_by_sheet["top_earning"] = client.fetch_top_earning_games(limit=TOP_EARNING_FETCH_LIMIT)
+        except RobloxClientError:
+            logging.warning("Top Earning fetch failed; keeping existing sheet data.", exc_info=True)
+        return records_by_sheet
     return client.fetch_top_games()
 
 
@@ -443,6 +447,9 @@ def _sync_top_trending_sheet(
     _apply_trending_sheet_presentation(variables.spreadsheet_title, feishu_client, target)
 
     for sheet in target.sheets:
+        if sheet.title not in records_by_sheet:
+            logging.warning("Skipping %s sheet because its Roblox fetch did not complete.", sheet.title)
+            continue
         sheet_records = records_by_sheet.get(sheet.title, [])
         previous_sheet_ranks = previous_ranks.get(sheet.title, {})
         values = build_top_trending_values(

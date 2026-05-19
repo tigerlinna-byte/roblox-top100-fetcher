@@ -125,7 +125,7 @@
 - 当前主流程没有使用 `ROBLOX_TOP_TRENDING_SORT_ID`
 - 即使工作流里注入了 `ROBLOX_TOP_TRENDING_SORT_ID`，也不会改变这里实际抓取的 sort id
 - 真正决定 sort id 的是 [`app/main.py`](../app/main.py) 里的硬编码分流
-- `top-earning` 会通过 `pageToken` 尽量分页抓取前 300 名；如果 Roblox Explore 接口返回不足 300 条，则按实际返回记录
+- `top-earning` 会通过 `pageToken` 尽量分页抓取前 300 名；如果 Roblox Explore 接口返回不足 300 条，则按实际返回记录；如果该榜单临时失败，本次会保留旧收入榜 Sheet，不阻断其他 3 个榜单和今日关注卡片
 - 这个模式依赖飞书应用身份调用电子表格 API，只有 webhook 不能替代 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
 
 #### 正式表和测试表切换规则

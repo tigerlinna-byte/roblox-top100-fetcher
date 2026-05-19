@@ -22,7 +22,7 @@
 ## 需要先知道的几个关键事实
 
 - `top_trending_sheet` 模式在主流程里使用的是固定 sort id，分别是 `Top_Trending_V4`、`Up_And_Coming_V4`、`top-playing-now`、`top-earning`。
-- `top-earning` 会通过分页尽量抓取前 300 名；如果 Roblox Explore 接口返回不足 300 条，则按实际返回写表和判断今日关注。
+- `top-earning` 会通过分页尽量抓取前 300 名；如果 Roblox Explore 接口返回不足 300 条，则按实际返回写表和判断今日关注；如果该榜单临时失败，本次会保留旧收入榜 Sheet，不阻断其他 3 个榜单和今日关注卡片。
 - `ROBLOX_TOP_TRENDING_SORT_ID` 这个环境变量目前没有被主流程消费，不要把它当作 `/roblox-top-day` 的真实开关。
 - `/roblox-top-day` 的手动触发默认写“测试表”，只有 `trigger_source=cloudflare_cron` 时才会写“正式表”。
 - 项目日报当前只支持两个项目入口：`ROBLOX_CREATOR_OVERVIEW_URL` 和 `ROBLOX_CREATOR_OVERVIEW_URL_2`。如果要接第三个项目，需要改代码和工作流，不是只加变量就够。
