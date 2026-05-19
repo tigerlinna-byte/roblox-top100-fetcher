@@ -35,6 +35,7 @@
    - 负责统一注入运行环境变量
    - 负责执行 `python -m app.main`
    - 负责上传 artifacts
+   - AI 代码审核使用独立工作流 [`/.github/workflows/ai_code_review.yml`](../.github/workflows/ai_code_review.yml)，不参与 Roblox 数据同步链路
 
 3. Python 主程序
    - 文件：[`app/main.py`](../app/main.py)
@@ -421,11 +422,13 @@ Worker 允许通过环境变量改命令文本：
 - `FEISHU_APP_SECRET`
 - `FEISHU_BOT_WEBHOOK`
 - `GH_TOKEN`
+- `OPENAI_API_KEY`（仅 AI 自动代码审核工作流需要）
 
 说明：
 
 - `GH_TOKEN` 在工作流里会映射成 Python 侧的 `GITHUB_VARIABLES_TOKEN`
 - 它的职责不是 dispatch workflow，而是给 Python 更新 GitHub Variables
+- `OPENAI_API_KEY` 只供 [`/.github/workflows/ai_code_review.yml`](../.github/workflows/ai_code_review.yml) 调用 OpenAI Responses API，不应在业务同步工作流中注入
 
 ### 5.2 GitHub Actions Variables
 
@@ -467,6 +470,15 @@ Worker 允许通过环境变量改命令文本：
 
 - `ROBLOX_MONEY_START_DATE`，默认 `2026-05-01`
 - `ROBLOX_MONEY_USD_PER_100K_ROBUX`，必填，用于 Robux 到美元换算
+
+### AI 自动代码审核相关
+
+- `OPENAI_REVIEW_MODEL`，可选，默认 `gpt-5.4-mini`
+- `AI_REVIEW_MAX_DIFF_CHARS`，可选，默认 `120000`
+- `AI_REVIEW_MAX_CONTEXT_CHARS`，可选，默认 `24000`
+- `AI_REVIEW_MAX_OUTPUT_TOKENS`，可选，默认 `4000`
+
+AI 审核配置说明见 [`docs/ai-code-review.zh-CN.md`](./ai-code-review.zh-CN.md)。
 
 ### 5.3 Cloudflare Worker Secrets / 环境变量
 
@@ -637,6 +649,11 @@ Worker 事件去重默认使用 Cloudflare KV：
 - [`app/github_client.py`](../app/github_client.py)
   - GitHub Variables 持久化
 
+- [`scripts/ai_code_review.py`](../scripts/ai_code_review.py)
+  - GitHub PR 自动代码审核
+  - 读取 PR diff、项目规范与维护上下文
+  - 调用 OpenAI Responses API 并更新 PR 评论
+
 ### 部署与桥接
 
 - [`/.github/workflows/roblox_rank_sync.yml`](../.github/workflows/roblox_rank_sync.yml)
@@ -712,6 +729,18 @@ Worker 事件去重默认使用 Cloudflare KV：
 
 如果忘了这一步，Worker 很可能无法在新环境里正确部署或正确去重。
 
+### 8.6 启用 AI 自动代码审核
+
+AI 自动代码审核不需要修改 Cloudflare Worker 或飞书配置。
+
+启用步骤：
+
+1. 在 GitHub Actions Secrets 中配置 `OPENAI_API_KEY`
+2. 按需在 GitHub Actions Variables 中配置 `OPENAI_REVIEW_MODEL`
+3. 新建或更新 PR，等待 `AI Code Review` 工作流在 PR 评论中写入审核结果
+
+该工作流使用 `pull_request_target`，但只 checkout 默认分支里的可信审核脚本，不 checkout PR 头部代码。不要把执行 PR 代码、安装 PR 分支依赖或读取未受信任脚本的步骤加入这个工作流。
+
 ## 9. 常见排查路径
 
 ### 9.1 飞书里发命令没有任何反应
@@ -780,6 +809,7 @@ Worker 事件去重默认使用 Cloudflare KV：
 - Cloudflare cron 变化
 - Worker 环境变量变化
 - GitHub Secrets / Variables 归属变化
+- AI 代码审核工作流、模型、提示词或输入上下文变化
 - 表格列结构变化
 - Top Trending 高亮规则变化
 - 项目日报指标口径变化

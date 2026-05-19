@@ -62,12 +62,14 @@
 - `FEISHU_APP_SECRET`
 - `FEISHU_BOT_WEBHOOK`
 - `GH_TOKEN`
+- `OPENAI_API_KEY`（仅启用 AI 自动代码审核时需要）
 
 说明：
 
 - `ROBLOX_CREATOR_COOKIE`：填 `.ROBLOSECURITY`
 - `FEISHU_BOT_WEBHOOK`：可选，用作消息兜底
 - `GH_TOKEN`：给 Python 更新 GitHub Variables 用
+- `OPENAI_API_KEY`：给 PR 自动代码审核工作流调用 OpenAI Responses API 用，不参与 Roblox 数据同步
 
 ### 3.3 配置 GitHub Variables
 
@@ -92,6 +94,13 @@ Top Trending 首次运行后会自动回写各 Sheet ID 和历史排名变量，
 - `ROBLOX_MONEY_USD_PER_100K_ROBUX`
 - 可选：`ROBLOX_MONEY_START_DATE`，默认 `2026-05-01`
 
+如果你要启用 AI 自动代码审核，可以按需配置：
+
+- `OPENAI_REVIEW_MODEL`，默认 `gpt-5.4-mini`
+- `AI_REVIEW_MAX_DIFF_CHARS`，默认 `120000`
+- `AI_REVIEW_MAX_CONTEXT_CHARS`，默认 `24000`
+- `AI_REVIEW_MAX_OUTPUT_TOKENS`，默认 `4000`
+
 其余飞书表格 token / sheet id 可以留空，首次运行后由程序自动创建并回写。
 
 ### 3.4 手动跑一次工作流
@@ -112,6 +121,27 @@ Top Trending 首次运行后会自动回写各 Sheet ID 和历史排名变量，
 - 如果是 `top_trending_sheet`，能创建或复用飞书表格
 
 如果这一步没通，不要继续配置 Worker。
+
+### 3.5 验证 AI 自动代码审核
+
+AI 自动代码审核入口是：
+
+- [`/.github/workflows/ai_code_review.yml`](../.github/workflows/ai_code_review.yml)
+
+启用后，新建或更新 PR 会触发 `AI Code Review` 工作流。工作流会读取 PR diff 和项目规范文档，调用 OpenAI API，并在 PR 评论中写入或更新同一条 AI 审核结果。
+
+安全边界：
+
+- 工作流使用 `pull_request_target`
+- 只 checkout 默认分支中的可信审核脚本
+- 不 checkout PR 头部代码
+- 不执行 PR 分支里的脚本或依赖安装逻辑
+
+如果要手动重跑，进入：
+
+`Actions -> AI Code Review -> Run workflow`
+
+传入目标 PR 编号即可。
 
 ## 4. 配置 Cloudflare Worker
 
@@ -361,3 +391,4 @@ Top Trending 和项目日报复用同一个：
 7. 飞书机器人是否已入群
 8. `ALLOWED_CHAT_IDS` / `ALLOWED_OPEN_IDS` 是否误填
 9. `SCHEDULE_CHAT_IDS` 是否为空
+10. 如果 AI 自动代码审核失败，检查 `OPENAI_API_KEY` 是否已配置、`AI Code Review` 工作流权限是否包含 PR 评论权限、PR 是否仍是 Draft 状态
