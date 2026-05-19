@@ -9,6 +9,7 @@ from app.main import (
     ProjectMetricsReportPayload,
     _fetch_report_payload,
     _notify_success,
+    _persist_top_trending_previous_ranks,
 )
 from app.models import GameRecord
 from app.project_metrics_models import ProjectDailyMetricsRecord
@@ -22,9 +23,9 @@ from app.roblox_creator_metrics_client import RobloxCreatorMetricsClientError
 
 
 class MainTests(unittest.TestCase):
-    @patch("app.main._sync_top_trending_sheet")
+    @patch("app.main._persist_top_trending_previous_ranks")
     @patch("app.main.FeishuClient")
-    def test_top_trending_success_sends_briefing_then_sheet_url(self, feishu_client_cls, sync_sheet) -> None:
+    def test_top_trending_success_sends_briefing_without_sheet_url(self, feishu_client_cls, persist_ranks) -> None:
         cfg = Config(run_report_mode="top_trending_sheet")
         report_payload = {
             "top_trending_v4": [
@@ -43,16 +44,14 @@ class MainTests(unittest.TestCase):
         }
         feishu_client = MagicMock()
         feishu_client_cls.return_value = feishu_client
-        sync_sheet.return_value.url = "https://feishu.cn/sheets/test"
 
         _notify_success(cfg, report_payload)
 
         feishu_client.send_group_card.assert_called_once()
-        self.assertEqual(1, feishu_client.send_group_markdown.call_count)
+        feishu_client.send_group_markdown.assert_not_called()
+        persist_ranks.assert_called_once_with(cfg, report_payload)
         briefing_card = feishu_client.send_group_card.call_args.args[0]
-        url_text = feishu_client.send_group_markdown.call_args.args[0]
         self.assertEqual("今日关注（2026-03-14）", briefing_card["header"]["title"]["content"])
-        self.assertEqual("https://feishu.cn/sheets/test", url_text)
 
     @patch("app.main.FeishuClient")
     def test_top100_success_does_not_send_feishu_message(self, feishu_client_cls) -> None:
@@ -79,7 +78,15 @@ class MainTests(unittest.TestCase):
         report_payload = _fetch_report_payload(cfg)
 
         self.assertEqual(["top_trending_v4", "up_and_coming_v4", "top_playing_now", "top_earning"], list(report_payload))
-        client.fetch_top_earning_games.assert_called_once_with(limit=300)
+        self.assertEqual(
+            [
+                (("Top_Trending_V4",), {"include_thumbnails": False}),
+                (("Up_And_Coming_V4",), {"include_thumbnails": False}),
+                (("top-playing-now",), {"include_thumbnails": False}),
+            ],
+            [(call.args, call.kwargs) for call in client.fetch_games_by_sort_id.call_args_list],
+        )
+        client.fetch_top_earning_games.assert_called_once_with(limit=300, include_thumbnails=False)
 
     @patch("app.main.RobloxClient")
     def test_fetch_top_trending_payload_omits_failed_top_earning(self, client_cls) -> None:
@@ -96,6 +103,31 @@ class MainTests(unittest.TestCase):
         report_payload = _fetch_report_payload(cfg)
 
         self.assertEqual(["top_trending_v4", "up_and_coming_v4", "top_playing_now"], list(report_payload))
+        client.fetch_top_earning_games.assert_called_once_with(limit=300, include_thumbnails=False)
+
+    @patch("app.main.GitHubClient")
+    def test_persist_top_trending_previous_ranks_without_sheet_target(self, github_client_cls) -> None:
+        cfg = Config(
+            run_report_mode="top_trending_sheet",
+            feishu_top_trending_test_prev_ranks='{"history":[{"place_ids":[99],"ranks":{"99":1}}]}',
+        )
+        github_client = github_client_cls.return_value
+
+        _persist_top_trending_previous_ranks(
+            cfg,
+            {
+                "top_trending_v4": [GameRecord(rank=1, place_id=101, name="Game A")],
+                "up_and_coming_v4": [],
+                "top_playing_now": [],
+                "top_earning": [],
+            },
+        )
+
+        variable_names = [call.args[0] for call in github_client.upsert_repository_variable.call_args_list]
+        self.assertIn("FEISHU_TOP_TRENDING_TEST_PREV_RANKS", variable_names)
+        self.assertIn("FEISHU_UP_AND_COMING_TEST_PREV_RANKS", variable_names)
+        saved_payload = github_client.upsert_repository_variable.call_args_list[0].args[1]
+        self.assertIn('"101":1', saved_payload)
 
     @patch("app.main.GitHubClient")
     def test_sync_top_trending_sheet_skips_missing_sheet_payload(self, github_client_cls) -> None:

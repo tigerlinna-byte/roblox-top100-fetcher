@@ -13,7 +13,7 @@
 | 运行模式 | 入口 | 数据来源 | 结果 |
 | --- | --- | --- | --- |
 | `top100_message` | 本地运行、GitHub Actions 手动触发、飞书 `/roblox-top100` | Roblox 榜单接口 | 输出 JSON/CSV，并发送 Top100 文本摘要 |
-| `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron `0 1 * * *` | Roblox 榜单接口 | 更新 Top Trending 多 Sheet 飞书表，发送 `今日关注` 卡片和表格链接 |
+| `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron `0 1 * * *` | Roblox 榜单接口 | 发送 `今日关注` 卡片，更新历史排名，并输出 JSON |
 | `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron `10 1 * * *` | Roblox Creator Analytics 接口 | 更新每个项目自己的飞书表，并发送表格链接 |
 | `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron `20 1 * * *` | Roblox Creator Analytics 收入指标 | 发送两个项目的收入卡片日报，并输出 JSON/CSV |
 
@@ -113,41 +113,40 @@
    - `Up_And_Coming_V4`
    - `top-playing-now`
    - `top-earning`
-2. 创建或复用飞书多 Sheet 表格
-3. 按榜单分别写入 Sheet
-4. 写缩略图、列宽、行高、颜色、高亮与排名变化
-5. 更新历史排名到 GitHub Variables
-6. 发送 `今日关注` 飞书卡片
-7. 再单独发送飞书表格链接，触发表格预览
+2. 跳过缩略图请求，因为当前不再写飞书表格
+3. 先按旧 GitHub Variables 计算最近 7 天历史上榜集合
+4. 更新历史排名到 GitHub Variables
+5. 发送 `今日关注` 飞书卡片
+6. 只输出本地 JSON artifact，不再生成 CSV
 
 这个模式的关键维护事实：
 
 - 当前主流程没有使用 `ROBLOX_TOP_TRENDING_SORT_ID`
 - 即使工作流里注入了 `ROBLOX_TOP_TRENDING_SORT_ID`，也不会改变这里实际抓取的 sort id
 - 真正决定 sort id 的是 [`app/main.py`](../app/main.py) 里的硬编码分流
-- `top-earning` 会通过 `pageToken` 尽量分页抓取前 300 名；如果 Roblox Explore 接口返回不足 300 条，则按实际返回记录；如果该榜单临时失败，本次会保留旧收入榜 Sheet，不阻断其他 3 个榜单和今日关注卡片
-- 这个模式依赖飞书应用身份调用电子表格 API，只有 webhook 不能替代 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
+- `top-earning` 会通过 `pageToken` 尽量分页抓取前 300 名；如果 Roblox Explore 接口返回不足 300 条，则按实际返回记录；如果该榜单临时失败，本次会跳过收入榜历史排名更新，不阻断其他 3 个榜单和今日关注卡片
+- 这个模式不再创建、更新或发送飞书表格链接；旧表格 token、sheet id 变量仅作为历史遗留配置保留
 
-#### 正式表和测试表切换规则
+#### 正式和测试历史排名切换规则
 
-Top Trending 维护了“正式表”和“测试表”两套变量。
+Top Trending 维护了“正式”和“测试”两套历史排名变量。
 
-切换规则在 [`app/top_trending_sheet.py`](../app/top_trending_sheet.py)：
+切换规则仍复用 [`app/top_trending_sheet.py`](../app/top_trending_sheet.py)：
 
-- 只有 `RUN_TRIGGER_SOURCE=cloudflare_cron` 时，才使用正式表变量
-- 其他触发源全部走测试表变量
+- 只有 `RUN_TRIGGER_SOURCE=cloudflare_cron` 时，才使用正式历史排名变量
+- 其他触发源全部走测试历史排名变量
 
 这意味着：
 
-- 飞书手动命令 `/roblox-top-day` 默认写测试表
-- GitHub Actions 页面手动 `Run workflow` 默认也写测试表
-- 只有 Cloudflare 定时任务才会写正式表
+- 飞书手动命令 `/roblox-top-day` 默认读写测试历史排名
+- GitHub Actions 页面手动 `Run workflow` 默认也读写测试历史排名
+- 只有 Cloudflare 定时任务才会读写正式历史排名
 
-如果有人说“我手动跑了 `/roblox-top-day`，怎么正式表没变”，这通常不是 bug，而是当前设计使然。
+如果有人说“我手动跑了 `/roblox-top-day`，怎么正式历史排名没变”，这通常不是 bug，而是当前设计使然。
 
 #### 当前持久化的变量
 
-正式表变量：
+正式历史排名变量：
 
 - `FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN`
 - `FEISHU_TOP_TRENDING_SHEET_ID`
@@ -160,7 +159,7 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - `FEISHU_TOP_EARNING_PREV_RANKS`
 - `FEISHU_TOP_TRENDING_SPREADSHEET_TITLE`
 
-测试表变量：
+测试历史排名变量：
 
 - `FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN`
 - `FEISHU_TOP_TRENDING_TEST_SHEET_ID`
@@ -173,6 +172,8 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - `FEISHU_TOP_EARNING_TEST_PREV_RANKS`
 - `FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TITLE`
 
+其中 spreadsheet token、sheet id、spreadsheet title 变量是旧飞书表格链路遗留配置；当前 Top Trending 主链路只读写 `*_PREV_RANKS` 历史排名变量。
+
 #### 今日关注规则
 
 `今日关注` 卡片由 [`app/top_trending_briefing.py`](../app/top_trending_briefing.py) 构建，当前规则是：
@@ -184,25 +185,17 @@ Top Trending 维护了“正式表”和“测试表”两套变量。
 - 游戏名优先显示“英文名 + 中文名”
 - 如果新游戏同时进入 Top Earning，会在描述中显示 `收入榜 #排名`
 
-#### 表格表现层规则
+#### 历史表格代码状态
 
-表格规则集中在 [`app/top_trending_sheet.py`](../app/top_trending_sheet.py)：
+[`app/top_trending_sheet.py`](../app/top_trending_sheet.py) 仍保留旧飞书多 Sheet 的表格构建、样式和历史排名工具函数，当前主流程只复用其中的变量解析与历史排名读写能力。
 
-- Sheet 固定 4 个
-- 每张表至少渲染 140 行
-- 缩略图写在 B 列
-- 排名变化写在 F 列
-- 游戏名高亮写在 C 列
-- 首次上线日期写在 I 列
-- 首次上线 90 天内标绿，180 天内标黄，365 天以上标灰
-- `进榜` 或排名上升标红，排名下降标绿
+Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、列宽、行高、字体颜色、高亮或排名变化到飞书表格。
 
 #### 产物注意点
 
-虽然这个模式会更新 4 个 Sheet，但本地 JSON/CSV 产物当前只写 `top_trending_v4` 这一份榜单：
+这个模式只把 `top_trending_v4` 这一份榜单写成本地 JSON：
 
 - `data/top_trending_YYYY-MM-DD.json`
-- `data/top_trending_YYYY-MM-DD.csv`
 
 如果未来需要把 4 个榜单都落盘，目前要改 [`app/main.py`](../app/main.py) 和 [`app/storage.py`](../app/storage.py)。
 
@@ -434,6 +427,8 @@ Worker 允许通过环境变量改命令文本：
 
 ### Top Trending 相关
 
+当前 Top Trending 主链路只使用历史排名变量；spreadsheet token、sheet id、spreadsheet title 是旧表格链路遗留变量。
+
 - `FEISHU_TOP_TRENDING_SPREADSHEET_TOKEN`
 - `FEISHU_TOP_TRENDING_SHEET_ID`
 - `FEISHU_UP_AND_COMING_SHEET_ID`
@@ -521,7 +516,7 @@ Worker 当前必需配置：
 - 飞书应用参数
 - GitHub Variables token
 - 项目日报 overview URL
-- 各类飞书表格 token / sheet id
+- 项目日报飞书表格 token / sheet id
 - 收入日报汇率 `ROBLOX_MONEY_USD_PER_100K_ROBUX`
 
 ## 6. 持久化与状态管理
@@ -533,7 +528,7 @@ Worker 当前必需配置：
 按模式分别生成：
 
 - `top100_YYYY-MM-DD.json/csv`
-- `top_trending_YYYY-MM-DD.json/csv`
+- `top_trending_YYYY-MM-DD.json`
 - `project_metrics_YYYY-MM-DD.json/csv`
 - `roblox_money_YYYY-MM-DD.json/csv`
 - `creator_overview_debug_<project_id>.json`（仅项目日报缺关键指标时）
@@ -569,13 +564,14 @@ Top Trending 历史排名保存在 GitHub Variables 中，当前结构是一个 
 
 ### 6.3 飞书表格目标
 
-飞书表格 token 和 sheet id 会在首次创建后回写 GitHub Variables。
+项目日报飞书表格 token 和 sheet id 会在首次创建后回写 GitHub Variables。
 
 也就是说：
 
-- 首次运行时可能会创建新表
+- 项目日报首次运行时可能会创建新表
 - 后续运行默认复用旧表
 - 如果删了 GitHub Variables 但没删飞书表，就会创建新的表并切换指向
+- Top Trending 当前不再创建或更新飞书表格
 
 ### 6.4 Worker 事件去重
 
@@ -608,11 +604,11 @@ Worker 事件去重默认使用 Cloudflare KV：
 - [`app/roblox_client.py`](../app/roblox_client.py)
   - Roblox 榜单抓取
   - 登录态请求头
-  - 排行榜、详情、本地化、缩略图聚合
+  - 排行榜、详情、本地化聚合；Top Trending 当前跳过缩略图请求
 
 - [`app/top_trending_sheet.py`](../app/top_trending_sheet.py)
-  - Top Trending 表格结构
-  - 正式/测试表切换
+  - Top Trending 历史表格结构
+  - 正式/测试历史排名切换
   - 历史排名读写
 
 - [`app/top_trending_briefing.py`](../app/top_trending_briefing.py)
@@ -700,14 +696,14 @@ Worker 事件去重默认使用 Cloudflare KV：
 4. 在 [`app/project_metrics_models.py`](../app/project_metrics_models.py) 增加起始日期和必要字段策略
 5. 补齐测试
 
-### 8.3 调整 Top Trending 正式/测试表策略
+### 8.3 调整 Top Trending 正式/测试历史排名策略
 
 当前判断规则只看：
 
 - `cfg.run_report_mode == "top_trending_sheet"`
 - `cfg.run_trigger_source == "cloudflare_cron"`
 
-如果以后想让飞书手动命令也写正式表，修改点在 [`app/top_trending_sheet.py`](../app/top_trending_sheet.py) 的 `_should_use_formal_sheet()`。
+如果以后想让飞书手动命令也读写正式历史排名，修改点在 [`app/top_trending_sheet.py`](../app/top_trending_sheet.py) 的 `_should_use_formal_sheet()`。
 
 ### 8.4 增加新的飞书命令
 
@@ -763,23 +759,18 @@ AI 自动代码审核不需要修改 Cloudflare Worker 或飞书配置。
 4. `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 是否有效
 5. 最终发送阶段是否退回了 webhook 但 webhook 又不可用
 
-### 9.3 `/roblox-top-day` 跑了，但看到的是测试表
+### 9.3 `/roblox-top-day` 跑了，但读写的是测试历史排名
 
 先确认触发源。
 
 这通常是正常行为，因为：
 
-- 手动命令默认就是测试表
-- 定时才是正式表
+- 手动命令默认就是测试历史排名
+- 定时才是正式历史排名
 
-### 9.4 Top Trending 表格标题异常或被写空
+### 9.4 Top Trending 没有飞书表格链接
 
-优先检查：
-
-- `FEISHU_TOP_TRENDING_SPREADSHEET_TITLE`
-- `FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TITLE`
-
-代码会主动调用更新标题 API，所以不要把标题变量留空。
+当前这是预期行为。Top Trending 主链路只发送 `今日关注` 卡片，不再创建、更新或发送飞书表格链接。
 
 ### 9.5 项目日报列为空
 
@@ -798,7 +789,7 @@ AI 自动代码审核不需要修改 Cloudflare Worker 或飞书配置。
 1. `ROBLOX_CREATOR_COOKIE` 是否有效
 2. [`app/roblox_client.py`](../app/roblox_client.py) 是否还在带 `Cookie`
 3. Roblox 接口返回是否改了结构
-4. 是否只是缩略图或本地化名称请求失败，而非榜单本体失败
+4. 是否只是本地化名称请求失败，而非榜单本体失败；Top Trending 当前已经跳过缩略图请求
 
 ## 10. 每次改动后必须同步检查什么
 
@@ -811,10 +802,10 @@ AI 自动代码审核不需要修改 Cloudflare Worker 或飞书配置。
 - GitHub Secrets / Variables 归属变化
 - AI 代码审核工作流、模型、提示词或输入上下文变化
 - 表格列结构变化
-- Top Trending 高亮规则变化
+- Top Trending 今日关注或历史排名规则变化
 - 项目日报指标口径变化
 - 项目数量上限变化
-- 正式表 / 测试表切换规则变化
+- 正式 / 测试历史排名切换规则变化
 - artifact 结构变化
 
 如果某次改动会影响“新同事能否只靠文档就接手”，那它就一定需要更新这份文档。

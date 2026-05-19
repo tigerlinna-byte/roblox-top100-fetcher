@@ -16,7 +16,7 @@
 2. Cloudflare Worker 接收飞书事件并校验
 3. Worker 调 GitHub Actions `workflow_dispatch`
 4. GitHub Actions 执行 `python -m app.main`
-5. Python 程序抓取 Roblox 数据，更新飞书表格并回消息
+5. Python 程序抓取 Roblox 数据，按运行模式更新飞书表格或发送飞书消息
 
 同时，Cloudflare Cron 还会每天自动触发三条任务：
 
@@ -77,10 +77,10 @@
 
 如果你要跑 Top Trending：
 
-- `FEISHU_TOP_TRENDING_SPREADSHEET_TITLE`
-- `FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TITLE`
+- 无需预先配置飞书表格标题、token 或 sheet id
+- 需要配置 `GITHUB_VARIABLES_TOKEN` 对应的 `GH_TOKEN`，用于保存 `*_PREV_RANKS` 历史排名变量
 
-Top Trending 首次运行后会自动回写各 Sheet ID 和历史排名变量，包括 `FEISHU_TOP_EARNING_SHEET_ID` / `FEISHU_TOP_EARNING_PREV_RANKS` 以及对应的 `TEST` 变量。
+Top Trending 当前不再创建或更新飞书表格，只会回写历史排名变量，包括 `FEISHU_TOP_EARNING_PREV_RANKS` 以及对应的 `TEST` 变量。
 
 如果你要跑项目日报：
 
@@ -101,7 +101,7 @@ Top Trending 首次运行后会自动回写各 Sheet ID 和历史排名变量，
 - `AI_REVIEW_MAX_CONTEXT_CHARS`，默认 `24000`
 - `AI_REVIEW_MAX_OUTPUT_TOKENS`，默认 `4000`
 
-其余飞书表格 token / sheet id 可以留空，首次运行后由程序自动创建并回写。
+项目日报飞书表格 token / sheet id 可以留空，首次运行后由程序自动创建并回写。
 
 ### 3.4 手动跑一次工作流
 
@@ -118,7 +118,7 @@ Top Trending 首次运行后会自动回写各 Sheet ID 和历史排名变量，
 
 - 工作流状态为绿色
 - 飞书能收到结果消息
-- 如果是 `top_trending_sheet`，能创建或复用飞书表格
+- 如果是 `top_trending_sheet`，能收到 `今日关注` 卡片
 
 如果这一步没通，不要继续配置 Worker。
 
@@ -281,12 +281,13 @@ npx wrangler deploy
 至少要保证应用可以：
 
 - 向群会话发消息
-- 调用飞书电子表格 API
+- 如果启用项目日报，还需要调用飞书电子表格 API
 
 如果只配了 webhook，没有可用的飞书应用身份，那么：
 
 - `top100_message` 还有机会通过 webhook 发摘要
-- `top_trending_sheet` 和 `roblox_project_daily_metrics` 将无法创建或更新飞书表格
+- `top_trending_sheet` 仍可通过 webhook 发送 `今日关注` 卡片，但不能按 `RUN_CHAT_ID` 精确投递到多个群
+- `roblox_project_daily_metrics` 将无法创建或更新飞书表格
 
 ### 5.5 发布应用版本
 
@@ -337,7 +338,7 @@ npx wrangler deploy
 
 ### `/roblox-top-day` 特别注意
 
-手动触发 `/roblox-top-day` 默认写测试表，不写正式表。
+手动触发 `/roblox-top-day` 默认读写测试历史排名，不读写正式历史排名。
 
 这是当前代码设计，不是异常。
 
@@ -371,7 +372,7 @@ Top Trending 和项目日报复用同一个：
 2. Worker `/health` 正常
 3. 飞书事件 URL 校验成功
 4. 飞书群发送 `/roblox-top100` 能触发并回结果
-5. 飞书群发送 `/roblox-top-day` 能创建测试表并回链接
+5. 飞书群发送 `/roblox-top-day` 能收到 `今日关注` 卡片
 6. 飞书群发送 `/roblox-project-metrics` 能写项目日报表并回链接
 7. test 群发送 `/roblox-money` 能收到收入文本
 8. 非 test 群发送 `/roblox-money` 不触发任务

@@ -468,6 +468,51 @@ class RobloxClientTests(unittest.TestCase):
         self.assertEqual("游戏A", items[0].localized_name)
         self.assertEqual("", items[0].thumbnail_url)
 
+    def test_fetch_games_by_sort_id_can_skip_thumbnail_request(self) -> None:
+        response_payload = {
+            "games": [
+                {
+                    "universeId": 101,
+                    "rootPlaceId": 1,
+                    "name": "A",
+                    "playerCount": 99,
+                }
+            ]
+        }
+        details_payload = {
+            "data": [
+                {"id": 101, "name": "A", "visits": 1234, "playing": 99, "creator": {"name": "C1"}},
+            ]
+        }
+        localization_payload = {
+            "data": [
+                {"languageCode": "zh-cn", "name": "游戏A"},
+            ]
+        }
+
+        session = Mock()
+        response_a = Mock()
+        response_a.status_code = 200
+        response_a.json.return_value = response_payload
+        response_b = Mock()
+        response_b.status_code = 200
+        response_b.json.return_value = details_payload
+        response_c = Mock()
+        response_c.status_code = 200
+        response_c.json.return_value = localization_payload
+        session.request.side_effect = [response_a, response_b, response_c]
+
+        client = RobloxClient(
+            config=Config(api_limit=100, roblox_sort_id="top-playing-now"),
+            session=session,
+        )
+
+        items = client.fetch_games_by_sort_id("top-playing-now", include_thumbnails=False)
+
+        self.assertEqual(1, len(items))
+        self.assertEqual("", items[0].thumbnail_url)
+        self.assertEqual(3, session.request.call_count)
+
     def test_localized_name_failure_does_not_break_fetch(self) -> None:
         response_payload = {
             "games": [

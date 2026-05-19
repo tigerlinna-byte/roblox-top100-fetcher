@@ -9,6 +9,7 @@ import time
 from .config import Config, load_config
 from .feishu_client import FeishuClient, FeishuClientError
 from .github_client import GitHubClient, GitHubClientError
+from .models import GameRecord
 from .project_metrics_models import ProjectDailyMetricsRecord, now_iso
 from .project_metrics_sheet import (
     ProjectMetricsSheetVariables,
@@ -34,7 +35,12 @@ from .roblox_creator_metrics_client import (
     RobloxCreatorMetricsClientError,
     resolve_project_metrics_query_date_bounds,
 )
-from .storage import write_outputs, write_project_metrics_output, write_roblox_money_output
+from .storage import (
+    write_json_output,
+    write_outputs,
+    write_project_metrics_output,
+    write_roblox_money_output,
+)
 from .summary import (
     build_failure_markdown,
     build_project_metrics_partial_failure_markdown,
@@ -112,7 +118,8 @@ def run_once() -> int:
     elapsed = time.time() - start
     logging.info("Fetched report payload in %.2fs", elapsed)
     logging.info("JSON saved: %s", json_path)
-    logging.info("CSV saved:  %s", csv_path)
+    if csv_path is not None:
+        logging.info("CSV saved:  %s", csv_path)
     try:
         _notify_success(cfg, report_payload)
     except FeishuClientError:
@@ -121,7 +128,7 @@ def run_once() -> int:
         return 1
     except GitHubClientError:
         logging.exception("GitHub variable update failed.")
-        _notify_failure(cfg, "写入飞书表格配置失败")
+        _notify_failure(cfg, _resolve_github_update_failure_reason(cfg))
         return 1
     except Exception:  # noqa: BLE001
         logging.exception("Unexpected error during Feishu stage.")
@@ -211,14 +218,29 @@ def _fetch_report_payload(cfg: Config):
     client = RobloxClient(cfg)
     if cfg.run_report_mode == "top_trending_sheet":
         records_by_sheet = {
-            "top_trending_v4": client.fetch_games_by_sort_id("Top_Trending_V4"),
-            "up_and_coming_v4": client.fetch_games_by_sort_id("Up_And_Coming_V4"),
-            "top_playing_now": client.fetch_games_by_sort_id("top-playing-now"),
+            "top_trending_v4": client.fetch_games_by_sort_id(
+                "Top_Trending_V4",
+                include_thumbnails=False,
+            ),
+            "up_and_coming_v4": client.fetch_games_by_sort_id(
+                "Up_And_Coming_V4",
+                include_thumbnails=False,
+            ),
+            "top_playing_now": client.fetch_games_by_sort_id(
+                "top-playing-now",
+                include_thumbnails=False,
+            ),
         }
         try:
-            records_by_sheet["top_earning"] = client.fetch_top_earning_games(limit=TOP_EARNING_FETCH_LIMIT)
+            records_by_sheet["top_earning"] = client.fetch_top_earning_games(
+                limit=TOP_EARNING_FETCH_LIMIT,
+                include_thumbnails=False,
+            )
         except RobloxClientError:
-            logging.warning("Top Earning fetch failed; keeping existing sheet data.", exc_info=True)
+            logging.warning(
+                "Top Earning fetch failed; skipping top earning briefing input.",
+                exc_info=True,
+            )
         return records_by_sheet
     return client.fetch_top_games()
 
@@ -369,14 +391,13 @@ def _notify_success(cfg: Config, report_payload) -> None:
     if cfg.run_report_mode == "top_trending_sheet":
         feishu_client = FeishuClient(cfg)
         recent_place_ids_by_sheet = get_recent_place_ids_by_sheet(cfg)
-        target = _sync_top_trending_sheet(cfg, report_payload, feishu_client)
+        _persist_top_trending_previous_ranks(cfg, report_payload)
         feishu_client.send_group_card(
             build_top_trending_briefing_card(
                 report_payload,
                 recent_place_ids_by_sheet,
             )
         )
-        feishu_client.send_group_markdown(target.url)
         return
 
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
@@ -401,6 +422,37 @@ def _notify_success(cfg: Config, report_payload) -> None:
         return
 
     logging.info("Top100 report outputs updated; success Feishu notification is disabled.")
+
+
+def _persist_top_trending_previous_ranks(
+    cfg: Config,
+    records_by_sheet: dict[str, list[GameRecord]],
+) -> None:
+    """保存 Top Trending 历史排名，供今日关注判断最近 7 天新上榜。"""
+
+    variables = resolve_spreadsheet_variables(cfg)
+    github_client = GitHubClient(cfg)
+    for _sort_id, title, variable_name, previous_ranks_variable_name in variables.sort_sheets:
+        if title not in records_by_sheet:
+            logging.warning(
+                "Skipping previous rank persistence for %s because its Roblox fetch did not complete.",
+                title,
+            )
+            continue
+        sheet = SheetTarget(
+            sort_id="",
+            title=title,
+            variable_name=variable_name,
+            previous_ranks_variable_name=previous_ranks_variable_name,
+            sheet_id="",
+        )
+        if not save_previous_ranks(
+            github_client,
+            sheet,
+            records_by_sheet.get(title, []),
+            variables.previous_ranks_by_var.get(previous_ranks_variable_name, ""),
+        ):
+            logging.warning("Previous ranks were not persisted for %s.", title)
 
 
 
@@ -637,9 +689,17 @@ def _resolve_fetch_failure_reason(cfg: Config, exc: Exception | None = None) -> 
 def _resolve_feishu_failure_reason(cfg: Config) -> str:
     if cfg.run_report_mode == ROBLOX_MONEY_REPORT_MODE:
         return "飞书收入日报通知失败"
+    if cfg.run_report_mode == "top_trending_sheet":
+        return "飞书今日关注通知或历史排名更新失败"
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
         return "飞书项目日报写入失败"
     return "飞书机器人通知失败"
+
+
+def _resolve_github_update_failure_reason(cfg: Config) -> str:
+    if cfg.run_report_mode == "top_trending_sheet":
+        return "更新今日关注历史排名失败"
+    return "写入飞书表格配置失败"
 
 
 
@@ -656,11 +716,12 @@ def _output_prefix(cfg: Config) -> str:
 
 def _write_report_outputs(cfg: Config, report_payload):
     if cfg.run_report_mode == "top_trending_sheet":
-        return write_outputs(
+        json_path = write_json_output(
             cfg.output_dir,
             report_payload["top_trending_v4"],
             prefix=_output_prefix(cfg),
         )
+        return json_path, None
     if cfg.run_report_mode == ROBLOX_MONEY_REPORT_MODE:
         return write_roblox_money_output(
             cfg.output_dir,

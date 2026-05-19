@@ -62,9 +62,9 @@ class RobloxClient:
     def fetch_top_games(self) -> list[GameRecord]:
         return self._fetch_games_for_sort(self._resolve_top_games_sort_id())
 
-    def fetch_top_trending_games(self) -> list[GameRecord]:
+    def fetch_top_trending_games(self, *, include_thumbnails: bool = True) -> list[GameRecord]:
         configured_sort_id = self._resolve_top_trending_sort_id()
-        return self.fetch_games_by_sort_id(configured_sort_id)
+        return self.fetch_games_by_sort_id(configured_sort_id, include_thumbnails=include_thumbnails)
 
     def fetch_games_by_sort_id(
         self,
@@ -72,6 +72,7 @@ class RobloxClient:
         *,
         limit: int | None = None,
         allow_fallbacks: bool = True,
+        include_thumbnails: bool = True,
     ) -> list[GameRecord]:
         candidate_sort_ids = [sort_id]
         if allow_fallbacks:
@@ -84,7 +85,11 @@ class RobloxClient:
         last_error: Exception | None = None
         for candidate_sort_id in candidate_sort_ids:
             try:
-                return self._fetch_games_for_sort(candidate_sort_id, limit=limit)
+                return self._fetch_games_for_sort(
+                    candidate_sort_id,
+                    limit=limit,
+                    include_thumbnails=include_thumbnails,
+                )
             except RobloxClientError as exc:
                 last_error = exc
                 continue
@@ -92,16 +97,23 @@ class RobloxClient:
         detail = f": {last_error}" if last_error else ""
         raise RobloxClientError(f"Unable to fetch games for sort {sort_id}{detail}.") from last_error
 
-    def fetch_top_earning_games(self, *, limit: int) -> list[GameRecord]:
+    def fetch_top_earning_games(self, *, limit: int, include_thumbnails: bool = True) -> list[GameRecord]:
         """抓取 Top Earning 收入榜，失败时不回退到其他榜单。"""
 
         return self.fetch_games_by_sort_id(
             TOP_EARNING_SORT_ID,
             limit=limit,
             allow_fallbacks=False,
+            include_thumbnails=include_thumbnails,
         )
 
-    def _fetch_games_for_sort(self, sort_id: str, *, limit: int | None = None) -> list[GameRecord]:
+    def _fetch_games_for_sort(
+        self,
+        sort_id: str,
+        *,
+        limit: int | None = None,
+        include_thumbnails: bool = True,
+    ) -> list[GameRecord]:
         requested_limit = limit or self.config.api_limit
         games = self._fetch_games_for_sort_pages(sort_id, limit=requested_limit)
         if not games:
@@ -111,7 +123,7 @@ class RobloxClient:
         universe_ids = [str(_as_int(_pick(item, "universeId", "universe_id"))) for item in games]
         details_map = self._fetch_game_details(universe_ids)
         localized_names = self._fetch_localized_names(universe_ids)
-        thumbnail_urls = self._fetch_thumbnail_urls(universe_ids)
+        thumbnail_urls = self._fetch_thumbnail_urls(universe_ids) if include_thumbnails else {}
 
         fetched_at = now_iso()
         records: list[GameRecord] = []

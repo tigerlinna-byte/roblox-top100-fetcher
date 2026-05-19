@@ -8,7 +8,7 @@ from pathlib import Path
 
 from app.models import GameRecord
 from app.project_metrics_models import ProjectDailyMetricsRecord
-from app.storage import write_outputs, write_project_metrics_output
+from app.storage import write_json_output, write_outputs, write_project_metrics_output
 
 
 class StorageTests(unittest.TestCase):
@@ -55,6 +55,22 @@ class StorageTests(unittest.TestCase):
 
         self.assertEqual(1, len(rows))
         self.assertEqual("Adventure", rows[0]["genre"])
+
+    def test_writes_json_only_output(self) -> None:
+        sample = [
+            GameRecord(
+                rank=1,
+                place_id=101,
+                name="Game A",
+            )
+        ]
+
+        json_path = write_json_output(str(self.base), sample, prefix="top_trending")
+
+        self.assertTrue(Path(json_path).exists())
+        self.assertFalse(list(self.base.glob("top_trending_*.csv")))
+        payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
+        self.assertEqual("Game A", payload[0]["name"])
 
     def test_writes_project_metrics_json_and_csv(self) -> None:
         sample = [
