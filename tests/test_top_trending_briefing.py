@@ -32,7 +32,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
                     name="Old Game",
                     playing=2000,
                     fetched_at="2026-03-14T00:00:00Z",
-                    created_at="2025-10-01T00:00:00Z",
+                    created_at="2025-08-01T00:00:00Z",
                 ),
             ],
             "up_and_coming_v4": [
@@ -199,7 +199,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
 
         self.assertEqual("今日关注（2026-03-14）", card["header"]["title"]["content"])
         content = card["elements"][0]["content"]
-        self.assertIn("**以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：**", content)
+        self.assertIn("**以下游戏为新上榜且首次上线未满 6 个月，建议优先关注：**", content)
         self.assertIn("<font color='blue'>Game B 游戏B</font>", content)
         self.assertIn("｜Survival｜", content)
         self.assertIn("<font color='red'>热门榜 #1</font>", content)
@@ -295,7 +295,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
             "https://feishu.cn/sheets/test",
         )
 
-        self.assertIn("今天没有发现新上榜且首次上线未满 3 个月的重点游戏。", markdown)
+        self.assertIn("今天没有发现新上榜且首次上线未满 6 个月的重点游戏。", markdown)
 
     def test_collect_entries_excludes_games_seen_within_last_week(self) -> None:
         entries = collect_top_trending_briefing_entries(

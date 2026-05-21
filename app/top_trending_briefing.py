@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from .models import GameRecord
 
 
-NEW_RELEASE_WINDOW_DAYS = 90
+NEW_RELEASE_WINDOW_DAYS = 180
 MAX_BRIEFING_ENTRIES = 10
 BRIEFING_NAME_COLOR = "blue"
 BRIEFING_SHEET_LABEL_COLOR = "red"
@@ -39,7 +39,7 @@ def build_top_trending_briefing_markdown(
 ) -> str:
     """构建 Top100 飞书消息简报。
 
-    简报只关注“新上榜且首次上线在 3 个月以内”的游戏，并在末尾附完整榜单链接。
+    简报只关注“新上榜且首次上线在 6 个月以内”的游戏，并在末尾附完整榜单链接。
     """
 
     entries = collect_top_trending_briefing_entries(records_by_sheet, recent_place_ids_by_sheet)
@@ -48,7 +48,7 @@ def build_top_trending_briefing_markdown(
     lines = [title, ""]
 
     if visible_entries:
-        lines.append("以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：")
+        lines.append("以下游戏为新上榜且首次上线未满 6 个月，建议优先关注：")
         lines.append("")
         for entry in visible_entries:
             lines.append(
@@ -57,7 +57,7 @@ def build_top_trending_briefing_markdown(
         if len(entries) > MAX_BRIEFING_ENTRIES:
             lines.extend(["", "其余值得关注的游戏请直接查看下方表格。"])
     else:
-        lines.append("今天没有发现新上榜且首次上线未满 3 个月的重点游戏。")
+        lines.append("今天没有发现新上榜且首次上线未满 6 个月的重点游戏。")
 
     return "\n".join(lines)
 
@@ -72,7 +72,7 @@ def build_top_trending_briefing_card(
     visible_entries = entries[:MAX_BRIEFING_ENTRIES]
     if visible_entries:
         lines = [
-            "**以下游戏为新上榜且首次上线未满 3 个月，建议优先关注：**",
+            "**以下游戏为新上榜且首次上线未满 6 个月，建议优先关注：**",
             "",
         ]
         for entry in visible_entries:
@@ -87,7 +87,7 @@ def build_top_trending_briefing_card(
         if len(entries) > MAX_BRIEFING_ENTRIES:
             lines.extend(["", "其余值得关注的游戏请直接查看下方表格。"])
     else:
-        lines = ["今天没有发现新上榜且首次上线未满 3 个月的重点游戏。"]
+        lines = ["今天没有发现新上榜且首次上线未满 6 个月的重点游戏。"]
 
     return {
         "config": {"wide_screen_mode": True},
