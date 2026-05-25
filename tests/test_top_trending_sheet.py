@@ -8,6 +8,7 @@ import json
 from app.config import Config
 from app.models import GameRecord
 from app.top_trending_sheet import (
+    GITHUB_VARIABLE_VALUE_MAX_BYTES,
     MIN_RENDER_ROWS,
     build_game_name_highlight_cells,
     build_launch_date_cells,
@@ -246,7 +247,7 @@ class TopTrendingSheetTests(unittest.TestCase):
                         name="Game B",
                         playing=4000,
                         fetched_at="2026-03-14T00:00:00Z",
-                        created_at="2025-10-01T00:00:00Z",
+                        created_at="2025-08-01T00:00:00Z",
                     ),
                 ],
                 "up_and_coming_v4": [
@@ -365,6 +366,15 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertEqual({201}, recent_place_ids["up_and_coming_v4"])
         self.assertEqual({301}, recent_place_ids["top_playing_now"])
         self.assertEqual({401}, recent_place_ids["top_earning"])
+
+    def test_get_recent_place_ids_by_sheet_supports_ranks_only_history_payload(self) -> None:
+        cfg = Config(
+            feishu_top_trending_prev_ranks='{"history":[{"ranks":{"101":1,"102":2}},{"ranks":{"103":5}}]}',
+        )
+
+        recent_place_ids = get_recent_place_ids_by_sheet(cfg)
+
+        self.assertEqual({101, 102, 103}, recent_place_ids["top_trending_v4"])
 
     def test_data_rows_keep_same_column_representation(self) -> None:
         cfg = Config()
@@ -604,9 +614,51 @@ class TopTrendingSheetTests(unittest.TestCase):
 
         self.assertTrue(saved)
         payload = json.loads(github_client.upsert_repository_variable.call_args.args[1])
-        self.assertEqual([101, 102], payload["history"][0]["place_ids"])
+        self.assertNotIn("place_ids", payload["history"][0])
         self.assertEqual({"101": 1, "102": 2}, payload["history"][0]["ranks"])
-        self.assertEqual([201], payload["history"][1]["place_ids"])
+        self.assertNotIn("place_ids", payload["history"][1])
+        self.assertEqual({"201": 5}, payload["history"][1]["ranks"])
+
+    def test_save_previous_ranks_trims_old_history_to_fit_github_variable_limit(self) -> None:
+        github_client = Mock()
+        github_client.upsert_repository_variable.return_value = True
+        sheet = build_default_sheet_specs()[0]
+
+        from app.top_trending_sheet import SheetTarget
+
+        records = [
+            GameRecord(rank=index, place_id=100000000000000 + index, name=f"Game {index}")
+            for index in range(1, 901)
+        ]
+        existing_history = [
+            {
+                "ranks": {
+                    str(200000000000000 + offset): offset
+                    for offset in range(day_index * 900, (day_index + 1) * 900)
+                }
+            }
+            for day_index in range(8)
+        ]
+
+        saved = save_previous_ranks(
+            github_client,
+            SheetTarget(
+                sort_id=sheet["sort_id"],
+                title=sheet["title"],
+                variable_name=sheet["variable_name"],
+                previous_ranks_variable_name=sheet["previous_ranks_variable_name"],
+                sheet_id="sheet001",
+            ),
+            records,
+            json.dumps({"history": existing_history}, separators=(",", ":")),
+        )
+
+        self.assertTrue(saved)
+        saved_payload = github_client.upsert_repository_variable.call_args.args[1]
+        self.assertLessEqual(len(saved_payload.encode("utf-8")), GITHUB_VARIABLE_VALUE_MAX_BYTES)
+        payload = json.loads(saved_payload)
+        self.assertLess(len(payload["history"]), 7)
+        self.assertEqual("1", str(payload["history"][0]["ranks"]["100000000000001"]))
 
 
 if __name__ == "__main__":

@@ -80,7 +80,7 @@
 - 无需预先配置飞书表格标题、token 或 sheet id
 - 需要配置 `GITHUB_VARIABLES_TOKEN` 对应的 `GH_TOKEN`，用于保存 `*_PREV_RANKS` 历史排名变量
 
-Top Trending 当前不再创建或更新飞书表格，只会回写历史排名变量，包括 `FEISHU_TOP_EARNING_PREV_RANKS` 以及对应的 `TEST` 变量。
+Top Trending 当前不再创建或更新飞书表格，只会回写历史排名变量，包括 `FEISHU_TOP_EARNING_PREV_RANKS` 以及对应的 `TEST` 变量。历史排名变量会使用压缩后的 `ranks` only JSON 格式，并在接近 GitHub Actions Variable 48KB 上限时裁掉最老历史。
 
 如果你要跑项目日报：
 

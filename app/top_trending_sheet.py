@@ -36,6 +36,8 @@ TEST_TOP_EARNING_PREV_RANKS_VAR = "FEISHU_TOP_EARNING_TEST_PREV_RANKS"
 
 MIN_RENDER_ROWS = 140
 RECENT_NEW_ENTRY_LOOKBACK_DAYS = 7
+# GitHub Actions 单个 Variables value 上限为 48KB，历史排名写入前必须控制体积。
+GITHUB_VARIABLE_VALUE_MAX_BYTES = 48 * 1024
 
 
 @dataclass(frozen=True)
@@ -300,26 +302,23 @@ def save_previous_ranks(
 ) -> bool:
     existing_history = _parse_previous_ranks_history(existing_raw)
     today_payload = {
-        "place_ids": sorted(
-            {
-                int(record.place_id)
-                for record in records
-                if record.place_id
-            }
-        ),
         "ranks": {
             str(record.place_id): record.rank
             for record in records
             if record.place_id
         },
     }
-    history = [today_payload, *existing_history]
-    payload = {
-        "history": history[:RECENT_NEW_ENTRY_LOOKBACK_DAYS],
-    }
+    history = [
+        today_payload,
+        *[
+            {"ranks": entry.get("ranks", {})}
+            for entry in existing_history
+        ],
+    ]
+    payload_value = _serialize_previous_ranks_payload(history)
     return github_client.upsert_repository_variable(
         sheet.previous_ranks_variable_name,
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        payload_value,
     )
 
 
@@ -503,19 +502,39 @@ def _parse_previous_ranks_history(raw: str) -> list[dict[str, object]]:
         ranks = entry.get("ranks", {})
         if not isinstance(ranks, dict):
             ranks = {}
+        normalized_ranks = {
+            str(key): int(value)
+            for key, value in ranks.items()
+            if str(key).isdigit() and (
+                isinstance(value, int) or str(value).isdigit()
+            )
+        }
+        if not place_ids:
+            place_ids = [
+                int(place_id)
+                for place_id in normalized_ranks
+            ]
         normalized.append(
             {
                 "place_ids": place_ids,
-                "ranks": {
-                    str(key): int(value)
-                    for key, value in ranks.items()
-                    if str(key).isdigit() and (
-                        isinstance(value, int) or str(value).isdigit()
-                    )
-                },
+                "ranks": normalized_ranks,
             }
         )
     return normalized
+
+
+def _serialize_previous_ranks_payload(history: list[dict[str, object]]) -> str:
+    trimmed_history = history[:RECENT_NEW_ENTRY_LOOKBACK_DAYS]
+    while trimmed_history:
+        payload_value = json.dumps(
+            {"history": trimmed_history},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        if len(payload_value.encode("utf-8")) <= GITHUB_VARIABLE_VALUE_MAX_BYTES:
+            return payload_value
+        trimmed_history = trimmed_history[:-1]
+    return '{"history":[]}'
 
 
 def _measure_text_units(text: str) -> float:

@@ -550,7 +550,6 @@ Top Trending 历史排名保存在 GitHub Variables 中，当前结构是一个 
 {
   "history": [
     {
-      "place_ids": [123, 456],
       "ranks": {
         "123": 1,
         "456": 2
@@ -563,6 +562,8 @@ Top Trending 历史排名保存在 GitHub Variables 中，当前结构是一个 
 维护要点：
 
 - 当前只保留最近 7 次历史
+- 新写入格式只保存 `ranks`，最近上榜集合由 `ranks` 的 key 推导；旧的 `place_ids` + `ranks` 格式仍兼容读取
+- 单个 GitHub Actions Variable 不能超过 48KB；如果历史 payload 过大，会优先裁掉最老历史记录，避免收入榜 300 条历史写入失败
 - 既用于“排名变化”计算
 - 也用于“最近 7 天是否上过榜”判断
 
