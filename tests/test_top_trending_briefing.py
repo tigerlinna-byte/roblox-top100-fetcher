@@ -201,14 +201,24 @@ class TopTrendingBriefingTests(unittest.TestCase):
         content = card["elements"][0]["content"]
         self.assertIn("**以下游戏为新上榜且首次上线未满 6 个月，建议优先关注：**", content)
         self.assertIn("<font color='blue'>Game B 游戏B</font>", content)
-        self.assertIn("｜Survival｜", content)
-        self.assertIn("<font color='red'>热门榜 #1</font>", content)
+        self.assertIn("｜Survival｜CCU 6,789｜首次上线 2026-03-10", content)
+        self.assertIn("\n  上榜：<font color='blue'>热门榜 #1</font>", content)
 
-    def test_briefing_includes_top_earning_label_for_new_games(self) -> None:
+    def test_briefing_formats_sheet_labels_on_new_line_with_distinct_colors(self) -> None:
         card = build_top_trending_briefing_card(
             {
                 "top_trending_v4": [],
-                "up_and_coming_v4": [],
+                "up_and_coming_v4": [
+                    GameRecord(
+                        rank=3,
+                        place_id=501,
+                        name="Earn Game",
+                        genre="Tycoon",
+                        playing=5000,
+                        fetched_at="2026-03-14T00:00:00Z",
+                        created_at="2026-03-10T00:00:00Z",
+                    )
+                ],
                 "top_playing_now": [],
                 "top_earning": [
                     GameRecord(
@@ -231,7 +241,10 @@ class TopTrendingBriefingTests(unittest.TestCase):
         )
 
         content = card["elements"][0]["content"]
-        self.assertIn("<font color='red'>收入榜 #12</font>", content)
+        self.assertIn(
+            "\n  上榜：<font color='red'>收入榜 #12</font>、<font color='orange'>新秀榜 #3</font>",
+            content,
+        )
 
     def test_briefing_limits_visible_entries_to_ten(self) -> None:
         records = [

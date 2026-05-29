@@ -6,16 +6,34 @@ from datetime import UTC, date, datetime, timedelta
 from .models import GameRecord
 
 
+# 新游戏判定窗口：首次上线距抓取日不超过 180 天。
 NEW_RELEASE_WINDOW_DAYS = 180
+# 今日关注最多展示条数，避免飞书卡片过长。
 MAX_BRIEFING_ENTRIES = 10
+# 游戏名称颜色：用于在卡片中突出重点游戏名称。
 BRIEFING_NAME_COLOR = "blue"
-BRIEFING_SHEET_LABEL_COLOR = "red"
+# 榜单标签颜色：收入榜最醒目，新秀榜次之，其余榜单用不同颜色区分来源。
+BRIEFING_SHEET_LABEL_COLORS = {
+    "收入榜": "red",
+    "新秀榜": "orange",
+    "热门榜": "blue",
+    "在玩榜": "green",
+}
+# 榜单标签展示优先级：收入榜最前，新秀榜第二，其余按常规关注顺序展示。
+BRIEFING_SHEET_LABEL_PRIORITY = {
+    "收入榜": 0,
+    "新秀榜": 1,
+    "热门榜": 2,
+    "在玩榜": 3,
+}
+# Roblox sort id 到卡片展示名称的映射。
 SHEET_LABELS = {
     "top_trending_v4": "热门榜",
     "up_and_coming_v4": "新秀榜",
     "top_playing_now": "在玩榜",
     "top_earning": "收入榜",
 }
+# 榜单聚合顺序：决定标签收集顺序和纯 Markdown 兜底输出顺序。
 SHEET_ORDER = tuple(SHEET_LABELS.keys())
 
 
@@ -76,14 +94,8 @@ def build_top_trending_briefing_card(
             "",
         ]
         for entry in visible_entries:
-            lines.append(
-                "- "
-                f"<font color='{BRIEFING_NAME_COLOR}'>{entry.name}</font>"
-                f"｜{entry.genre or '-'}"
-                f"｜<font color='{BRIEFING_SHEET_LABEL_COLOR}'>{'、'.join(entry.sheet_rank_labels)}</font>"
-                f"｜CCU {entry.ccu:,}"
-                f"｜首次上线 {entry.launch_date.isoformat()}"
-            )
+            lines.append(_build_briefing_entry_summary_line(entry))
+            lines.append(_build_briefing_entry_sheet_line(entry))
         if len(entries) > MAX_BRIEFING_ENTRIES:
             lines.extend(["", "其余值得关注的游戏请直接查看下方表格。"])
     else:
@@ -216,6 +228,36 @@ def collect_top_trending_focus_place_ids_by_sheet(
             focus_place_ids_by_sheet.setdefault(sheet_title, set()).add(record.place_id)
 
     return focus_place_ids_by_sheet
+
+
+def _build_briefing_entry_summary_line(entry: TrendingBriefingEntry) -> str:
+    return (
+        "- "
+        f"<font color='{BRIEFING_NAME_COLOR}'>{entry.name}</font>"
+        f"｜{entry.genre or '-'}"
+        f"｜CCU {entry.ccu:,}"
+        f"｜首次上线 {entry.launch_date.isoformat()}"
+    )
+
+
+def _build_briefing_entry_sheet_line(entry: TrendingBriefingEntry) -> str:
+    return f"  上榜：{_build_colored_sheet_rank_labels(entry.sheet_rank_labels)}"
+
+
+def _build_colored_sheet_rank_labels(sheet_rank_labels: tuple[str, ...]) -> str:
+    sorted_labels = sorted(sheet_rank_labels, key=_get_sheet_rank_label_priority)
+    return "、".join(_build_colored_sheet_rank_label(label) for label in sorted_labels)
+
+
+def _build_colored_sheet_rank_label(sheet_rank_label: str) -> str:
+    label_name = sheet_rank_label.split(" #", 1)[0]
+    color = BRIEFING_SHEET_LABEL_COLORS.get(label_name, "grey")
+    return f"<font color='{color}'>{sheet_rank_label}</font>"
+
+
+def _get_sheet_rank_label_priority(sheet_rank_label: str) -> int:
+    label_name = sheet_rank_label.split(" #", 1)[0]
+    return BRIEFING_SHEET_LABEL_PRIORITY.get(label_name, len(BRIEFING_SHEET_LABEL_PRIORITY))
 
 
 def _resolve_reference_date(records_by_sheet: dict[str, list[GameRecord]]) -> date | None:
