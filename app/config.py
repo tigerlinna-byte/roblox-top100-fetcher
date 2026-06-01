@@ -15,6 +15,7 @@ class Config:
     roblox_top_trending_sort_id: str = ""
     roblox_creator_overview_url: str = ""
     roblox_creator_overview_url_2: str = ""
+    roblox_creator_overview_url_3: str = ""
     roblox_project_metrics_disable_second_project: bool = False
     roblox_creator_cookie: str = ""
     roblox_money_start_date: str = "2026-05-01"
@@ -56,6 +57,9 @@ class Config:
     feishu_project_metrics_2_spreadsheet_token: str = ""
     feishu_project_metrics_2_sheet_id: str = ""
     feishu_project_metrics_2_spreadsheet_title: str = "项目 9707829514"
+    feishu_project_metrics_3_spreadsheet_token: str = ""
+    feishu_project_metrics_3_sheet_id: str = ""
+    feishu_project_metrics_3_spreadsheet_title: str = "troll ur friends"
 
 
 
@@ -113,6 +117,7 @@ def load_config() -> Config:
         roblox_top_trending_sort_id=os.getenv("ROBLOX_TOP_TRENDING_SORT_ID", ""),
         roblox_creator_overview_url=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL", ""),
         roblox_creator_overview_url_2=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL_2", ""),
+        roblox_creator_overview_url_3=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL_3", ""),
         roblox_project_metrics_disable_second_project=_get_bool(
             "ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT",
             False,
@@ -180,5 +185,14 @@ def load_config() -> Config:
         feishu_project_metrics_2_spreadsheet_title=os.getenv(
             "FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE",
             "项目 9707829514",
+        ),
+        feishu_project_metrics_3_spreadsheet_token=os.getenv(
+            "FEISHU_PROJECT_METRICS_3_SPREADSHEET_TOKEN",
+            "",
+        ),
+        feishu_project_metrics_3_sheet_id=os.getenv("FEISHU_PROJECT_METRICS_3_SHEET_ID", ""),
+        feishu_project_metrics_3_spreadsheet_title=os.getenv(
+            "FEISHU_PROJECT_METRICS_3_SPREADSHEET_TITLE",
+            "troll ur friends",
         ),
     )

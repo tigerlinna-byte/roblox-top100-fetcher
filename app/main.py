@@ -13,6 +13,7 @@ from .models import GameRecord
 from .project_metrics_models import ProjectDailyMetricsRecord, now_iso
 from .project_metrics_sheet import (
     PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR,
+    PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR,
     ProjectMetricsSheetVariables,
     ProjectMetricsSpreadsheetTarget,
     build_project_metrics_query_plan,
@@ -249,7 +250,7 @@ def _fetch_report_payload(cfg: Config):
 def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
     """抓取两个项目的收入日报摘要，允许单项目失败。"""
 
-    variables_list = resolve_project_metrics_variables(cfg)
+    variables_list = _resolve_roblox_money_variables(cfg)
     if not variables_list:
         raise RobloxCreatorMetricsClientError("未配置任何 Roblox 收入日报 overview 地址")
 
@@ -632,6 +633,16 @@ def _resolve_project_metrics_report_variables(cfg: Config) -> tuple[ProjectMetri
         variables
         for variables in variables_list
         if variables.spreadsheet_token_variable_name != PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR
+    )
+
+
+def _resolve_roblox_money_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
+    """解析收入日报项目，保持当前只统计前两个项目的行为。"""
+
+    return tuple(
+        variables
+        for variables in resolve_project_metrics_variables(cfg)
+        if variables.spreadsheet_token_variable_name != PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR
     )
 
 

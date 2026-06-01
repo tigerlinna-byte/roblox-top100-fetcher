@@ -13,6 +13,8 @@ PROJECT_METRICS_SPREADSHEET_TOKEN_VAR = "FEISHU_PROJECT_METRICS_SPREADSHEET_TOKE
 PROJECT_METRICS_SHEET_ID_VAR = "FEISHU_PROJECT_METRICS_SHEET_ID"
 PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR = "FEISHU_PROJECT_METRICS_2_SPREADSHEET_TOKEN"
 PROJECT_METRICS_2_SHEET_ID_VAR = "FEISHU_PROJECT_METRICS_2_SHEET_ID"
+PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR = "FEISHU_PROJECT_METRICS_3_SPREADSHEET_TOKEN"
+PROJECT_METRICS_3_SHEET_ID_VAR = "FEISHU_PROJECT_METRICS_3_SHEET_ID"
 DEFAULT_PROJECT_METRICS_SHEET_TITLE = "daily_metrics"
 PROJECT_METRICS_HEADERS = [
     "日期",
@@ -199,6 +201,20 @@ def resolve_project_metrics_variables(cfg: Config) -> tuple[ProjectMetricsSheetV
                 spreadsheet_token=cfg.feishu_project_metrics_2_spreadsheet_token,
                 sheet_id=cfg.feishu_project_metrics_2_sheet_id,
                 spreadsheet_title=cfg.feishu_project_metrics_2_spreadsheet_title,
+            )
+        )
+
+    third_project_id = _extract_project_id(cfg.roblox_creator_overview_url_3)
+    if third_project_id:
+        resolved.append(
+            ProjectMetricsSheetVariables(
+                project_id=third_project_id,
+                overview_url=cfg.roblox_creator_overview_url_3,
+                spreadsheet_token_variable_name=PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR,
+                sheet_id_variable_name=PROJECT_METRICS_3_SHEET_ID_VAR,
+                spreadsheet_token=cfg.feishu_project_metrics_3_spreadsheet_token,
+                sheet_id=cfg.feishu_project_metrics_3_sheet_id,
+                spreadsheet_title=cfg.feishu_project_metrics_3_spreadsheet_title,
             )
         )
 

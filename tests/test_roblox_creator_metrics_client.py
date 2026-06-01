@@ -74,6 +74,14 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         self.assertEqual((date(2026, 3, 17), date(2026, 5, 4)), bounds)
 
+    def test_resolve_project_metrics_query_date_bounds_uses_troll_ur_friends_start_date(self) -> None:
+        mocked_midnight = datetime(2026, 6, 3, 0, 0, tzinfo=timezone.utc)
+
+        with patch("app.roblox_creator_metrics_client._business_midnight_now", return_value=mocked_midnight):
+            bounds = resolve_project_metrics_query_date_bounds("10170801715", "UTC")
+
+        self.assertEqual((date(2026, 5, 31), date(2026, 6, 2)), bounds)
+
     def test_fetch_project_revenue_series_uses_latest_available_revenue_month(self) -> None:
         session = Mock()
 
