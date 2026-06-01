@@ -14,7 +14,7 @@ from app.top_trending_briefing import (
 
 
 class TopTrendingBriefingTests(unittest.TestCase):
-    def test_collect_entries_filters_to_new_recent_games_and_only_keeps_new_sheet_labels(self) -> None:
+    def test_collect_entries_filters_to_new_recent_games_and_keeps_other_matched_labels(self) -> None:
         records_by_sheet = {
             "top_trending_v4": [
                 GameRecord(
@@ -82,7 +82,8 @@ class TopTrendingBriefingTests(unittest.TestCase):
                     genre="",
                     ccu=13000,
                     launch_date=date(2026, 2, 1),
-                    sheet_rank_labels=("热门榜 #5", "新秀榜 #3"),
+                    new_sheet_rank_labels=("热门榜 #5", "新秀榜 #3"),
+                    other_sheet_rank_labels=("在玩榜 #2",),
                     best_rank=2,
                 ),
                 TrendingBriefingEntry(
@@ -91,7 +92,8 @@ class TopTrendingBriefingTests(unittest.TestCase):
                     genre="",
                     ccu=3000,
                     launch_date=date(2026, 3, 1),
-                    sheet_rank_labels=("新秀榜 #8",),
+                    new_sheet_rank_labels=("新秀榜 #8",),
+                    other_sheet_rank_labels=(),
                     best_rank=8,
                 ),
             ],
@@ -169,7 +171,8 @@ class TopTrendingBriefingTests(unittest.TestCase):
         )
 
         self.assertIn("## 今日关注（2026-03-14）", markdown)
-        self.assertIn("Game B｜Survival｜热门榜 #1｜CCU 6,789｜首次上线 2026-03-10", markdown)
+        self.assertIn("Game B｜Survival｜CCU 6,789｜首次上线 2026-03-10", markdown)
+        self.assertIn("上榜：热门榜 #1", markdown)
         self.assertNotIn("查看完整榜单", markdown)
 
     def test_build_card_highlights_intro_and_game_name(self) -> None:
@@ -202,12 +205,22 @@ class TopTrendingBriefingTests(unittest.TestCase):
         self.assertIn("**以下游戏为新上榜且首次上线未满 6 个月，建议优先关注：**", content)
         self.assertIn("<font color='blue'>Game B 游戏B</font>", content)
         self.assertIn("｜Survival｜CCU 6,789｜首次上线 2026-03-10", content)
-        self.assertIn("\n  上榜：<font color='blue'>热门榜 #1</font>", content)
+        self.assertIn("\n  上榜：<font color='green'>热门榜 #1</font>", content)
 
-    def test_briefing_formats_sheet_labels_on_new_line_with_distinct_colors(self) -> None:
+    def test_briefing_formats_new_and_other_sheet_labels_with_distinct_colors(self) -> None:
         card = build_top_trending_briefing_card(
             {
-                "top_trending_v4": [],
+                "top_trending_v4": [
+                    GameRecord(
+                        rank=5,
+                        place_id=501,
+                        name="Earn Game",
+                        genre="Tycoon",
+                        playing=5100,
+                        fetched_at="2026-03-14T00:00:00Z",
+                        created_at="2026-03-10T00:00:00Z",
+                    )
+                ],
                 "up_and_coming_v4": [
                     GameRecord(
                         rank=3,
@@ -233,8 +246,8 @@ class TopTrendingBriefingTests(unittest.TestCase):
                 ],
             },
             {
-                "top_trending_v4": set(),
-                "up_and_coming_v4": set(),
+                "top_trending_v4": {501},
+                "up_and_coming_v4": {501},
                 "top_playing_now": set(),
                 "top_earning": set(),
             },
@@ -242,7 +255,7 @@ class TopTrendingBriefingTests(unittest.TestCase):
 
         content = card["elements"][0]["content"]
         self.assertIn(
-            "\n  上榜：<font color='red'>收入榜 #12</font>、<font color='orange'>新秀榜 #3</font>",
+            "\n  上榜：<font color='red'>收入榜 #12</font> | <font color='orange'>新秀榜 #3</font>、<font color='green'>热门榜 #5</font>",
             content,
         )
 

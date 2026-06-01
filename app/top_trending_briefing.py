@@ -16,8 +16,8 @@ BRIEFING_NAME_COLOR = "blue"
 BRIEFING_SHEET_LABEL_COLORS = {
     "收入榜": "red",
     "新秀榜": "orange",
-    "热门榜": "blue",
-    "在玩榜": "green",
+    "热门榜": "green",
+    "在玩榜": "grey",
 }
 # 榜单标签展示优先级：收入榜最前，新秀榜第二，其余按常规关注顺序展示。
 BRIEFING_SHEET_LABEL_PRIORITY = {
@@ -46,7 +46,8 @@ class TrendingBriefingEntry:
     genre: str
     ccu: int
     launch_date: date
-    sheet_rank_labels: tuple[str, ...]
+    new_sheet_rank_labels: tuple[str, ...]
+    other_sheet_rank_labels: tuple[str, ...]
     best_rank: int
 
 
@@ -70,8 +71,9 @@ def build_top_trending_briefing_markdown(
         lines.append("")
         for entry in visible_entries:
             lines.append(
-                f"- {entry.name}｜{entry.genre or '-'}｜{'、'.join(entry.sheet_rank_labels)}｜CCU {entry.ccu:,}｜首次上线 {entry.launch_date.isoformat()}"
+                f"- {entry.name}｜{entry.genre or '-'}｜CCU {entry.ccu:,}｜首次上线 {entry.launch_date.isoformat()}"
             )
+            lines.append(_build_briefing_entry_plain_sheet_line(entry))
         if len(entries) > MAX_BRIEFING_ENTRIES:
             lines.extend(["", "其余值得关注的游戏请直接查看下方表格。"])
     else:
@@ -152,6 +154,7 @@ def collect_top_trending_briefing_entries(
                 {
                     "record": record,
                     "launch_date": launch_date,
+                    "matched_labels_by_sheet": {},
                     "new_labels_by_sheet": {},
                     "best_rank": record.rank,
                 },
@@ -165,8 +168,11 @@ def collect_top_trending_briefing_entries(
                 launch_date,
             )
             aggregated_entry["best_rank"] = min(aggregated_entry["best_rank"], record.rank)
+            label = SHEET_LABELS[sheet_title]
+            matched_current_rank = aggregated_entry["matched_labels_by_sheet"].get(label)
+            if matched_current_rank is None or record.rank < matched_current_rank:
+                aggregated_entry["matched_labels_by_sheet"][label] = record.rank
             if is_new_to_sheet:
-                label = SHEET_LABELS[sheet_title]
                 current_rank = aggregated_entry["new_labels_by_sheet"].get(label)
                 if current_rank is None or record.rank < current_rank:
                     aggregated_entry["new_labels_by_sheet"][label] = record.rank
@@ -176,11 +182,13 @@ def collect_top_trending_briefing_entries(
         if not payload["new_labels_by_sheet"]:
             continue
 
-        sheet_rank_labels = tuple(
-            f"{label} #{payload['new_labels_by_sheet'][label]}"
-            for key in SHEET_ORDER
-            for label in (SHEET_LABELS[key],)
-            if label in payload["new_labels_by_sheet"]
+        new_sheet_rank_labels = _build_sheet_rank_labels(payload["new_labels_by_sheet"])
+        other_sheet_rank_labels = _build_sheet_rank_labels(
+            {
+                label: rank
+                for label, rank in payload["matched_labels_by_sheet"].items()
+                if label not in payload["new_labels_by_sheet"]
+            }
         )
         record = payload["record"]
         entries.append(
@@ -190,13 +198,23 @@ def collect_top_trending_briefing_entries(
                 genre=record.genre.strip(),
                 ccu=record.playing,
                 launch_date=payload["launch_date"],
-                sheet_rank_labels=sheet_rank_labels,
+                new_sheet_rank_labels=new_sheet_rank_labels,
+                other_sheet_rank_labels=other_sheet_rank_labels,
                 best_rank=payload["best_rank"],
             )
         )
 
     entries.sort(key=lambda item: (item.best_rank, item.name.casefold()))
     return entries
+
+
+def _build_sheet_rank_labels(labels_by_sheet: dict[str, int]) -> tuple[str, ...]:
+    return tuple(
+        f"{label} #{labels_by_sheet[label]}"
+        for key in SHEET_ORDER
+        for label in (SHEET_LABELS[key],)
+        if label in labels_by_sheet
+    )
 
 
 def collect_top_trending_focus_place_ids_by_sheet(
@@ -241,12 +259,41 @@ def _build_briefing_entry_summary_line(entry: TrendingBriefingEntry) -> str:
 
 
 def _build_briefing_entry_sheet_line(entry: TrendingBriefingEntry) -> str:
-    return f"  上榜：{_build_colored_sheet_rank_labels(entry.sheet_rank_labels)}"
+    return f"  上榜：{_build_colored_sheet_rank_label_groups(entry)}"
+
+
+def _build_briefing_entry_plain_sheet_line(entry: TrendingBriefingEntry) -> str:
+    return f"  上榜：{_build_plain_sheet_rank_label_groups(entry)}"
+
+
+def _build_colored_sheet_rank_label_groups(entry: TrendingBriefingEntry) -> str:
+    new_labels = _build_colored_sheet_rank_labels(entry.new_sheet_rank_labels)
+    other_labels = _build_colored_sheet_rank_labels(entry.other_sheet_rank_labels)
+    return _join_sheet_rank_label_groups(new_labels, other_labels)
+
+
+def _build_plain_sheet_rank_label_groups(entry: TrendingBriefingEntry) -> str:
+    new_labels = _build_plain_sheet_rank_labels(entry.new_sheet_rank_labels)
+    other_labels = _build_plain_sheet_rank_labels(entry.other_sheet_rank_labels)
+    return _join_sheet_rank_label_groups(new_labels, other_labels)
 
 
 def _build_colored_sheet_rank_labels(sheet_rank_labels: tuple[str, ...]) -> str:
-    sorted_labels = sorted(sheet_rank_labels, key=_get_sheet_rank_label_priority)
-    return "、".join(_build_colored_sheet_rank_label(label) for label in sorted_labels)
+    return "、".join(_build_colored_sheet_rank_label(label) for label in _sort_sheet_rank_labels(sheet_rank_labels))
+
+
+def _build_plain_sheet_rank_labels(sheet_rank_labels: tuple[str, ...]) -> str:
+    return "、".join(_sort_sheet_rank_labels(sheet_rank_labels))
+
+
+def _join_sheet_rank_label_groups(new_labels: str, other_labels: str) -> str:
+    if other_labels:
+        return f"{new_labels} | {other_labels}"
+    return new_labels
+
+
+def _sort_sheet_rank_labels(sheet_rank_labels: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(sorted(sheet_rank_labels, key=_get_sheet_rank_label_priority))
 
 
 def _build_colored_sheet_rank_label(sheet_rank_label: str) -> str:
