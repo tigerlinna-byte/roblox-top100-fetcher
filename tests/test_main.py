@@ -541,7 +541,7 @@ class MainTests(unittest.TestCase):
         self.assertEqual(35.0, revenue.month_to_date_usd)
 
     @patch("app.main.RobloxCreatorMetricsClient")
-    def test_roblox_money_payload_keeps_second_project_when_project_metrics_disable_is_enabled(
+    def test_roblox_money_payload_skips_second_project(
         self,
         client_cls,
     ) -> None:
@@ -563,8 +563,8 @@ class MainTests(unittest.TestCase):
 
         payload = _fetch_report_payload(cfg)
 
-        self.assertEqual(["9682356542", "9707829514"], [item.project_id for item in payload.project_revenues])
-        self.assertEqual(2, client.fetch_project_revenue_series.call_count)
+        self.assertEqual(["9682356542"], [item.project_id for item in payload.project_revenues])
+        self.assertEqual(1, client.fetch_project_revenue_series.call_count)
 
     @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_uses_natural_month_after_may(

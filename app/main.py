@@ -248,7 +248,7 @@ def _fetch_report_payload(cfg: Config):
 
 
 def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
-    """抓取两个项目的收入日报摘要，允许单项目失败。"""
+    """抓取收入日报摘要，允许单项目失败。"""
 
     variables_list = _resolve_roblox_money_variables(cfg)
     if not variables_list:
@@ -637,12 +637,13 @@ def _resolve_project_metrics_report_variables(cfg: Config) -> tuple[ProjectMetri
 
 
 def _resolve_roblox_money_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
-    """解析收入日报项目，保持当前只统计前两个项目的行为。"""
+    """解析收入日报项目，当前只统计第一项目。"""
 
     return tuple(
         variables
         for variables in resolve_project_metrics_variables(cfg)
-        if variables.spreadsheet_token_variable_name != PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR
+        if variables.spreadsheet_token_variable_name
+        not in {PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR, PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR}
     )
 
 
