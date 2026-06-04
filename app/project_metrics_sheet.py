@@ -118,7 +118,7 @@ PROJECT_METRICS_RANK_FIELD_NAMES = (
     "payer_conversion_rate_rank",
     "arppu_rank",
 )
-PROJECT_METRICS_OVERVIEW_REFRESH_FIELD_NAMES = (
+PROJECT_METRICS_DAILY_CORE_REFRESH_FIELD_NAMES = (
     "average_session_time",
     "average_session_time_rank",
     "day1_retention",
@@ -131,9 +131,9 @@ PROJECT_METRICS_OVERVIEW_REFRESH_FIELD_NAMES = (
     "arppu_rank",
     "qptr",
 )
-# 临时纠偏开关：开启后会强制回查并覆盖核心 Overview 卡片字段。
+# 临时纠偏开关：开启后会强制回查并覆盖核心 Daily Explore 指标字段。
 # 表格修正完成后应改回 False，恢复日常“只补空不覆盖”逻辑。
-PROJECT_METRICS_FORCE_OVERVIEW_REFRESH = True
+PROJECT_METRICS_FORCE_DAILY_CORE_REFRESH = True
 LEGACY_PROJECT_METRICS_RANK_COLUMN_LETTERS = ("D", "F", "H", "J", "L")
 PROJECT_METRICS_BACKFILL_FIELD_NAMES = tuple(
     field_name
@@ -385,8 +385,8 @@ def build_project_metrics_query_plan(
     for report_date in candidate_dates:
         row = row_by_date.get(report_date.isoformat())
         missing_fields = PROJECT_METRICS_BACKFILL_FIELD_NAMES if row is None else _project_metrics_missing_backfill_fields(row)
-        if row is not None and PROJECT_METRICS_FORCE_OVERVIEW_REFRESH:
-            missing_fields = tuple(dict.fromkeys(missing_fields + PROJECT_METRICS_OVERVIEW_REFRESH_FIELD_NAMES))
+        if row is not None and PROJECT_METRICS_FORCE_DAILY_CORE_REFRESH:
+            missing_fields = tuple(dict.fromkeys(missing_fields + PROJECT_METRICS_DAILY_CORE_REFRESH_FIELD_NAMES))
         if missing_fields:
             query_plan[report_date] = tuple(missing_fields)
     return dict(sorted(query_plan.items()))
@@ -435,8 +435,8 @@ def _merge_single_record(rows: list[list[object]], record: ProjectDailyMetricsRe
         current_text = str(current_row[index]).strip() if index < len(current_row) else ""
         field_name = PROJECT_METRICS_HEADER_TO_FIELD.get(PROJECT_METRICS_HEADERS[index], "")
         can_overwrite = (
-            PROJECT_METRICS_FORCE_OVERVIEW_REFRESH
-            and field_name in PROJECT_METRICS_OVERVIEW_REFRESH_FIELD_NAMES
+            PROJECT_METRICS_FORCE_DAILY_CORE_REFRESH
+            and field_name in PROJECT_METRICS_DAILY_CORE_REFRESH_FIELD_NAMES
         )
         if text and (not current_text or can_overwrite):
             current_row[index] = text

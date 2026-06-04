@@ -30,20 +30,6 @@ def _wrap_query_result(value: dict | list[dict]) -> dict:
     return {"operation": {"done": True, "queryResult": {"values": values}}}
 
 
-def _build_overview_scorecard_payload(
-    metric_time: str,
-    current_value: float,
-    current_percentile: int,
-) -> dict:
-    return {
-        "metricTime": metric_time,
-        "currentValue": current_value,
-        "currentPercentile": current_percentile,
-        "availableBenchmarks": [],
-        "recommendedType": "",
-    }
-
-
 class RobloxCreatorMetricsClientTests(unittest.TestCase):
     def test_get_project_required_fields_returns_project_specific_override(self) -> None:
         self.assertEqual(("peak_ccu",), get_project_required_fields("9682356542"))
@@ -150,7 +136,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "AverageRevenuePerUser", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ForwardD1Retention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ForwardD7Retention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
@@ -183,26 +170,17 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             {"time": "2026-03-12T00:00:00Z", "value": 18.0},
                         ]})
                     )
-                if metric == "DailyCohortRetention":
-                    return _build_json_response(
-                        _wrap_query_result([
-                            {
-                                "breakdownValue": [{"dimension": "CohortDay", "value": "1"}],
-                                "dataPoints": [
-                                    {"time": "2026-03-09T00:00:00Z", "value": 0.0758},
-                                    {"time": "2026-03-10T00:00:00Z", "value": 0.0677, "currentPercentile": 72},
-                                    {"time": "2026-03-11T00:00:00Z", "value": 0.0811},
-                                ],
-                            },
-                            {
-                                "breakdownValue": [{"dimension": "CohortDay", "value": "7"}],
-                                "dataPoints": [
-                                    {"time": "2026-03-04T00:00:00Z", "value": 0.0061},
-                                    {"time": "2026-03-05T00:00:00Z", "value": 0.0070},
-                                ],
-                            },
-                        ])
-                    )
+                if metric == "ForwardD1Retention":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-09T00:00:00Z", "value": 0.0758},
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.0677, "currentPercentile": 72},
+                        {"time": "2026-03-11T00:00:00Z", "value": 0.0811},
+                    ]}))
+                if metric == "ForwardD7Retention":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-04T00:00:00Z", "value": 0.0061},
+                        {"time": "2026-03-05T00:00:00Z", "value": 0.0070},
+                    ]}))
                 if metric == "PayingUsersCVR":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 0.025, "currentPercentile": 58},
@@ -326,7 +304,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("10", record_map["2026-03-11"].peak_ccu)
         self.assertEqual("15m 0s", record_map["2026-03-11"].average_session_time)
         self.assertEqual("82th", record_map["2026-03-11"].average_session_time_rank)
-        self.assertEqual("", record_map["2026-03-11"].day1_retention)
+        self.assertEqual("8.11%", record_map["2026-03-11"].day1_retention)
         self.assertEqual("$0.18", record_map["2026-03-11"].arpdau)
         self.assertEqual("50%", record_map["2026-03-11"].five_minute_retention)
         self.assertEqual("610", record_map["2026-03-11"].home_recommendations)
@@ -365,7 +343,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertTrue(server_memory_requests)
         self.assertTrue(all(request["breakdown"] == [] for request in server_memory_requests))
 
-    def test_fetch_project_daily_metrics_uses_overview_scorecard_for_core_cards(self) -> None:
+    def test_fetch_project_daily_metrics_uses_daily_explore_metrics_for_core_fields(self) -> None:
         session = Mock()
         overview_url = "https://create.roblox.com/dashboard/creations/experiences/1234567890/overview"
         mocked_window = (
@@ -381,16 +359,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
             if method == "GET" and "benchmark-scorecard" in url:
-                metric = url.rsplit("metric=", 1)[-1]
-                scorecards = {
-                    "L7AveragePlayTimeMinutesPerDAU": _build_overview_scorecard_payload("2026-03-10T00:00:00Z", 14.0, 61),
-                    "L7AverageForwardD1Retention": _build_overview_scorecard_payload("2026-03-10T00:00:00Z", 0.2076, 99),
-                    "L7AverageForwardD7Retention": _build_overview_scorecard_payload("2026-03-05T00:00:00Z", 0.0, 18),
-                    "L7AveragePayingUsersCVR": _build_overview_scorecard_payload("2026-03-10T00:00:00Z", 0.0069, 0),
-                    "L7AverageRevenuePerPayingUser": _build_overview_scorecard_payload("2026-03-10T00:00:00Z", 249.7, 0),
-                    "L7AverageRFYQualifiedPTR": _build_overview_scorecard_payload("2026-03-10T00:00:00Z", 0.0139, 59),
-                }
-                return _build_json_response(scorecards.get(metric, {}))
+                raise AssertionError("Daily project metrics must not query Overview scorecard")
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -399,9 +368,11 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             "metadata": [
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-17T00:00:00Z"},
                                 {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-17T00:00:00Z"},
+                                {"metric": "ForwardD1Retention", "latestAvailableTime": "2026-03-17T00:00:00Z"},
+                                {"metric": "ForwardD7Retention", "latestAvailableTime": "2026-03-17T00:00:00Z"},
                                 {"metric": "PayingUsersCVR", "latestAvailableTime": "2026-03-17T00:00:00Z"},
                                 {"metric": "AverageRevenuePerPayingUser", "latestAvailableTime": "2026-03-17T00:00:00Z"},
-                                {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-17T00:00:00Z"},
+                                {"metric": "RFYQualifiedPTR", "latestAvailableTime": "2026-03-17T00:00:00Z"},
                             ]
                         },
                     }
@@ -417,6 +388,14 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 12.5, "currentPercentile": 82},
                     ]}))
+                if metric == "ForwardD1Retention":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.0677, "currentPercentile": 71},
+                    ]}))
+                if metric == "ForwardD7Retention":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-05T00:00:00Z", "value": 0.0070, "currentPercentile": 63},
+                    ]}))
                 if metric == "PayingUsersCVR":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 0.025, "currentPercentile": 58},
@@ -425,17 +404,10 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 8.9, "currentPercentile": 76},
                     ]}))
-                if metric == "DailyCohortRetention":
-                    return _build_json_response(_wrap_query_result([
-                        {
-                            "breakdownValue": [{"dimension": "CohortDay", "value": "1"}],
-                            "dataPoints": [{"time": "2026-03-10T00:00:00Z", "value": 0.0677, "currentPercentile": 71}],
-                        },
-                        {
-                            "breakdownValue": [{"dimension": "CohortDay", "value": "7"}],
-                            "dataPoints": [{"time": "2026-03-05T00:00:00Z", "value": 0.0070, "currentPercentile": 63}],
-                        },
-                    ]))
+                if metric == "RFYQualifiedPTR":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.0139},
+                    ]}))
                 return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
             raise AssertionError(f"unexpected request: {method} {url}")
 
@@ -454,19 +426,19 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             records = client.fetch_project_daily_metrics()
         record_map = {record.report_date: record for record in records}
 
-        self.assertEqual("14.0 min", record_map["2026-03-10"].average_session_time)
-        self.assertEqual("61th", record_map["2026-03-10"].average_session_time_rank)
-        self.assertEqual("20.76%", record_map["2026-03-10"].day1_retention)
-        self.assertEqual("99th", record_map["2026-03-10"].day1_retention_rank)
-        self.assertEqual("0%", record_map["2026-03-05"].day7_retention)
-        self.assertEqual("18th", record_map["2026-03-05"].day7_retention_rank)
-        self.assertEqual("0.69%", record_map["2026-03-10"].payer_conversion_rate)
-        self.assertEqual("0th", record_map["2026-03-10"].payer_conversion_rate_rank)
-        self.assertEqual("249.7", record_map["2026-03-10"].arppu)
-        self.assertEqual("0th", record_map["2026-03-10"].arppu_rank)
+        self.assertEqual("12m 30s", record_map["2026-03-10"].average_session_time)
+        self.assertEqual("82th", record_map["2026-03-10"].average_session_time_rank)
+        self.assertEqual("6.77%", record_map["2026-03-10"].day1_retention)
+        self.assertEqual("71th", record_map["2026-03-10"].day1_retention_rank)
+        self.assertEqual("0.7%", record_map["2026-03-05"].day7_retention)
+        self.assertEqual("63th", record_map["2026-03-05"].day7_retention_rank)
+        self.assertEqual("2.5%", record_map["2026-03-10"].payer_conversion_rate)
+        self.assertEqual("58th", record_map["2026-03-10"].payer_conversion_rate_rank)
+        self.assertEqual("8.9", record_map["2026-03-10"].arppu)
+        self.assertEqual("76th", record_map["2026-03-10"].arppu_rank)
         self.assertEqual("1.39%", record_map["2026-03-10"].qptr)
 
-    def test_fetch_project_daily_metrics_does_not_query_non_overview_fallback_metrics(self) -> None:
+    def test_fetch_project_daily_metrics_does_not_query_l7_or_scorecard_fallback_metrics(self) -> None:
         session = Mock()
         forbidden_metrics = {
             "SessionDurationSecondsAvg",
@@ -484,7 +456,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and ("feature-permissions" in url or "status-config" in url):
                 return _build_json_response({})
             if method == "GET" and "benchmark-scorecard" in url:
-                return _build_json_response({})
+                raise AssertionError("Daily project metrics must not query Overview scorecard")
             if method == "POST" and "metrics/metadata" in url:
                 metadata_metrics.update(kwargs["json"]["query"]["metrics"])
                 self.assertFalse(forbidden_metrics.intersection(metadata_metrics))
@@ -561,7 +533,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             "metadata": [
                                 {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ForwardD1Retention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ForwardD7Retention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
@@ -613,7 +586,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         "metricMetadataResult": {
                             "metadata": [
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-12T00:00:00Z"},
-                                {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-12T00:00:00Z"},
+                                {"metric": "ForwardD1Retention", "latestAvailableTime": "2026-03-12T00:00:00Z"},
                                 {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-12T00:00:00Z"},
                             ]
                         },
@@ -627,15 +600,12 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {"time": "2026-03-10T00:00:00Z", "value": 10.5},
                         {"time": "2026-03-12T00:00:00Z", "value": 12.2},
                     ]}))
-                if metric == "DailyCohortRetention":
+                if metric == "ForwardD1Retention":
                     if query_counts[metric] == 1:
                         return _build_json_response({"operation": {"path": "async-retention", "done": False}})
-                    return _build_json_response(_wrap_query_result([
-                        {
-                            "breakdownValue": [{"dimension": "CohortDay", "value": "1"}],
-                            "dataPoints": [{"time": "2026-03-10T00:00:00Z", "value": 0.0677}],
-                        }
-                    ]))
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.0677},
+                    ]}))
                 if metric == "UniqueUsersWithImpressions":
                     if query_counts[metric] == 1:
                         return _build_json_response({"operation": {"path": "async-home", "done": False}})
@@ -666,7 +636,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("12", record_map["2026-03-12"].peak_ccu)
         self.assertEqual("6.77%", record_map["2026-03-10"].day1_retention)
         self.assertEqual("584", record_map["2026-03-10"].home_recommendations)
-        self.assertEqual(2, query_counts["DailyCohortRetention"])
+        self.assertEqual(2, query_counts["ForwardD1Retention"])
         self.assertEqual(2, query_counts["UniqueUsersWithImpressions"])
 
     def test_fetch_project_daily_metrics_writes_debug_snapshot_when_core_metrics_missing(self) -> None:
@@ -827,7 +797,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             "metadata": [
                                 {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-30T00:00:00Z"},
                                 {"metric": "PayingUsersCVR", "latestAvailableTime": "2026-03-30T00:00:00Z"},
-                                {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-30T00:00:00Z"},
+                                {"metric": "ForwardD1Retention", "latestAvailableTime": "2026-03-30T00:00:00Z"},
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-30T00:00:00Z"},
                             ]
                         },
@@ -847,16 +817,11 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {"time": "2026-03-29T00:00:00Z", "value": 0.1428571492433548},
                         {"time": "2026-03-30T00:00:00Z", "value": 0.0},
                     ]}))
-                if metric == "DailyCohortRetention":
-                    return _build_json_response(_wrap_query_result([
-                        {
-                            "breakdownValue": [{"dimension": "CohortDay", "value": "1"}],
-                            "dataPoints": [
-                                {"time": "2026-03-28T00:00:00Z", "value": 0.1818181872367859},
-                                {"time": "2026-03-29T00:00:00Z", "value": 0.1428571492433548},
-                            ],
-                        }
-                    ]))
+                if metric == "ForwardD1Retention":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-28T00:00:00Z", "value": 0.1818181872367859},
+                        {"time": "2026-03-29T00:00:00Z", "value": 0.1428571492433548},
+                    ]}))
                 if metric == "TotalSessionsEndedInBucket":
                     return _build_json_response(_wrap_query_result([
                         {
