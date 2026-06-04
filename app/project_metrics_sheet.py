@@ -672,8 +672,10 @@ def _normalize_field_value(field_name: str, value: str) -> str:
         return text if _looks_like_timestamp(text) else ""
     if field_name.endswith("_rank"):
         return text if _looks_like_rank_text(text) else ""
-    if field_name in {"arpdau", "arppu"}:
+    if field_name == "arpdau":
         return text if text.startswith("$") else ""
+    if field_name == "arppu":
+        return text if text.startswith("$") or _looks_like_decimal_number_text(text) else ""
     if field_name in {
         "day1_retention",
         "day7_retention",
@@ -711,6 +713,13 @@ def _looks_like_rank_text(value: str) -> bool:
 def _looks_like_number_text(value: str) -> bool:
     text = value.strip().replace(",", "")
     return text.isdigit()
+
+
+def _looks_like_decimal_number_text(value: str) -> bool:
+    text = value.strip().replace(",", "")
+    if not text:
+        return False
+    return text.replace(".", "", 1).isdigit()
 
 
 def _column_letter(index: int) -> str:

@@ -30,6 +30,20 @@ def _wrap_query_result(value: dict | list[dict]) -> dict:
     return {"operation": {"done": True, "queryResult": {"values": values}}}
 
 
+def _build_overview_scorecard_payload(
+    metric_time: str,
+    current_value: float,
+    current_percentile: int,
+) -> dict:
+    return {
+        "metricTime": metric_time,
+        "currentValue": current_value,
+        "currentPercentile": current_percentile,
+        "availableBenchmarks": [],
+        "recommendedType": "",
+    }
+
+
 class RobloxCreatorMetricsClientTests(unittest.TestCase):
     def test_get_project_required_fields_returns_project_specific_override(self) -> None:
         self.assertEqual(("peak_ccu",), get_project_required_fields("9682356542"))
@@ -126,7 +140,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
             if method == "GET" and "benchmark-scorecard" in url:
-                raise AssertionError("benchmark scorecard should not be queried")
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -351,7 +365,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertTrue(server_memory_requests)
         self.assertTrue(all(request["breakdown"] == [] for request in server_memory_requests))
 
-    def test_fetch_project_daily_metrics_uses_daily_query_percentiles_for_ranks(self) -> None:
+    def test_fetch_project_daily_metrics_uses_overview_scorecard_for_core_cards(self) -> None:
         session = Mock()
         overview_url = "https://create.roblox.com/dashboard/creations/experiences/1234567890/overview"
         mocked_window = (
@@ -367,7 +381,16 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
             if method == "GET" and "benchmark-scorecard" in url:
-                raise AssertionError("benchmark scorecard should not be queried")
+                metric = url.rsplit("metric=", 1)[-1]
+                scorecards = {
+                    "L7AveragePlayTimeMinutesPerDAU": _build_overview_scorecard_payload("2026-03-10T00:00:00Z", 14.0, 61),
+                    "L7AverageForwardD1Retention": _build_overview_scorecard_payload("2026-03-10T00:00:00Z", 0.2076, 99),
+                    "L7AverageForwardD7Retention": _build_overview_scorecard_payload("2026-03-05T00:00:00Z", 0.0, 18),
+                    "L7AveragePayingUsersCVR": _build_overview_scorecard_payload("2026-03-10T00:00:00Z", 0.0069, 0),
+                    "L7AverageRevenuePerPayingUser": _build_overview_scorecard_payload("2026-03-10T00:00:00Z", 249.7, 0),
+                    "L7AverageRFYQualifiedPTR": _build_overview_scorecard_payload("2026-03-10T00:00:00Z", 0.0139, 59),
+                }
+                return _build_json_response(scorecards.get(metric, {}))
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -431,13 +454,19 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             records = client.fetch_project_daily_metrics()
         record_map = {record.report_date: record for record in records}
 
-        self.assertEqual("82th", record_map["2026-03-10"].average_session_time_rank)
-        self.assertEqual("71th", record_map["2026-03-10"].day1_retention_rank)
-        self.assertEqual("63th", record_map["2026-03-05"].day7_retention_rank)
-        self.assertEqual("58th", record_map["2026-03-10"].payer_conversion_rate_rank)
-        self.assertEqual("76th", record_map["2026-03-10"].arppu_rank)
+        self.assertEqual("14.0 min", record_map["2026-03-10"].average_session_time)
+        self.assertEqual("61th", record_map["2026-03-10"].average_session_time_rank)
+        self.assertEqual("20.76%", record_map["2026-03-10"].day1_retention)
+        self.assertEqual("99th", record_map["2026-03-10"].day1_retention_rank)
+        self.assertEqual("0%", record_map["2026-03-05"].day7_retention)
+        self.assertEqual("18th", record_map["2026-03-05"].day7_retention_rank)
+        self.assertEqual("0.69%", record_map["2026-03-10"].payer_conversion_rate)
+        self.assertEqual("0th", record_map["2026-03-10"].payer_conversion_rate_rank)
+        self.assertEqual("249.7", record_map["2026-03-10"].arppu)
+        self.assertEqual("0th", record_map["2026-03-10"].arppu_rank)
+        self.assertEqual("1.39%", record_map["2026-03-10"].qptr)
 
-    def test_fetch_project_daily_metrics_does_not_query_non_daily_fallback_metrics(self) -> None:
+    def test_fetch_project_daily_metrics_does_not_query_non_overview_fallback_metrics(self) -> None:
         session = Mock()
         forbidden_metrics = {
             "SessionDurationSecondsAvg",
@@ -455,7 +484,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and ("feature-permissions" in url or "status-config" in url):
                 return _build_json_response({})
             if method == "GET" and "benchmark-scorecard" in url:
-                raise AssertionError("benchmark scorecard should not be queried")
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 metadata_metrics.update(kwargs["json"]["query"]["metrics"])
                 self.assertFalse(forbidden_metrics.intersection(metadata_metrics))
@@ -523,7 +552,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
             if method == "GET" and "benchmark-scorecard" in url:
-                raise AssertionError("benchmark scorecard should not be queried")
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -576,7 +605,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
             if method == "GET" and "benchmark-scorecard" in url:
-                raise AssertionError("benchmark scorecard should not be queried")
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -651,7 +680,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and ("feature-permissions" in url or "status-config" in url):
                 return _build_json_response({})
             if method == "GET" and "benchmark-scorecard" in url:
-                raise AssertionError("benchmark scorecard should not be queried")
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({"operation": {"done": True, "metricMetadataResult": {"metadata": []}}})
             if method == "POST" and "analytics-query-gateway" in url:
@@ -685,7 +714,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and ("feature-permissions" in url or "status-config" in url):
                 return _build_json_response({})
             if method == "GET" and "benchmark-scorecard" in url:
-                raise AssertionError("benchmark scorecard should not be queried")
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -734,7 +763,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and ("feature-permissions" in url or "status-config" in url):
                 return _build_json_response({})
             if method == "GET" and "benchmark-scorecard" in url:
-                raise AssertionError("benchmark rank should not be queried")
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -789,7 +818,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
             if method == "GET" and "benchmark-scorecard" in url:
-                raise AssertionError("benchmark scorecard should not be queried")
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({
                     "operation": {
@@ -876,7 +905,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             if method == "GET" and "status-config" in url:
                 return _build_json_response({"annotationConfigurations": []})
             if method == "GET" and "benchmark-scorecard" in url:
-                raise AssertionError("benchmark scorecard should not be queried")
+                return _build_json_response({})
             if method == "POST" and "metrics/metadata" in url:
                 return _build_json_response({"operation": {"done": True, "metricMetadataResult": {"metadata": []}}})
             if method == "POST" and "analytics-query-gateway" in url:

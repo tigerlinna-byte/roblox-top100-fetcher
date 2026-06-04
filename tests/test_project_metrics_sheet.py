@@ -90,6 +90,22 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("60 FPS", row[23])
         self.assertEqual("2026-03-12T01:02:03Z", row[24])
 
+    def test_build_project_metrics_query_plan_keeps_numeric_arppu_value(self) -> None:
+        row = [""] * len(PROJECT_METRICS_HEADERS)
+        row[0] = "2026-06-01（周一）"
+        row[PROJECT_METRICS_HEADERS.index("付费用户平均收入")] = "249.7"
+        existing_rows = [PROJECT_METRICS_HEADERS.copy(), row]
+
+        query_plan = build_project_metrics_query_plan(
+            existing_rows,
+            date(2026, 6, 1),
+            date(2026, 6, 1),
+            max_data_rows=1,
+        )
+
+        self.assertIn(date(2026, 6, 1), query_plan)
+        self.assertNotIn("arppu", query_plan[date(2026, 6, 1)])
+
     def test_build_project_metrics_table_adds_rows_in_date_desc_order(self) -> None:
         records = [
             ProjectDailyMetricsRecord(
