@@ -14,6 +14,7 @@ from .project_metrics_models import ProjectDailyMetricsRecord, now_iso
 from .project_metrics_sheet import (
     PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR,
     PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR,
+    PROJECT_METRICS_SPREADSHEET_TOKEN_VAR,
     ProjectMetricsSheetVariables,
     ProjectMetricsSpreadsheetTarget,
     build_project_metrics_query_plan,
@@ -637,11 +638,24 @@ def _resolve_project_metrics_report_variables(cfg: Config) -> tuple[ProjectMetri
 
 
 def _resolve_roblox_money_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
-    """解析收入日报项目，保持当前只统计前两个项目的行为。"""
+    """解析收入日报项目，优先统计第一项目与 Troll ur friends。"""
 
+    variables_list = resolve_project_metrics_variables(cfg)
+    primary_variables = tuple(
+        variables
+        for variables in variables_list
+        if variables.spreadsheet_token_variable_name == PROJECT_METRICS_SPREADSHEET_TOKEN_VAR
+    )
+    troll_variables = tuple(
+        variables
+        for variables in variables_list
+        if variables.spreadsheet_token_variable_name == PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR
+    )
+    if troll_variables:
+        return primary_variables + troll_variables
     return tuple(
         variables
-        for variables in resolve_project_metrics_variables(cfg)
+        for variables in variables_list
         if variables.spreadsheet_token_variable_name != PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR
     )
 

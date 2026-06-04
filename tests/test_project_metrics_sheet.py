@@ -27,13 +27,13 @@ class ProjectMetricsSheetTests(unittest.TestCase):
                 roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
                 feishu_project_metrics_spreadsheet_title="Shoot Or Shot",
                 feishu_project_metrics_2_spreadsheet_title="项目 9707829514",
-                feishu_project_metrics_3_spreadsheet_title="troll ur friends",
+                feishu_project_metrics_3_spreadsheet_title="Troll ur friends",
             )
         )
 
         self.assertEqual(["9682356542", "9707829514", "10170801715"], [item.project_id for item in variables])
         self.assertEqual(
-            ["Shoot Or Shot", "项目 9707829514", "troll ur friends"],
+            ["Shoot Or Shot", "项目 9707829514", "Troll ur friends"],
             [item.spreadsheet_title for item in variables],
         )
 
