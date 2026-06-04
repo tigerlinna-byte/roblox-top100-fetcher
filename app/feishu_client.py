@@ -9,7 +9,11 @@ from typing import Callable
 import requests
 
 from .config import Config
-from .project_metrics_sheet import ProjectMetricsRankColorCell, get_project_metrics_rank_column_letters
+from .project_metrics_sheet import (
+    ProjectMetricsRankColorCell,
+    get_project_metrics_rank_column_letters,
+    get_project_metrics_rank_style_cleanup_column_letters,
+)
 from .retry import with_retry
 from .top_trending_sheet import GameNameHighlightCell, LaunchDateCell, RankChangeCell, ThumbnailCell
 
@@ -452,7 +456,7 @@ class FeishuClient:
             spreadsheet_token,
             [
                 (f"{sheet_id}!{column_letter}2:{column_letter}{row_count}", "black")
-                for column_letter in get_project_metrics_rank_column_letters()
+                for column_letter in get_project_metrics_rank_style_cleanup_column_letters()
             ],
         )
 
@@ -482,13 +486,20 @@ class FeishuClient:
         *,
         row_count: int,
     ) -> None:
-        """将项目日报排名列数据区字体设置为加粗。"""
+        """将项目日报排名列数据区字体设置为加粗，并清理旧排名列粗体残留。"""
 
         if row_count < 2:
             return
         self._apply_cell_styles(
             spreadsheet_token,
             [
+                (
+                    [
+                        f"{sheet_id}!{column_letter}2:{column_letter}{row_count}"
+                        for column_letter in get_project_metrics_rank_style_cleanup_column_letters()
+                    ],
+                    {"font": {"bold": False}},
+                ),
                 (
                     [
                         f"{sheet_id}!{column_letter}2:{column_letter}{row_count}"

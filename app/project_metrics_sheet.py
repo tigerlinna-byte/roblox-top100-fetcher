@@ -118,6 +118,7 @@ PROJECT_METRICS_RANK_FIELD_NAMES = (
     "payer_conversion_rate_rank",
     "arppu_rank",
 )
+LEGACY_PROJECT_METRICS_RANK_COLUMN_LETTERS = ("D", "F", "H", "J", "L")
 PROJECT_METRICS_BACKFILL_FIELD_NAMES = tuple(
     field_name
     for field_name in PROJECT_METRICS_FIELD_TO_HEADER
@@ -584,6 +585,12 @@ def get_project_metrics_rank_column_letters() -> tuple[str, ...]:
         _column_letter(PROJECT_METRICS_HEADERS.index(PROJECT_METRICS_FIELD_TO_HEADER[field_name]) + 1)
         for field_name in PROJECT_METRICS_RANK_FIELD_NAMES
     )
+
+
+def get_project_metrics_rank_style_cleanup_column_letters() -> tuple[str, ...]:
+    """返回需要清理历史排名样式的列字母集合。"""
+
+    return tuple(dict.fromkeys(LEGACY_PROJECT_METRICS_RANK_COLUMN_LETTERS + get_project_metrics_rank_column_letters()))
 
 
 def _resolve_project_metrics_rank_color(value: str) -> str:

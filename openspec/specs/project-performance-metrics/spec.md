@@ -15,6 +15,7 @@ TBD - created by archiving change add-project-performance-metrics. Update Purpos
 - **WHEN** rank font reset, bold, or gradient colors are applied after the ARPDAU column is inserted
 - **THEN** those styles SHALL apply only to rank columns
 - **THEN** the “ARPDAU” value column SHALL NOT receive rank styling
+- **THEN** columns that previously held rank values SHALL have stale rank font color and bold styling cleared when they now hold ordinary metric values
 
 ### Requirement: Daily Performance Columns
 The system SHALL include project daily performance columns for client crash rate, tablet client memory percentage, PC client memory percentage, phone client memory percentage, client frame rate, server crashes, server memory usage, and server frame rate in each project metrics Feishu sheet. The system SHALL NOT include a generic client memory usage column.
