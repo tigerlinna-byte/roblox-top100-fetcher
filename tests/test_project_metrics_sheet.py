@@ -90,21 +90,15 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("60 FPS", row[23])
         self.assertEqual("2026-03-12T01:02:03Z", row[24])
 
-    def test_build_project_metrics_query_plan_keeps_numeric_arppu_value(self) -> None:
+    def test_build_project_metrics_table_keeps_numeric_arppu_value(self) -> None:
         row = [""] * len(PROJECT_METRICS_HEADERS)
         row[0] = "2026-06-01（周一）"
         row[PROJECT_METRICS_HEADERS.index("付费用户平均收入")] = "249.7"
         existing_rows = [PROJECT_METRICS_HEADERS.copy(), row]
 
-        query_plan = build_project_metrics_query_plan(
-            existing_rows,
-            date(2026, 6, 1),
-            date(2026, 6, 1),
-            max_data_rows=1,
-        )
+        table_state = build_project_metrics_table(existing_rows, [])
 
-        self.assertIn(date(2026, 6, 1), query_plan)
-        self.assertNotIn("arppu", query_plan[date(2026, 6, 1)])
+        self.assertEqual("249.7", table_state.rows[1][PROJECT_METRICS_HEADERS.index("付费用户平均收入")])
 
     def test_build_project_metrics_table_adds_rows_in_date_desc_order(self) -> None:
         records = [
@@ -301,7 +295,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("60 FPS", rows[1][23])
         self.assertEqual("2026-03-11T01:02:03Z", rows[1][24])
 
-    def test_build_project_metrics_query_dates_skips_complete_existing_rows(self) -> None:
+    def test_build_project_metrics_query_dates_refreshes_complete_existing_overview_rows(self) -> None:
         complete_row = [
             "2026-03-11（周三）",
             "200",
@@ -343,8 +337,61 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            (date(2026, 3, 9), date(2026, 3, 10), date(2026, 3, 12)),
+            (date(2026, 3, 9), date(2026, 3, 10), date(2026, 3, 11), date(2026, 3, 12)),
             query_dates,
+        )
+
+    def test_build_project_metrics_query_plan_forces_overview_fields_for_complete_existing_rows(self) -> None:
+        complete_row = [
+            "2026-03-11（周三）",
+            "200",
+            "15m",
+            "82th",
+            "31%",
+            "71th",
+            "10%",
+            "63th",
+            "$0.10",
+            "2.3%",
+            "58th",
+            "249.7",
+            "76th",
+            "4.5%",
+            "38%",
+            "61",
+            "0.09%",
+            "42%",
+            "55%",
+            "61%",
+            "58 FPS",
+            "1",
+            "512 MB",
+            "60 FPS",
+            "2026-03-12T01:02:03Z",
+        ]
+
+        query_plan = build_project_metrics_query_plan(
+            [PROJECT_METRICS_HEADERS.copy(), complete_row],
+            date(2026, 3, 11),
+            date(2026, 3, 11),
+            max_data_rows=1,
+        )
+
+        self.assertEqual(
+            (
+                "average_session_time",
+                "average_session_time_rank",
+                "day1_retention",
+                "day1_retention_rank",
+                "day7_retention",
+                "day7_retention_rank",
+                "payer_conversion_rate",
+                "payer_conversion_rate_rank",
+                "arppu",
+                "arppu_rank",
+                "qptr",
+            ),
+            query_plan[date(2026, 3, 11)],
         )
 
     def test_build_project_metrics_query_plan_tracks_missing_fields_per_date(self) -> None:
@@ -390,17 +437,37 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_table_updates_existing_rows_with_weekday_suffix(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11（周三）", "200"] + [""] * 22 + ["2026-03-11T01:02:03Z"],
+            [
+                "2026-03-11（周三）",
+                "200",
+                "old 10m",
+                "10th",
+                "old 1%",
+                "11th",
+                "old 2%",
+                "12th",
+                "$0.01",
+                "old 3%",
+                "13th",
+                "old arppu",
+                "14th",
+                "old qptr",
+            ] + [""] * 10 + ["2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
                 report_date="2026-03-11",
                 peak_ccu="230",
                 average_session_time="13m",
+                average_session_time_rank="61th",
                 day1_retention="33%",
+                day1_retention_rank="99th",
                 day7_retention="13%",
+                day7_retention_rank="18th",
                 payer_conversion_rate="2.3%",
-                arppu="$6.50",
+                payer_conversion_rate_rank="0th",
+                arppu="249.7",
+                arppu_rank="0th",
                 qptr="4.5%",
                 five_minute_retention="38%",
                 home_recommendations="61",
@@ -416,6 +483,17 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("2026-03-11（周三）", table_state.rows[1][0])
         self.assertEqual("200", table_state.rows[1][1])
         self.assertEqual("13m", table_state.rows[1][2])
+        self.assertEqual("61th", table_state.rows[1][3])
+        self.assertEqual("33%", table_state.rows[1][4])
+        self.assertEqual("99th", table_state.rows[1][5])
+        self.assertEqual("13%", table_state.rows[1][6])
+        self.assertEqual("18th", table_state.rows[1][7])
+        self.assertEqual("$0.01", table_state.rows[1][8])
+        self.assertEqual("2.3%", table_state.rows[1][9])
+        self.assertEqual("0th", table_state.rows[1][10])
+        self.assertEqual("249.7", table_state.rows[1][11])
+        self.assertEqual("0th", table_state.rows[1][12])
+        self.assertEqual("4.5%", table_state.rows[1][13])
 
     def test_build_project_metrics_table_migrates_legacy_header_rows_by_semantics(self) -> None:
         existing_rows = [
