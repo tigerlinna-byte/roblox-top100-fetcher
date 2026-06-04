@@ -70,7 +70,7 @@ from .top_trending_sheet import (
 PROJECT_METRICS_REPORT_MODE = "roblox_project_daily_metrics"
 ROBLOX_MONEY_REPORT_MODE = "roblox_money"
 PROJECT_METRICS_SHEET_MAX_ROWS = 365
-PROJECT_METRICS_SHEET_END_COLUMN = "X"
+PROJECT_METRICS_SHEET_END_COLUMN = "Y"
 # Top Earning 今日关注需要覆盖前 300 名，用于发现收入榜新上榜游戏。
 TOP_EARNING_FETCH_LIMIT = 300
 
@@ -701,7 +701,7 @@ def _apply_project_metrics_sheet_presentation(spreadsheet_title: str, feishu_cli
         feishu_client.set_sheet_column_widths(
             target.spreadsheet_token,
             target.sheet_id,
-            [120, 110, 130, 120, 90, 120, 90, 120, 90, 120, 140, 140, 90, 110, 180, 110, 120, 110, 120, 120, 110, 120, 180, 180],
+            [120, 110, 130, 120, 90, 120, 90, 120, 100, 90, 120, 140, 140, 90, 110, 180, 110, 120, 110, 120, 120, 110, 120, 180, 180],
         )
     except FeishuClientError:
         logging.warning("Failed to apply project metrics sheet layout.", exc_info=True)

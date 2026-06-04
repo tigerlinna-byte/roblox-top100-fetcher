@@ -167,6 +167,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "AverageSessionLengthMinutes", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "PeakConcurrentPlayers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "AverageRevenuePerUser", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "DailyCohortRetention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
@@ -229,6 +230,11 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 8.9},
                         {"time": "2026-03-11T00:00:00Z", "value": 9.3},
+                    ]}))
+                if metric == "AverageRevenuePerUser":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.14},
+                        {"time": "2026-03-11T00:00:00Z", "value": 0.18},
                     ]}))
                 if metric == "RFYQualifiedPTR":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
@@ -339,6 +345,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("15m 0s", record_map["2026-03-11"].average_session_time)
         self.assertEqual("82th", record_map["2026-03-11"].average_session_time_rank)
         self.assertEqual("", record_map["2026-03-11"].day1_retention)
+        self.assertEqual("$0.18", record_map["2026-03-11"].arpdau)
         self.assertEqual("50%", record_map["2026-03-11"].five_minute_retention)
         self.assertEqual("610", record_map["2026-03-11"].home_recommendations)
         self.assertEqual("0.15%", record_map["2026-03-11"].client_crash_rate)

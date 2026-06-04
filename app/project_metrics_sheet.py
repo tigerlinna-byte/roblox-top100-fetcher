@@ -25,6 +25,7 @@ PROJECT_METRICS_HEADERS = [
     "次留同类排名",
     "7留",
     "7留同类排名",
+    "ARPDAU",
     "付费率",
     "付费率同类排名",
     "付费用户平均收入",
@@ -65,6 +66,7 @@ PROJECT_METRICS_FIELD_TO_HEADER = {
     "day1_retention_rank": "次留同类排名",
     "day7_retention": "7留",
     "day7_retention_rank": "7留同类排名",
+    "arpdau": "ARPDAU",
     "payer_conversion_rate": "付费率",
     "payer_conversion_rate_rank": "付费率同类排名",
     "arppu": "付费用户平均收入",
@@ -121,7 +123,6 @@ PROJECT_METRICS_BACKFILL_FIELD_NAMES = tuple(
     for field_name in PROJECT_METRICS_FIELD_TO_HEADER
     if field_name not in {"report_date", "fetched_at"}
 )
-PROJECT_METRICS_RANK_COLUMN_LETTERS = ("D", "F", "H", "J", "L")
 PROJECT_METRICS_RANK_COLOR_STOPS = (
     (0.0, "#f54a45"),
     (25.0, "#faad14"),
@@ -273,6 +274,7 @@ def build_project_metrics_values(record: ProjectDailyMetricsRecord) -> list[obje
         record.day1_retention_rank,
         record.day7_retention,
         record.day7_retention_rank,
+        record.arpdau,
         record.payer_conversion_rate,
         record.payer_conversion_rate_rank,
         record.arppu,
@@ -483,7 +485,7 @@ def _normalize_existing_row(header_row: list[str], row: list[object]) -> list[st
 def _extract_row_field_values(header_row: list[str], row_cells: list[str]) -> dict[str, str]:
     if _looks_like_legacy_header(header_row):
         return _extract_legacy_row_field_values(row_cells)
-    if _looks_like_legacy_shifted_row(row_cells):
+    if _looks_like_current_header(header_row) and _looks_like_legacy_shifted_row(row_cells):
         return _extract_shifted_legacy_row_field_values(row_cells)
     return _extract_row_field_values_by_header(header_row, row_cells)
 
@@ -524,6 +526,7 @@ def _extract_shifted_legacy_row_field_values(row_cells: list[str]) -> dict[str, 
         ),
         "day1_retention": legacy_values.get("day1_retention", ""),
         "day7_retention": current_values.get("day7_retention", legacy_values.get("day7_retention", "")),
+        "arpdau": current_values.get("arpdau", ""),
         "payer_conversion_rate": legacy_values.get("payer_conversion_rate", ""),
         "arppu": current_values.get("arppu", legacy_values.get("arppu", "")),
         "qptr": current_values.get("qptr", legacy_values.get("qptr", "")),
@@ -572,6 +575,15 @@ def _resolve_project_metrics_rank_columns(rows: list[list[object]]) -> tuple[tup
             column_index = PROJECT_METRICS_HEADERS.index(header)
         resolved_columns.append((column_index, _column_letter(column_index + 1)))
     return tuple(resolved_columns)
+
+
+def get_project_metrics_rank_column_letters() -> tuple[str, ...]:
+    """返回当前项目日报表头下的排名列字母，避免新增指标列后样式错位。"""
+
+    return tuple(
+        _column_letter(PROJECT_METRICS_HEADERS.index(PROJECT_METRICS_FIELD_TO_HEADER[field_name]) + 1)
+        for field_name in PROJECT_METRICS_RANK_FIELD_NAMES
+    )
 
 
 def _resolve_project_metrics_rank_color(value: str) -> str:
@@ -626,19 +638,19 @@ def _looks_like_legacy_header(header_row: list[str]) -> bool:
     return normalized_header == LEGACY_PROJECT_METRICS_HEADERS
 
 
+def _looks_like_current_header(header_row: list[str]) -> bool:
+    normalized_header = [cell.strip() for cell in header_row[: len(PROJECT_METRICS_HEADERS)]]
+    return normalized_header == PROJECT_METRICS_HEADERS
+
+
 def _looks_like_legacy_shifted_row(row_cells: list[str]) -> bool:
     if len(row_cells) < len(LEGACY_PROJECT_METRICS_HEADERS):
         return False
-    if row_cells[3].strip() and not _looks_like_rank_text(row_cells[3].strip()):
-        return True
-    if row_cells[5].strip() and not _looks_like_rank_text(row_cells[5].strip()):
-        return True
-    if row_cells[7].strip() and not _looks_like_rank_text(row_cells[7].strip()):
-        return True
-    if row_cells[9].strip() and not _looks_like_rank_text(row_cells[9].strip()):
-        return True
-    if row_cells[11].strip() and not _looks_like_rank_text(row_cells[11].strip()):
-        return True
+    for field_name in PROJECT_METRICS_RANK_FIELD_NAMES:
+        column_index = PROJECT_METRICS_HEADERS.index(PROJECT_METRICS_FIELD_TO_HEADER[field_name])
+        value = row_cells[column_index].strip() if column_index < len(row_cells) else ""
+        if value and not _looks_like_rank_text(value):
+            return True
     return False
 
 
@@ -653,7 +665,7 @@ def _normalize_field_value(field_name: str, value: str) -> str:
         return text if _looks_like_timestamp(text) else ""
     if field_name.endswith("_rank"):
         return text if _looks_like_rank_text(text) else ""
-    if field_name in {"arppu"}:
+    if field_name in {"arpdau", "arppu"}:
         return text if text.startswith("$") else ""
     if field_name in {
         "day1_retention",

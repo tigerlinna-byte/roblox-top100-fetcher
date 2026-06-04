@@ -665,7 +665,7 @@ class FeishuClientTests(unittest.TestCase):
 
         style_kwargs = session.request.call_args_list[1].kwargs
         self.assertEqual(
-            ["sheet001!D2:D365", "sheet001!F2:F365", "sheet001!H2:H365", "sheet001!J2:J365", "sheet001!L2:L365"],
+            ["sheet001!D2:D365", "sheet001!F2:F365", "sheet001!H2:H365", "sheet001!K2:K365", "sheet001!M2:M365"],
             style_kwargs["json"]["data"][0]["ranges"],
         )
         self.assertEqual("#000000", style_kwargs["json"]["data"][0]["style"]["foreColor"])
@@ -700,7 +700,7 @@ class FeishuClientTests(unittest.TestCase):
 
         style_kwargs = session.request.call_args_list[1].kwargs
         self.assertEqual(
-            ["sheet001!D2:D365", "sheet001!F2:F365", "sheet001!H2:H365", "sheet001!J2:J365", "sheet001!L2:L365"],
+            ["sheet001!D2:D365", "sheet001!F2:F365", "sheet001!H2:H365", "sheet001!K2:K365", "sheet001!M2:M365"],
             style_kwargs["json"]["data"][0]["ranges"],
         )
         self.assertEqual({"bold": True}, style_kwargs["json"]["data"][0]["style"]["font"])

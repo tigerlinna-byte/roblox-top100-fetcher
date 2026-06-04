@@ -9,7 +9,7 @@ from typing import Callable
 import requests
 
 from .config import Config
-from .project_metrics_sheet import ProjectMetricsRankColorCell, PROJECT_METRICS_RANK_COLUMN_LETTERS
+from .project_metrics_sheet import ProjectMetricsRankColorCell, get_project_metrics_rank_column_letters
 from .retry import with_retry
 from .top_trending_sheet import GameNameHighlightCell, LaunchDateCell, RankChangeCell, ThumbnailCell
 
@@ -452,7 +452,7 @@ class FeishuClient:
             spreadsheet_token,
             [
                 (f"{sheet_id}!{column_letter}2:{column_letter}{row_count}", "black")
-                for column_letter in PROJECT_METRICS_RANK_COLUMN_LETTERS
+                for column_letter in get_project_metrics_rank_column_letters()
             ],
         )
 
@@ -492,7 +492,7 @@ class FeishuClient:
                 (
                     [
                         f"{sheet_id}!{column_letter}2:{column_letter}{row_count}"
-                        for column_letter in PROJECT_METRICS_RANK_COLUMN_LETTERS
+                        for column_letter in get_project_metrics_rank_column_letters()
                     ],
                     {"font": {"bold": True}},
                 )

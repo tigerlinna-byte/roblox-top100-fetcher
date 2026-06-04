@@ -24,6 +24,7 @@ PROJECT_METRICS_FIELD_NAMES = (
     "day1_retention_rank",
     "day7_retention",
     "day7_retention_rank",
+    "arpdau",
     "payer_conversion_rate",
     "payer_conversion_rate_rank",
     "arppu",
@@ -54,6 +55,7 @@ class ProjectDailyMetricsRecord:
     day1_retention_rank: str = ""
     day7_retention: str = ""
     day7_retention_rank: str = ""
+    arpdau: str = ""
     payer_conversion_rate: str = ""
     payer_conversion_rate_rank: str = ""
     arppu: str = ""

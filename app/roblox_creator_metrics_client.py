@@ -65,6 +65,7 @@ METRIC_DEFINITIONS = (
     ),
     MetricDefinition("day1_retention", ("day 1 retention", "d1 retention", "1 day retention")),
     MetricDefinition("day7_retention", ("day 7 retention", "d7 retention", "7 day retention")),
+    MetricDefinition("arpdau", ("arpdau", "average revenue per user", "average revenue per dau")),
     MetricDefinition(
         "payer_conversion_rate",
         (
@@ -167,6 +168,7 @@ class BenchmarkScorecardSpec:
 DIRECT_QUERY_SPECS = (
     MetricQuerySpec("peak_ccu", "PeakConcurrentPlayers", "METRIC_GRANULARITY_ONE_DAY", 14, "integer"),
     MetricQuerySpec("average_session_time", "AveragePlayTimeMinutesPerDAU", "METRIC_GRANULARITY_ONE_DAY", 14, "minutes"),
+    MetricQuerySpec("arpdau", "AverageRevenuePerUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
     MetricQuerySpec("payer_conversion_rate", "PayingUsersCVR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("arppu", "AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "currency"),
     MetricQuerySpec("qptr", "RFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
@@ -545,6 +547,7 @@ class RobloxCreatorMetricsClient:
                     day1_retention_rank=metric_ranks_by_field.get("day1_retention", {}).get(report_date, ""),
                     day7_retention=metrics_by_field.get("day7_retention", {}).get(report_date, ""),
                     day7_retention_rank=metric_ranks_by_field.get("day7_retention", {}).get(report_date, ""),
+                    arpdau=metrics_by_field.get("arpdau", {}).get(report_date, ""),
                     payer_conversion_rate=metrics_by_field.get("payer_conversion_rate", {}).get(report_date, ""),
                     payer_conversion_rate_rank=metric_ranks_by_field.get("payer_conversion_rate", {}).get(report_date, ""),
                     arppu=metrics_by_field.get("arppu", {}).get(report_date, ""),

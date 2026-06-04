@@ -3,6 +3,19 @@
 ## Purpose
 TBD - created by archiving change add-project-performance-metrics. Update Purpose after archive.
 ## Requirements
+### Requirement: Daily ARPDAU Column
+系统 SHALL 在每个项目日报飞书表中包含 “ARPDAU” 列，并 SHALL 将该列放在 “付费率” 前方。系统 SHALL 使用 Roblox Creator Analytics 的 `AverageRevenuePerUser` 日粒度指标填充该列，不得从 ARPPU、付费率或总收入字段推算。
+
+#### Scenario: ARPDAU column is inserted before payer conversion
+- **WHEN** a project metrics sheet is rebuilt
+- **THEN** the header SHALL contain “ARPDAU” immediately before “付费率”
+- **THEN** later metric values SHALL remain under their semantic headers
+
+#### Scenario: ARPDAU does not receive rank styling
+- **WHEN** rank font reset, bold, or gradient colors are applied after the ARPDAU column is inserted
+- **THEN** those styles SHALL apply only to rank columns
+- **THEN** the “ARPDAU” value column SHALL NOT receive rank styling
+
 ### Requirement: Daily Performance Columns
 The system SHALL include project daily performance columns for client crash rate, tablet client memory percentage, PC client memory percentage, phone client memory percentage, client frame rate, server crashes, server memory usage, and server frame rate in each project metrics Feishu sheet. The system SHALL NOT include a generic client memory usage column.
 
