@@ -97,6 +97,7 @@ def write_project_metrics_output(
             average_session_time="",
             day1_retention="",
             day7_retention="",
+            arpdau="",
             payer_conversion_rate="",
             arppu="",
             qptr="",

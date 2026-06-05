@@ -635,7 +635,7 @@ class FeishuClientTests(unittest.TestCase):
             style_kwargs["json"]["data"][0]["ranges"],
         )
 
-    def test_reset_project_metrics_rank_font_colors_targets_rank_columns(self) -> None:
+    def test_reset_project_metrics_rank_font_colors_clears_current_and_legacy_rank_columns(self) -> None:
         session = Mock()
 
         auth_response = Mock()
@@ -665,12 +665,20 @@ class FeishuClientTests(unittest.TestCase):
 
         style_kwargs = session.request.call_args_list[1].kwargs
         self.assertEqual(
-            ["sheet001!D2:D365", "sheet001!F2:F365", "sheet001!H2:H365", "sheet001!J2:J365", "sheet001!L2:L365"],
+            [
+                "sheet001!D2:D365",
+                "sheet001!F2:F365",
+                "sheet001!H2:H365",
+                "sheet001!J2:J365",
+                "sheet001!L2:L365",
+                "sheet001!K2:K365",
+                "sheet001!M2:M365",
+            ],
             style_kwargs["json"]["data"][0]["ranges"],
         )
         self.assertEqual("#000000", style_kwargs["json"]["data"][0]["style"]["foreColor"])
 
-    def test_apply_project_metrics_rank_bold_targets_rank_columns(self) -> None:
+    def test_apply_project_metrics_rank_bold_clears_legacy_columns_then_targets_current_rank_columns(self) -> None:
         session = Mock()
 
         auth_response = Mock()
@@ -700,10 +708,23 @@ class FeishuClientTests(unittest.TestCase):
 
         style_kwargs = session.request.call_args_list[1].kwargs
         self.assertEqual(
-            ["sheet001!D2:D365", "sheet001!F2:F365", "sheet001!H2:H365", "sheet001!J2:J365", "sheet001!L2:L365"],
+            [
+                "sheet001!D2:D365",
+                "sheet001!F2:F365",
+                "sheet001!H2:H365",
+                "sheet001!J2:J365",
+                "sheet001!L2:L365",
+                "sheet001!K2:K365",
+                "sheet001!M2:M365",
+            ],
             style_kwargs["json"]["data"][0]["ranges"],
         )
-        self.assertEqual({"bold": True}, style_kwargs["json"]["data"][0]["style"]["font"])
+        self.assertEqual({"bold": False}, style_kwargs["json"]["data"][0]["style"]["font"])
+        self.assertEqual(
+            ["sheet001!D2:D365", "sheet001!F2:F365", "sheet001!H2:H365", "sheet001!K2:K365", "sheet001!M2:M365"],
+            style_kwargs["json"]["data"][1]["ranges"],
+        )
+        self.assertEqual({"bold": True}, style_kwargs["json"]["data"][1]["style"]["font"])
 
     def test_apply_project_metrics_rank_font_colors_accepts_gradient_hex_colors(self) -> None:
         session = Mock()

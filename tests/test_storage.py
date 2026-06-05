@@ -80,6 +80,7 @@ class StorageTests(unittest.TestCase):
                 average_session_time="18m 30s",
                 day1_retention="31%",
                 day7_retention="12%",
+                arpdau="$0.12",
                 payer_conversion_rate="2.5%",
                 arppu="$8.90",
                 qptr="4.2",
@@ -96,6 +97,7 @@ class StorageTests(unittest.TestCase):
                 average_session_time="17m",
                 day1_retention="30%",
                 day7_retention="11%",
+                arpdau="$0.09",
                 payer_conversion_rate="2.1%",
                 arppu="$8.10",
                 qptr="4.0",
@@ -116,6 +118,7 @@ class StorageTests(unittest.TestCase):
             rows = list(csv.DictReader(fp))
 
         self.assertEqual(2, len(rows))
+        self.assertEqual("$0.12", rows[0]["arpdau"])
         self.assertEqual("4.2", rows[0]["qptr"])
 
 

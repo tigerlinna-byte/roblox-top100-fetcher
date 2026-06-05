@@ -59,7 +59,7 @@ class Config:
     feishu_project_metrics_2_spreadsheet_title: str = "项目 9707829514"
     feishu_project_metrics_3_spreadsheet_token: str = ""
     feishu_project_metrics_3_sheet_id: str = ""
-    feishu_project_metrics_3_spreadsheet_title: str = "troll ur friends"
+    feishu_project_metrics_3_spreadsheet_title: str = "Troll ur friends"
 
 
 
@@ -193,6 +193,6 @@ def load_config() -> Config:
         feishu_project_metrics_3_sheet_id=os.getenv("FEISHU_PROJECT_METRICS_3_SHEET_ID", ""),
         feishu_project_metrics_3_spreadsheet_title=os.getenv(
             "FEISHU_PROJECT_METRICS_3_SPREADSHEET_TITLE",
-            "troll ur friends",
+            "Troll ur friends",
         ),
     )

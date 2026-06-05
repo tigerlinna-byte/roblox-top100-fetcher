@@ -14,6 +14,7 @@ from .project_metrics_models import ProjectDailyMetricsRecord, now_iso
 from .project_metrics_sheet import (
     PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR,
     PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR,
+    PROJECT_METRICS_SPREADSHEET_TOKEN_VAR,
     ProjectMetricsSheetVariables,
     ProjectMetricsSpreadsheetTarget,
     build_project_metrics_query_plan,
@@ -69,7 +70,7 @@ from .top_trending_sheet import (
 PROJECT_METRICS_REPORT_MODE = "roblox_project_daily_metrics"
 ROBLOX_MONEY_REPORT_MODE = "roblox_money"
 PROJECT_METRICS_SHEET_MAX_ROWS = 365
-PROJECT_METRICS_SHEET_END_COLUMN = "X"
+PROJECT_METRICS_SHEET_END_COLUMN = "Y"
 # Top Earning 今日关注需要覆盖前 300 名，用于发现收入榜新上榜游戏。
 TOP_EARNING_FETCH_LIMIT = 300
 
@@ -637,14 +638,22 @@ def _resolve_project_metrics_report_variables(cfg: Config) -> tuple[ProjectMetri
 
 
 def _resolve_roblox_money_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
-    """解析收入日报项目，当前只统计第一项目。"""
+    """解析收入日报项目，优先统计第一项目与 Troll ur friends。"""
 
-    return tuple(
+    variables_list = resolve_project_metrics_variables(cfg)
+    primary_variables = tuple(
         variables
-        for variables in resolve_project_metrics_variables(cfg)
-        if variables.spreadsheet_token_variable_name
-        not in {PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR, PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR}
+        for variables in variables_list
+        if variables.spreadsheet_token_variable_name == PROJECT_METRICS_SPREADSHEET_TOKEN_VAR
     )
+    troll_variables = tuple(
+        variables
+        for variables in variables_list
+        if variables.spreadsheet_token_variable_name == PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR
+    )
+    if troll_variables:
+        return primary_variables + troll_variables
+    return primary_variables
 
 
 
@@ -688,7 +697,7 @@ def _apply_project_metrics_sheet_presentation(spreadsheet_title: str, feishu_cli
         feishu_client.set_sheet_column_widths(
             target.spreadsheet_token,
             target.sheet_id,
-            [120, 110, 130, 120, 90, 120, 90, 120, 90, 120, 140, 140, 90, 110, 180, 110, 120, 110, 120, 120, 110, 120, 180, 180],
+            [120, 110, 130, 120, 90, 120, 90, 120, 100, 90, 120, 140, 140, 90, 110, 180, 110, 120, 110, 120, 120, 110, 120, 180, 180],
         )
     except FeishuClientError:
         logging.warning("Failed to apply project metrics sheet layout.", exc_info=True)
