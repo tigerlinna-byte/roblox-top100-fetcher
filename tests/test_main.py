@@ -567,6 +567,30 @@ class MainTests(unittest.TestCase):
         self.assertEqual(2, client.fetch_project_revenue_series.call_count)
 
     @patch("app.main.RobloxCreatorMetricsClient")
+    def test_roblox_money_payload_skips_second_project_without_troll_project(
+        self,
+        client_cls,
+    ) -> None:
+        cfg = Config(
+            run_report_mode="roblox_money",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+            roblox_money_start_date="2026-05-01",
+            roblox_money_usd_per_100k_robux="350",
+        )
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_project_revenue_series.return_value = MagicMock(
+            metric="Revenue",
+            values={"2026-05-04": 4000},
+        )
+
+        payload = _fetch_report_payload(cfg)
+
+        self.assertEqual(["9682356542"], [item.project_id for item in payload.project_revenues])
+        self.assertEqual(1, client.fetch_project_revenue_series.call_count)
+
+    @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_uses_natural_month_after_may(
         self,
         client_cls,
