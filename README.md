@@ -25,7 +25,7 @@
 - `top-earning` 会通过分页尽量抓取前 300 名；如果 Roblox Explore 接口返回不足 300 条，则按实际返回写表和判断今日关注；如果该榜单临时失败，本次会保留旧收入榜 Sheet，不阻断其他 3 个榜单和今日关注卡片。
 - `ROBLOX_TOP_TRENDING_SORT_ID` 这个环境变量目前没有被主流程消费，不要把它当作 `/roblox-top-day` 的真实开关。
 - `/roblox-top-day` 的手动触发默认写“测试表”，只有 `trigger_source=cloudflare_cron` 时才会写“正式表”。
-- 项目日报当前支持三个项目入口：`ROBLOX_CREATOR_OVERVIEW_URL`、`ROBLOX_CREATOR_OVERVIEW_URL_2` 和 `ROBLOX_CREATOR_OVERVIEW_URL_3`。如果要接第四个项目，需要改代码和工作流，不是只加变量就够。
+- 项目日报当前支持四个项目入口：`ROBLOX_CREATOR_OVERVIEW_URL`、`ROBLOX_CREATOR_OVERVIEW_URL_2`、`ROBLOX_CREATOR_OVERVIEW_URL_3` 和 `ROBLOX_CREATOR_OVERVIEW_URL_4`。如果要接第五个项目，需要改代码和工作流，不是只加变量就够。
 - `/roblox-money` 默认发送第一项目和 `Troll ur friends`（`10170801715`）的收入日报；手动和定时都只允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 中的 test 群触发和接收。
 - 收入日报展示 Roblox Analytics 当前最新可用收入日期的一天收入；月累计按该统计日所在自然月从 1 日累计到该统计日，2026 年 5 月从 `2026-05-01` 开始。
 - 收入日报不使用 ARPPU 推算总收入；如果 Roblox 返回 Robux 总收入，必须配置 `ROBLOX_MONEY_USD_PER_100K_ROBUX` 才能换算美元。
