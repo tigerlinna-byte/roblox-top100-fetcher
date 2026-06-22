@@ -168,6 +168,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "ServerCrashCount", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "MemoryUsageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ServerFrameRateAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "RFYPlayThroughRate", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "RFYDeepEngagementRate", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                             ]
                         },
                     }
@@ -220,6 +222,16 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                     ]}))
                 if metric == "RFYQualifiedPTR":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
+                if metric == "RFYPlayThroughRate":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.052},
+                        {"time": "2026-03-11T00:00:00Z", "value": 0.061},
+                    ]}))
+                if metric == "RFYDeepEngagementRate":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.012},
+                        {"time": "2026-03-11T00:00:00Z", "value": 0.015},
+                    ]}))
                 if metric == "TotalSessionsEndedInBucket":
                     return _build_json_response(
                         _wrap_query_result(
@@ -328,6 +340,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("82th", record_map["2026-03-11"].average_session_time_rank)
         self.assertEqual("8.11%", record_map["2026-03-11"].day1_retention)
         self.assertEqual("$0.18", record_map["2026-03-11"].arpdau)
+        self.assertEqual("6.1%", record_map["2026-03-11"].ptr)
+        self.assertEqual("1.5%", record_map["2026-03-11"].dptr)
         self.assertEqual("50%", record_map["2026-03-11"].five_minute_retention)
         self.assertEqual("610", record_map["2026-03-11"].home_recommendations)
         self.assertEqual("0.15%", record_map["2026-03-11"].client_crash_rate)
@@ -430,6 +444,14 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 0.0139},
                     ]}))
+                if metric == "RFYPlayThroughRate":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.052},
+                    ]}))
+                if metric == "RFYDeepEngagementRate":
+                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
+                        {"time": "2026-03-10T00:00:00Z", "value": 0.012},
+                    ]}))
                 return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": []}))
             raise AssertionError(f"unexpected request: {method} {url}")
 
@@ -459,6 +481,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("8.9", record_map["2026-03-10"].arppu)
         self.assertEqual("76th", record_map["2026-03-10"].arppu_rank)
         self.assertEqual("1.39%", record_map["2026-03-10"].qptr)
+        self.assertEqual("5.2%", record_map["2026-03-10"].ptr)
+        self.assertEqual("1.2%", record_map["2026-03-10"].dptr)
 
     def test_fetch_project_daily_metrics_uses_daily_scorecard_as_rank_fallback(self) -> None:
         session = Mock()
@@ -568,6 +592,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "PayingUsersCVR", "latestAvailableTime": "2026-03-10T00:00:00Z"},
                                 {"metric": "AverageRevenuePerPayingUser", "latestAvailableTime": "2026-03-10T00:00:00Z"},
                                 {"metric": "RFYQualifiedPTR", "latestAvailableTime": "2026-03-10T00:00:00Z"},
+                                {"metric": "RFYPlayThroughRate", "latestAvailableTime": "2026-03-10T00:00:00Z"},
+                                {"metric": "RFYDeepEngagementRate", "latestAvailableTime": "2026-03-10T00:00:00Z"},
                             ]
                         },
                     }
@@ -599,6 +625,8 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                     "payer_conversion_rate",
                     "arppu",
                     "qptr",
+                    "ptr",
+                    "dptr",
                 )
             },
         )

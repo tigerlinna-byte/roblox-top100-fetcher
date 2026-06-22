@@ -697,7 +697,7 @@ def _apply_project_metrics_sheet_presentation(spreadsheet_title: str, feishu_cli
         feishu_client.set_sheet_column_widths(
             target.spreadsheet_token,
             target.sheet_id,
-            [120, 110, 130, 120, 90, 120, 90, 120, 100, 90, 120, 140, 140, 90, 110, 180, 110, 120, 110, 120, 120, 110, 120, 180, 180],
+            [120, 110, 130, 120, 90, 120, 90, 120, 100, 90, 120, 140, 140, 90, 90, 90, 110, 180, 110, 120, 110, 120, 120, 110, 120, 180, 180],
         )
     except FeishuClientError:
         logging.warning("Failed to apply project metrics sheet layout.", exc_info=True)

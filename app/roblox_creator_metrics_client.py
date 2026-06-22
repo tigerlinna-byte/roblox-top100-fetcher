@@ -79,6 +79,8 @@ METRIC_DEFINITIONS = (
     ),
     MetricDefinition("arppu", ("arppu", "average revenue per paying user")),
     MetricDefinition("qptr", ("qptr", "qtpr", "qualified play through rate")),
+    MetricDefinition("ptr", ("ptr", "play through rate")),
+    MetricDefinition("dptr", ("dptr", "deep play through rate", "deep engagement rate")),
     MetricDefinition(
         "five_minute_retention",
         (
@@ -174,6 +176,8 @@ DIRECT_QUERY_SPECS = (
     MetricQuerySpec("payer_conversion_rate", "PayingUsersCVR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("arppu", "AverageRevenuePerPayingUser", "METRIC_GRANULARITY_ONE_DAY", 14, "number"),
     MetricQuerySpec("qptr", "RFYQualifiedPTR", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+    MetricQuerySpec("ptr", "RFYPlayThroughRate", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
+    MetricQuerySpec("dptr", "RFYDeepEngagementRate", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("client_crash_rate", "ClientCrashRate15m", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec(
         "tablet_memory_percentage",
@@ -530,6 +534,8 @@ class RobloxCreatorMetricsClient:
                     arppu=metrics_by_field.get("arppu", {}).get(report_date, ""),
                     arppu_rank=metric_ranks_by_field.get("arppu", {}).get(report_date, ""),
                     qptr=metrics_by_field.get("qptr", {}).get(report_date, ""),
+                    ptr=metrics_by_field.get("ptr", {}).get(report_date, ""),
+                    dptr=metrics_by_field.get("dptr", {}).get(report_date, ""),
                     five_minute_retention=metrics_by_field.get("five_minute_retention", {}).get(report_date, ""),
                     home_recommendations=metrics_by_field.get("home_recommendations", {}).get(report_date, ""),
                     client_crash_rate=metrics_by_field.get("client_crash_rate", {}).get(report_date, ""),

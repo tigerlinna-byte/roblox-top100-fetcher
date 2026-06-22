@@ -84,6 +84,8 @@ class StorageTests(unittest.TestCase):
                 payer_conversion_rate="2.5%",
                 arppu="$8.90",
                 qptr="4.2",
+                ptr="5.2%",
+                dptr="1.2%",
                 five_minute_retention="40%",
                 home_recommendations="98",
                 client_crash_rate="0.12%",
@@ -101,6 +103,8 @@ class StorageTests(unittest.TestCase):
                 payer_conversion_rate="2.1%",
                 arppu="$8.10",
                 qptr="4.0",
+                ptr="5.0%",
+                dptr="1.0%",
                 five_minute_retention="39%",
                 home_recommendations="90",
                 client_crash_rate="0.10%",
@@ -120,6 +124,8 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(2, len(rows))
         self.assertEqual("$0.12", rows[0]["arpdau"])
         self.assertEqual("4.2", rows[0]["qptr"])
+        self.assertEqual("5.2%", rows[0]["ptr"])
+        self.assertEqual("1.2%", rows[0]["dptr"])
 
 
 if __name__ == "__main__":

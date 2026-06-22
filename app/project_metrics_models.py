@@ -31,6 +31,8 @@ PROJECT_METRICS_FIELD_NAMES = (
     "arppu",
     "arppu_rank",
     "qptr",
+    "ptr",
+    "dptr",
     "five_minute_retention",
     "home_recommendations",
     "client_crash_rate",
@@ -62,6 +64,8 @@ class ProjectDailyMetricsRecord:
     arppu: str = ""
     arppu_rank: str = ""
     qptr: str = ""
+    ptr: str = ""
+    dptr: str = ""
     five_minute_retention: str = ""
     home_recommendations: str = ""
     client_crash_rate: str = ""
