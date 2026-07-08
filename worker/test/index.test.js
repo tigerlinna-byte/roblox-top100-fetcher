@@ -170,7 +170,7 @@ test("dispatches project metrics workflow for /roblox-project-metrics", async ()
         },
       },
     }),
-    buildEnv(),
+    buildEnv({ ROBLOX_MONEY_TEST_CHAT_IDS: "oc_test_chat,oc_money_chat" }),
     ctx,
     fetchImpl,
   );
@@ -182,6 +182,10 @@ test("dispatches project metrics workflow for /roblox-project-metrics", async ()
   const dispatchBody = JSON.parse(calls[0].init.body);
   assert.equal(dispatchBody.inputs.report_mode, "roblox_project_daily_metrics");
   assert.equal(dispatchBody.inputs.chat_id, "oc_test_chat");
+  assert.equal(
+    dispatchBody.inputs.project_metrics_primary_project_test_chat_ids,
+    "oc_test_chat,oc_money_chat",
+  );
 });
 
 test("dispatches Top Trending workflow for /roblox-top-day", async () => {
@@ -446,7 +450,10 @@ test("dispatches scheduled project metrics workflow", async () => {
 
   await handleScheduled(
     { cron: "10 1 * * *" },
-    buildEnv({ SCHEDULE_CHAT_IDS: "oc_chat_a,oc_chat_b" }),
+    buildEnv({
+      SCHEDULE_CHAT_IDS: "oc_chat_a,oc_chat_b",
+      ROBLOX_MONEY_TEST_CHAT_IDS: "oc_test_chat",
+    }),
     ctx,
     fetchImpl,
   );
@@ -456,6 +463,7 @@ test("dispatches scheduled project metrics workflow", async () => {
   assert.equal(dispatchBody.inputs.report_mode, "roblox_project_daily_metrics");
   assert.equal(dispatchBody.inputs.trigger_source, "cloudflare_cron");
   assert.equal(dispatchBody.inputs.chat_id, "oc_chat_a,oc_chat_b");
+  assert.equal(dispatchBody.inputs.project_metrics_primary_project_test_chat_ids, "oc_test_chat");
 });
 
 test("dispatches scheduled Roblox money workflow only to test chats", async () => {

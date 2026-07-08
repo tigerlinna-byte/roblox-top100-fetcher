@@ -219,6 +219,8 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 
 如果 `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT=true`，项目日报会临时跳过第二项目槽位 `ROBLOX_CREATOR_OVERVIEW_URL_2`。这只影响 `roblox_project_daily_metrics`：不抓取第二项目、不写第二项目飞书表、不在 `project_metrics_*.json/csv` 中输出第二项目记录，也不发送第二项目表格链接；`roblox_money` 收入日报默认使用第一项目和第三槽位的 `Troll ur friends`，不受该开关影响。当前 GitHub Actions workflow 未配置该变量时按 `true` 注入，默认不发送第二项目 Jail Ur Fiends 的日报表格；如需恢复第二项目日报，则在 GitHub Variables 中明确设为 `false`。
 
+第一项目 `Shoot Or Shot` 的项目日报表格仍会更新并写入 artifacts，但表格链接只发送到 test 群。Worker 会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 作为 `project_metrics_primary_project_test_chat_ids` 传给 GitHub Actions，Python 侧只向 `RUN_CHAT_ID` 与这组 test 群的交集发送第一项目链接；其他项目链接仍发送给本次 `RUN_CHAT_ID` 的所有群。如果不是通过 Worker 触发，可用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 作为兜底。
+
 #### 当前项目日报能力边界
 
 当前只支持最多 5 个项目，因为代码里只有五套配置槽位：
@@ -498,6 +500,7 @@ Worker 允许通过环境变量改命令文本：
 - `ROBLOX_CREATOR_OVERVIEW_URL_4`
 - `ROBLOX_CREATOR_OVERVIEW_URL_5`
 - `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT`，可选；当前 GitHub Actions 未配置时按 `true` 注入，默认跳过第二项目槽位；如需恢复第二项目日报则设为 `false`
+- `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`，可选；Worker 触发时通常由 `ROBLOX_MONEY_TEST_CHAT_IDS` 自动传入，用于限制第一项目表格链接只发 test 群
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE`

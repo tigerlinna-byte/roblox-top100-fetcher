@@ -19,6 +19,10 @@ on:
         description: Feishu chat id to receive the final result
         required: false
         default: ""
+      project_metrics_primary_project_test_chat_ids:
+        description: Feishu test chat ids that can receive the primary project metrics link
+        required: false
+        default: ""
 
 jobs:
   sync:
@@ -55,6 +59,7 @@ jobs:
           ROBLOX_CREATOR_OVERVIEW_URL_4: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL_4 || 'https://create.roblox.com/dashboard/creations/experiences/10304101434/overview' }}
           ROBLOX_CREATOR_OVERVIEW_URL_5: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL_5 || 'https://create.roblox.com/dashboard/creations/experiences/10403337696/overview' }}
           ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT: ${{ vars.ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT || 'true' }}
+          PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS: ${{ github.event.inputs.project_metrics_primary_project_test_chat_ids || vars.PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS || '' }}
           ROBLOX_CREATOR_COOKIE: ${{ secrets.ROBLOX_CREATOR_COOKIE }}
           ROBLOX_MONEY_START_DATE: ${{ vars.ROBLOX_MONEY_START_DATE || '2026-05-01' }}
           ROBLOX_MONEY_USD_PER_100K_ROBUX: ${{ vars.ROBLOX_MONEY_USD_PER_100K_ROBUX }}

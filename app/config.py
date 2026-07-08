@@ -19,6 +19,7 @@ class Config:
     roblox_creator_overview_url_4: str = ""
     roblox_creator_overview_url_5: str = ""
     roblox_project_metrics_disable_second_project: bool = False
+    project_metrics_primary_project_test_chat_ids: str = ""
     roblox_creator_cookie: str = ""
     roblox_money_start_date: str = "2026-05-01"
     roblox_money_usd_per_100k_robux: str = ""
@@ -131,6 +132,10 @@ def load_config() -> Config:
         roblox_project_metrics_disable_second_project=_get_bool(
             "ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT",
             False,
+        ),
+        project_metrics_primary_project_test_chat_ids=os.getenv(
+            "PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS",
+            "",
         ),
         roblox_creator_cookie=os.getenv("ROBLOX_CREATOR_COOKIE", ""),
         roblox_money_start_date=os.getenv("ROBLOX_MONEY_START_DATE", "2026-05-01"),

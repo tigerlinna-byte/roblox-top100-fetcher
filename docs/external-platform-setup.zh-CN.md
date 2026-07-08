@@ -90,6 +90,7 @@ Top Trending 当前不再创建或更新飞书表格，只会回写历史排名�
 - 可选：`ROBLOX_CREATOR_OVERVIEW_URL_4`；未配置时 GitHub Actions 默认使用 `Soccer RNG` 的 overview URL
 - 可选：`ROBLOX_CREATOR_OVERVIEW_URL_5`；未配置时 GitHub Actions 默认使用 `soccer大亨版` 的 overview URL
 - 可选：`ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT`；当前 GitHub Actions 未配置时按 `true` 注入，默认跳过第二项目槽位；需要恢复第二项目日报时设为 `false`，不影响收入日报
+- 可选：`PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`；手动从 GitHub Actions 运行项目日报时用于限制第一项目链接只发 test 群，Worker 触发时会自动复用 `ROBLOX_MONEY_TEST_CHAT_IDS`
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE`
 - 可选：`FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE`
 - 可选：`FEISHU_PROJECT_METRICS_3_SPREADSHEET_TITLE`

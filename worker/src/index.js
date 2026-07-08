@@ -95,6 +95,8 @@ export async function handleRequest(request, env, ctx, fetchImpl = fetch) {
       chatId: message.chatId,
       triggerActor: message.openId || message.userId || "feishu-user",
       reportMode: command.reportMode,
+      projectMetricsPrimaryProjectTestChatIds:
+        command.reportMode === "roblox_project_daily_metrics" ? env.ROBLOX_MONEY_TEST_CHAT_IDS || "" : "",
     }),
   );
 
@@ -176,6 +178,7 @@ function resolveScheduledTrigger(env, cron) {
       triggerActor: "cloudflare-cron",
       chatId: chatIds.join(","),
       reportMode: "roblox_project_daily_metrics",
+      projectMetricsPrimaryProjectTestChatIds: robloxMoneyChatIds.join(","),
     };
   }
 
@@ -382,6 +385,7 @@ async function processCommandEvent(fetchImpl, env, event) {
       triggerActor: event.triggerActor,
       chatId: event.chatId,
       reportMode: event.reportMode,
+      projectMetricsPrimaryProjectTestChatIds: event.projectMetricsPrimaryProjectTestChatIds || "",
     });
 
     console.log(JSON.stringify({
@@ -431,6 +435,8 @@ async function dispatchWorkflow(fetchImpl, env, trigger, metadata = {}) {
         trigger_actor: trigger.triggerActor,
         chat_id: trigger.chatId,
         report_mode: trigger.reportMode,
+        project_metrics_primary_project_test_chat_ids:
+          trigger.projectMetricsPrimaryProjectTestChatIds || "",
       },
     }),
   });

@@ -76,6 +76,7 @@
 注意：
 
 - Top Trending 与项目日报定时任务都依赖 `SCHEDULE_CHAT_IDS`
+- 项目日报会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传给 GitHub Actions，用于让第一项目 `Shoot Or Shot` 链接只发送到 test 群
 - `/roblox-money` 定时任务只依赖 `ROBLOX_MONEY_TEST_CHAT_IDS`，不会复用 `SCHEDULE_CHAT_IDS`
 - 如果 `SCHEDULE_CHAT_IDS` 为空，Top Trending 与项目日报定时任务会被跳过
 - 如果 `ROBLOX_MONEY_TEST_CHAT_IDS` 为空，收入日报定时任务会被跳过

@@ -9,8 +9,13 @@ class WorkflowConfigTests(unittest.TestCase):
         workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/roblox_rank_sync.yml"
         workflow_content = workflow_path.read_text(encoding="utf-8")
 
+        self.assertIn("project_metrics_primary_project_test_chat_ids:", workflow_content)
         self.assertIn(
             "ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT: ${{ vars.ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT || 'true' }}",
+            workflow_content,
+        )
+        self.assertIn(
+            "PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS: ${{ github.event.inputs.project_metrics_primary_project_test_chat_ids || vars.PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS || '' }}",
             workflow_content,
         )
         self.assertNotIn(

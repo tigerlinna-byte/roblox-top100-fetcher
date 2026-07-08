@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 import logging
 import sys
@@ -414,7 +414,10 @@ def _notify_success(cfg: Config, report_payload) -> None:
                 feishu_client,
                 variables,
             )
-            feishu_client.send_group_markdown(target.url)
+            if variables.spreadsheet_token_variable_name == PROJECT_METRICS_SPREADSHEET_TOKEN_VAR:
+                _send_primary_project_metrics_url(cfg, target.url)
+            else:
+                feishu_client.send_group_markdown(target.url)
         if report_payload.failures:
             feishu_client.send_group_markdown(
                 build_project_metrics_partial_failure_markdown(
@@ -624,6 +627,25 @@ def _sync_project_metrics_sheet(
 
 
 
+def _send_primary_project_metrics_url(cfg: Config, sheet_url: str) -> None:
+    """只把第一项目日报链接发送到 test 群；未配置 test 群时保持原行为。"""
+
+    allowed_chat_ids = _split_csv_values(cfg.project_metrics_primary_project_test_chat_ids)
+    if not allowed_chat_ids:
+        FeishuClient(cfg).send_group_markdown(sheet_url)
+        return
+
+    run_chat_ids = _split_csv_values(cfg.run_chat_id)
+    allowed_chat_id_set = set(allowed_chat_ids)
+    target_chat_ids = tuple(chat_id for chat_id in run_chat_ids if chat_id in allowed_chat_id_set)
+    if not target_chat_ids:
+        logging.info("Skipping primary project metrics link outside configured test chats.")
+        return
+
+    FeishuClient(replace(cfg, run_chat_id=",".join(target_chat_ids))).send_group_markdown(sheet_url)
+
+
+
 def _resolve_project_metrics_report_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
     """解析项目日报本次实际启用的项目，允许临时屏蔽第二项目槽位。"""
 
@@ -654,6 +676,11 @@ def _resolve_roblox_money_variables(cfg: Config) -> tuple[ProjectMetricsSheetVar
     if troll_variables:
         return primary_variables + troll_variables
     return primary_variables
+
+
+
+def _split_csv_values(value: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in value.split(",") if part.strip())
 
 
 

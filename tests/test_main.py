@@ -300,6 +300,109 @@ class MainTests(unittest.TestCase):
             [call.args[0] for call in feishu_client.send_group_markdown.call_args_list],
         )
 
+    @patch("app.main._sync_project_metrics_sheet")
+    @patch("app.main.FeishuClient")
+    def test_project_metrics_primary_project_link_is_limited_to_test_chat(
+        self,
+        feishu_client_cls,
+        sync_sheet,
+    ) -> None:
+        cfg = Config(
+            run_report_mode="roblox_project_daily_metrics",
+            run_chat_id="oc_test_chat,oc_formal_chat",
+            project_metrics_primary_project_test_chat_ids="oc_test_chat",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
+        )
+        report_payload = ProjectMetricsReportPayload(
+            records_by_project_id={
+                "9682356542": [
+                    ProjectDailyMetricsRecord(
+                        report_date="2026-03-18",
+                        peak_ccu="100",
+                        project_id="9682356542",
+                        source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                    )
+                ],
+                "10170801715": [
+                    ProjectDailyMetricsRecord(
+                        report_date="2026-05-31",
+                        peak_ccu="300",
+                        project_id="10170801715",
+                        source_url="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
+                    )
+                ],
+            },
+            failures=(),
+        )
+        feishu_client = MagicMock()
+        feishu_client_cls.return_value = feishu_client
+        sync_sheet.side_effect = [
+            MagicMock(url="https://feishu.cn/sheets/project-one"),
+            MagicMock(url="https://feishu.cn/sheets/project-three"),
+        ]
+
+        _notify_success(cfg, report_payload)
+
+        self.assertEqual(
+            [
+                "https://feishu.cn/sheets/project-one",
+                "https://feishu.cn/sheets/project-three",
+            ],
+            [call.args[0] for call in feishu_client.send_group_markdown.call_args_list],
+        )
+        self.assertEqual("oc_test_chat", feishu_client_cls.call_args_list[1].args[0].run_chat_id)
+
+    @patch("app.main._sync_project_metrics_sheet")
+    @patch("app.main.FeishuClient")
+    def test_project_metrics_primary_project_link_is_skipped_outside_test_chat(
+        self,
+        feishu_client_cls,
+        sync_sheet,
+    ) -> None:
+        cfg = Config(
+            run_report_mode="roblox_project_daily_metrics",
+            run_chat_id="oc_formal_chat",
+            project_metrics_primary_project_test_chat_ids="oc_test_chat",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
+        )
+        report_payload = ProjectMetricsReportPayload(
+            records_by_project_id={
+                "9682356542": [
+                    ProjectDailyMetricsRecord(
+                        report_date="2026-03-18",
+                        peak_ccu="100",
+                        project_id="9682356542",
+                        source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                    )
+                ],
+                "10170801715": [
+                    ProjectDailyMetricsRecord(
+                        report_date="2026-05-31",
+                        peak_ccu="300",
+                        project_id="10170801715",
+                        source_url="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
+                    )
+                ],
+            },
+            failures=(),
+        )
+        feishu_client = MagicMock()
+        feishu_client_cls.return_value = feishu_client
+        sync_sheet.side_effect = [
+            MagicMock(url="https://feishu.cn/sheets/project-one"),
+            MagicMock(url="https://feishu.cn/sheets/project-three"),
+        ]
+
+        _notify_success(cfg, report_payload)
+
+        self.assertEqual(2, sync_sheet.call_count)
+        self.assertEqual(
+            ["https://feishu.cn/sheets/project-three"],
+            [call.args[0] for call in feishu_client.send_group_markdown.call_args_list],
+        )
+
     def test_project_metrics_report_variables_can_disable_second_project(self) -> None:
         cfg = Config(
             run_report_mode="roblox_project_daily_metrics",
