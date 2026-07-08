@@ -178,6 +178,7 @@ class MainTests(unittest.TestCase):
             roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
             roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
             roblox_creator_overview_url_4="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
+            roblox_creator_overview_url_5="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
         )
         report_payload = ProjectMetricsReportPayload(
             records_by_project_id={
@@ -253,6 +254,24 @@ class MainTests(unittest.TestCase):
                         fetched_at="2026-06-18T01:02:03Z",
                     )
                 ],
+                "10403337696": [
+                    ProjectDailyMetricsRecord(
+                        report_date="2026-07-06",
+                        peak_ccu="500",
+                        average_session_time="18m",
+                        day1_retention="18%",
+                        day7_retention="9%",
+                        payer_conversion_rate="5%",
+                        arppu="$5.00",
+                        qptr="5",
+                        five_minute_retention="40%",
+                        home_recommendations="50",
+                        client_crash_rate="0.50%",
+                        project_id="10403337696",
+                        source_url="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
+                        fetched_at="2026-07-06T01:02:03Z",
+                    )
+                ],
             },
             failures=(),
         )
@@ -263,18 +282,20 @@ class MainTests(unittest.TestCase):
             MagicMock(url="https://feishu.cn/sheets/project-two"),
             MagicMock(url="https://feishu.cn/sheets/project-three"),
             MagicMock(url="https://feishu.cn/sheets/project-four"),
+            MagicMock(url="https://feishu.cn/sheets/project-five"),
         ]
 
         _notify_success(cfg, report_payload)
 
-        self.assertEqual(4, sync_sheet.call_count)
-        self.assertEqual(4, feishu_client.send_group_markdown.call_count)
+        self.assertEqual(5, sync_sheet.call_count)
+        self.assertEqual(5, feishu_client.send_group_markdown.call_count)
         self.assertEqual(
             [
                 "https://feishu.cn/sheets/project-one",
                 "https://feishu.cn/sheets/project-two",
                 "https://feishu.cn/sheets/project-three",
                 "https://feishu.cn/sheets/project-four",
+                "https://feishu.cn/sheets/project-five",
             ],
             [call.args[0] for call in feishu_client.send_group_markdown.call_args_list],
         )
@@ -286,12 +307,16 @@ class MainTests(unittest.TestCase):
             roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
             roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
             roblox_creator_overview_url_4="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
+            roblox_creator_overview_url_5="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
             roblox_project_metrics_disable_second_project=True,
         )
 
         variables = _resolve_project_metrics_report_variables(cfg)
 
-        self.assertEqual(["9682356542", "10170801715", "10304101434"], [item.project_id for item in variables])
+        self.assertEqual(
+            ["9682356542", "10170801715", "10304101434", "10403337696"],
+            [item.project_id for item in variables],
+        )
 
     @patch("app.main.write_project_metrics_output")
     def test_project_metrics_output_ignores_disabled_second_project(self, write_project_metrics_output) -> None:
@@ -302,6 +327,7 @@ class MainTests(unittest.TestCase):
             roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
             roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
             roblox_creator_overview_url_4="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
+            roblox_creator_overview_url_5="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
             roblox_project_metrics_disable_second_project=True,
         )
         first_record = ProjectDailyMetricsRecord(
@@ -368,6 +394,22 @@ class MainTests(unittest.TestCase):
             source_url="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
             fetched_at="2026-06-18T01:02:03Z",
         )
+        fifth_record = ProjectDailyMetricsRecord(
+            report_date="2026-07-06",
+            peak_ccu="500",
+            average_session_time="18m",
+            day1_retention="18%",
+            day7_retention="9%",
+            payer_conversion_rate="5%",
+            arppu="$5.00",
+            qptr="5",
+            five_minute_retention="40%",
+            home_recommendations="50",
+            client_crash_rate="0.50%",
+            project_id="10403337696",
+            source_url="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
+            fetched_at="2026-07-06T01:02:03Z",
+        )
         write_project_metrics_output.return_value = ("data/project_metrics_2026-03-18.json", "data/project_metrics_2026-03-18.csv")
 
         _write_report_outputs(
@@ -378,6 +420,7 @@ class MainTests(unittest.TestCase):
                     "9707829514": [second_record],
                     "10170801715": [third_record],
                     "10304101434": [fourth_record],
+                    "10403337696": [fifth_record],
                 },
                 failures=(),
             ),
@@ -385,7 +428,7 @@ class MainTests(unittest.TestCase):
 
         write_project_metrics_output.assert_called_once_with(
             "./data",
-            [first_record, third_record, fourth_record],
+            [first_record, third_record, fourth_record, fifth_record],
             prefix="project_metrics",
         )
 

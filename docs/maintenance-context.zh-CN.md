@@ -211,7 +211,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 执行路径：
 
 1. `app/main.py` 调用 `resolve_project_metrics_variables()`
-2. 根据 `ROBLOX_CREATOR_OVERVIEW_URL`、`ROBLOX_CREATOR_OVERVIEW_URL_2`、`ROBLOX_CREATOR_OVERVIEW_URL_3` 和 `ROBLOX_CREATOR_OVERVIEW_URL_4` 解析需要抓取的项目
+2. 根据 `ROBLOX_CREATOR_OVERVIEW_URL`、`ROBLOX_CREATOR_OVERVIEW_URL_2`、`ROBLOX_CREATOR_OVERVIEW_URL_3`、`ROBLOX_CREATOR_OVERVIEW_URL_4` 和 `ROBLOX_CREATOR_OVERVIEW_URL_5` 解析需要抓取的项目
 3. 逐个项目调用 `RobloxCreatorMetricsClient.fetch_project_daily_metrics()`
 4. 按项目写各自的飞书表格
 5. 将所有成功项目的数据合并写入本地 JSON/CSV
@@ -221,14 +221,15 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 
 #### 当前项目日报能力边界
 
-当前只支持最多 4 个项目，因为代码里只有四套配置槽位：
+当前只支持最多 5 个项目，因为代码里只有五套配置槽位：
 
 - `ROBLOX_CREATOR_OVERVIEW_URL`
 - `ROBLOX_CREATOR_OVERVIEW_URL_2`
 - `ROBLOX_CREATOR_OVERVIEW_URL_3`
 - `ROBLOX_CREATOR_OVERVIEW_URL_4`
+- `ROBLOX_CREATOR_OVERVIEW_URL_5`
 
-以及对应四套飞书表变量：
+以及对应五套飞书表变量：
 
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_SHEET_ID`
@@ -242,8 +243,11 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 - `FEISHU_PROJECT_METRICS_4_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_4_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_4_SPREADSHEET_TITLE`
+- `FEISHU_PROJECT_METRICS_5_SPREADSHEET_TOKEN`
+- `FEISHU_PROJECT_METRICS_5_SHEET_ID`
+- `FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE`
 
-如果要接第五个项目，必须同步修改：
+如果要接第六个项目，必须同步修改：
 
 - [`app/config.py`](../app/config.py)
 - [`app/project_metrics_sheet.py`](../app/project_metrics_sheet.py)
@@ -267,6 +271,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 - `9707829514`：`2026-03-17`
 - `10170801715`：`2026-05-31`
 - `10304101434`：`2026-06-18`
+- `10403337696`：`2026-07-06`
 
 #### 当前指标来源
 
@@ -491,6 +496,7 @@ Worker 允许通过环境变量改命令文本：
 - `ROBLOX_CREATOR_OVERVIEW_URL_2`
 - `ROBLOX_CREATOR_OVERVIEW_URL_3`
 - `ROBLOX_CREATOR_OVERVIEW_URL_4`
+- `ROBLOX_CREATOR_OVERVIEW_URL_5`
 - `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT`，可选；当前 GitHub Actions 未配置时按 `true` 注入，默认跳过第二项目槽位；如需恢复第二项目日报则设为 `false`
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_SHEET_ID`
@@ -504,9 +510,13 @@ Worker 允许通过环境变量改命令文本：
 - `FEISHU_PROJECT_METRICS_4_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_4_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_4_SPREADSHEET_TITLE`
+- `FEISHU_PROJECT_METRICS_5_SPREADSHEET_TOKEN`
+- `FEISHU_PROJECT_METRICS_5_SHEET_ID`
+- `FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE`
 
 当前 GitHub Actions 会在 `ROBLOX_CREATOR_OVERVIEW_URL_3` 未配置时默认注入 `Troll ur friends` 的 overview URL：`https://create.roblox.com/dashboard/creations/experiences/10170801715/overview`。
 当前 GitHub Actions 会在 `ROBLOX_CREATOR_OVERVIEW_URL_4` 未配置时默认注入 `Soccer RNG` 的 overview URL：`https://create.roblox.com/dashboard/creations/experiences/10304101434/overview`。
+当前 GitHub Actions 会在 `ROBLOX_CREATOR_OVERVIEW_URL_5` 未配置时默认注入 `soccer大亨版` 的 overview URL：`https://create.roblox.com/dashboard/creations/experiences/10403337696/overview`。
 
 ### 收入日报相关
 
@@ -735,9 +745,9 @@ Worker 事件去重默认使用 Cloudflare KV：
 
 ### 8.2 新增一个项目日报项目
 
-如果只是修改现有四个项目，改变量即可。
+如果只是修改现有五个项目，改变量即可。
 
-如果要新增第五个项目，必须改代码：
+如果要新增第六个项目，必须改代码：
 
 1. 在 [`app/config.py`](../app/config.py) 增加新字段
 2. 在工作流中增加对应环境变量注入

@@ -31,6 +31,19 @@ class WorkflowConfigTests(unittest.TestCase):
             workflow_content,
         )
 
+    def test_project_metrics_fifth_project_defaults_to_soccer_tycoon(self) -> None:
+        workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/roblox_rank_sync.yml"
+        workflow_content = workflow_path.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "ROBLOX_CREATOR_OVERVIEW_URL_5: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL_5 || 'https://create.roblox.com/dashboard/creations/experiences/10403337696/overview' }}",
+            workflow_content,
+        )
+        self.assertIn(
+            "FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE: ${{ vars.FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE || 'soccer大亨版' }}",
+            workflow_content,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
