@@ -14,6 +14,8 @@ from .project_metrics_models import ProjectDailyMetricsRecord, now_iso
 from .project_metrics_sheet import (
     PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR,
     PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR,
+    PROJECT_METRICS_4_SPREADSHEET_TOKEN_VAR,
+    PROJECT_METRICS_5_SPREADSHEET_TOKEN_VAR,
     PROJECT_METRICS_SPREADSHEET_TOKEN_VAR,
     ProjectMetricsSheetVariables,
     ProjectMetricsSpreadsheetTarget,
@@ -660,22 +662,20 @@ def _resolve_project_metrics_report_variables(cfg: Config) -> tuple[ProjectMetri
 
 
 def _resolve_roblox_money_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
-    """解析收入日报项目，优先统计第一项目与 Troll ur friends。"""
+    """解析收入日报项目，统计第一、第三、第四和第五项目槽位。"""
 
     variables_list = resolve_project_metrics_variables(cfg)
-    primary_variables = tuple(
+    enabled_variable_names = {
+        PROJECT_METRICS_SPREADSHEET_TOKEN_VAR,
+        PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR,
+        PROJECT_METRICS_4_SPREADSHEET_TOKEN_VAR,
+        PROJECT_METRICS_5_SPREADSHEET_TOKEN_VAR,
+    }
+    return tuple(
         variables
         for variables in variables_list
-        if variables.spreadsheet_token_variable_name == PROJECT_METRICS_SPREADSHEET_TOKEN_VAR
+        if variables.spreadsheet_token_variable_name in enabled_variable_names
     )
-    troll_variables = tuple(
-        variables
-        for variables in variables_list
-        if variables.spreadsheet_token_variable_name == PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR
-    )
-    if troll_variables:
-        return primary_variables + troll_variables
-    return primary_variables
 
 
 

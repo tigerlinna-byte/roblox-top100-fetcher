@@ -731,7 +731,7 @@ class MainTests(unittest.TestCase):
         self.assertEqual(35.0, revenue.month_to_date_usd)
 
     @patch("app.main.RobloxCreatorMetricsClient")
-    def test_roblox_money_payload_uses_troll_project_when_project_metrics_disable_is_enabled(
+    def test_roblox_money_payload_uses_first_third_fourth_and_fifth_projects(
         self,
         client_cls,
     ) -> None:
@@ -740,6 +740,8 @@ class MainTests(unittest.TestCase):
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
             roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
             roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
+            roblox_creator_overview_url_4="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
+            roblox_creator_overview_url_5="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
             roblox_project_metrics_disable_second_project=True,
             roblox_money_start_date="2026-05-01",
             roblox_money_usd_per_100k_robux="350",
@@ -753,8 +755,11 @@ class MainTests(unittest.TestCase):
 
         payload = _fetch_report_payload(cfg)
 
-        self.assertEqual(["9682356542", "10170801715"], [item.project_id for item in payload.project_revenues])
-        self.assertEqual(2, client.fetch_project_revenue_series.call_count)
+        self.assertEqual(
+            ["9682356542", "10170801715", "10304101434", "10403337696"],
+            [item.project_id for item in payload.project_revenues],
+        )
+        self.assertEqual(4, client.fetch_project_revenue_series.call_count)
 
     @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_skips_second_project_without_troll_project(

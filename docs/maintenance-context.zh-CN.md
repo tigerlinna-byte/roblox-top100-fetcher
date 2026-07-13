@@ -15,7 +15,7 @@
 | `top100_message` | 本地运行、GitHub Actions 手动触发、飞书 `/roblox-top100` | Roblox 榜单接口 | 输出 JSON/CSV，并发送 Top100 文本摘要 |
 | `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron `0 1 * * *` | Roblox 榜单接口 | 发送 `今日关注` 卡片，更新历史排名，并输出 JSON |
 | `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron `10 1 * * *` | Roblox Creator Analytics 接口 | 更新每个项目自己的飞书表，并发送表格链接 |
-| `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron `20 1 * * *` | Roblox Creator Analytics 收入指标 | 发送第一项目和 `Troll ur friends` 的收入卡片日报，并输出 JSON/CSV |
+| `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron `20 1 * * *` | Roblox Creator Analytics 收入指标 | 发送第一、第三、第四和第五项目的收入卡片日报，并输出 JSON/CSV |
 
 如果有人还把它理解成“抓一下 Top100 然后发群”，那已经是过时认知。
 
@@ -217,7 +217,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 5. 将所有成功项目的数据合并写入本地 JSON/CSV
 6. 对部分失败项目发送补充失败说明
 
-如果 `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT=true`，项目日报会临时跳过第二项目槽位 `ROBLOX_CREATOR_OVERVIEW_URL_2`。这只影响 `roblox_project_daily_metrics`：不抓取第二项目、不写第二项目飞书表、不在 `project_metrics_*.json/csv` 中输出第二项目记录，也不发送第二项目表格链接；`roblox_money` 收入日报默认使用第一项目和第三槽位的 `Troll ur friends`，不受该开关影响。当前 GitHub Actions workflow 未配置该变量时按 `true` 注入，默认不发送第二项目 Jail Ur Fiends 的日报表格；如需恢复第二项目日报，则在 GitHub Variables 中明确设为 `false`。
+如果 `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT=true`，项目日报会临时跳过第二项目槽位 `ROBLOX_CREATOR_OVERVIEW_URL_2`。这只影响 `roblox_project_daily_metrics`：不抓取第二项目、不写第二项目飞书表、不在 `project_metrics_*.json/csv` 中输出第二项目记录，也不发送第二项目表格链接；`roblox_money` 收入日报默认使用第一、第三、第四和第五项目槽位，不受该开关影响。当前 GitHub Actions workflow 未配置该变量时按 `true` 注入，默认不发送第二项目 Jail Ur Fiends 的日报表格；如需恢复第二项目日报，则在 GitHub Variables 中明确设为 `false`。
 
 第一项目 `Shoot Or Shot` 的项目日报表格仍会更新并写入 artifacts，但表格链接只发送到 test 群。Worker 会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 作为 `project_metrics_primary_project_test_chat_ids` 传给 GitHub Actions，Python 侧只向 `RUN_CHAT_ID` 与这组 test 群的交集发送第一项目链接；其他项目链接仍发送给本次 `RUN_CHAT_ID` 的所有群。如果不是通过 Worker 触发，可用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 作为兜底。
 
@@ -381,7 +381,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 执行路径：
 
 1. Worker 校验命令来源群必须在 `ROBLOX_MONEY_TEST_CHAT_IDS`
-2. `app/main.py` 调用收入日报项目解析逻辑，默认使用第一项目 overview URL 与第三槽位 `Troll ur friends`（`10170801715`）overview URL；如果第三槽位未配置，则只使用第一项目 overview URL
+2. `app/main.py` 调用收入日报项目解析逻辑，默认按顺序使用第一项目，以及第三槽位 `Troll ur friends`（`10170801715`）、第四槽位 `Soccer RNG`（`10304101434`）和第五槽位 `soccer大亨版`（`10403337696`）的 overview URL；未配置的项目槽位会自动跳过，第二槽位不参与收入日报
 3. `RobloxCreatorMetricsClient.fetch_project_revenue_series()` 查询 Creator Analytics 总收入候选指标
 4. Python 侧按配置 `ROBLOX_MONEY_USD_PER_100K_ROBUX` 将 Robux 换算成美元
 5. 发送收入日报飞书卡片，不创建或更新飞书表格
