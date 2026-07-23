@@ -39,9 +39,9 @@ PROJECT_METRICS_FIELD_NAMES = (
     "home_recommendation_new_users",
     "sponsored_ads_new_users",
     "client_crash_rate",
-    "tablet_memory_percentage",
-    "pc_memory_percentage",
-    "phone_memory_percentage",
+    "tablet_memory_gb",
+    "pc_memory_gb",
+    "phone_memory_gb",
     "client_frame_rate",
     "server_crashes",
     "server_memory",
@@ -74,9 +74,9 @@ class ProjectDailyMetricsRecord:
     home_recommendation_new_users: str = ""
     sponsored_ads_new_users: str = ""
     client_crash_rate: str = ""
-    tablet_memory_percentage: str = ""
-    pc_memory_percentage: str = ""
-    phone_memory_percentage: str = ""
+    tablet_memory_gb: str = ""
+    pc_memory_gb: str = ""
+    phone_memory_gb: str = ""
     client_frame_rate: str = ""
     server_crashes: str = ""
     server_memory: str = ""

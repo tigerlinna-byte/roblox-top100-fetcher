@@ -74,9 +74,9 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             home_recommendation_new_users="44",
             sponsored_ads_new_users="6",
             client_crash_rate="0.12%",
-            tablet_memory_percentage="42%",
-            pc_memory_percentage="55%",
-            phone_memory_percentage="61%",
+            tablet_memory_gb="0.75 GB",
+            pc_memory_gb="2 GB",
+            phone_memory_gb="1.5 GB",
             client_frame_rate="59.5 FPS",
             server_crashes="2",
             server_memory="512 MB",
@@ -104,9 +104,9 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("44", row[_column("推荐新增")])
         self.assertEqual("6", row[_column("广告新增")])
         self.assertEqual("0.12%", row[_column("崩溃率")])
-        self.assertEqual("42%", row[_column("平板内存")])
-        self.assertEqual("55%", row[_column("PC内存")])
-        self.assertEqual("61%", row[_column("手机内存")])
+        self.assertEqual("0.75 GB", row[_column("平板内存")])
+        self.assertEqual("2 GB", row[_column("PC内存")])
+        self.assertEqual("1.5 GB", row[_column("手机内存")])
         self.assertEqual("59.5 FPS", row[_column("客户端帧率")])
         self.assertEqual("2", row[_column("服务器崩溃数")])
         self.assertEqual("512 MB", row[_column("服务器内存")])
@@ -277,7 +277,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_rebuild_rows_preserves_existing_non_empty_cells(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11（周三）", "200", "15m", "82th", "31%", "71th", "", "", "", "", "", "", "", "4.5%", "", "", "", "88", "44", "6", "0.10%", "42%", "55%", "61%", "58 FPS", "1", "512 MB", "60 FPS", "2026-03-11T01:02:03Z"],
+            ["2026-03-11（周三）", "200", "15m", "82th", "31%", "71th", "", "", "", "", "", "", "", "4.5%", "", "", "", "88", "44", "6", "0.10%", "0.75 GB", "2 GB", "1.5 GB", "58 FPS", "1", "512 MB", "60 FPS", "2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
@@ -311,9 +311,9 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("44", rows[1][_column("推荐新增")])
         self.assertEqual("6", rows[1][_column("广告新增")])
         self.assertEqual("0.10%", rows[1][_column("崩溃率")])
-        self.assertEqual("42%", rows[1][_column("平板内存")])
-        self.assertEqual("55%", rows[1][_column("PC内存")])
-        self.assertEqual("61%", rows[1][_column("手机内存")])
+        self.assertEqual("0.75 GB", rows[1][_column("平板内存")])
+        self.assertEqual("2 GB", rows[1][_column("PC内存")])
+        self.assertEqual("1.5 GB", rows[1][_column("手机内存")])
         self.assertEqual("58 FPS", rows[1][_column("客户端帧率")])
         self.assertEqual("1", rows[1][_column("服务器崩溃数")])
         self.assertEqual("512 MB", rows[1][_column("服务器内存")])
@@ -343,9 +343,9 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             "45",
             "7",
             "0.09%",
-            "42%",
-            "55%",
-            "61%",
+            "0.75 GB",
+            "2 GB",
+            "1.5 GB",
             "58 FPS",
             "1",
             "512 MB",
@@ -393,9 +393,9 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             "45",
             "7",
             "0.09%",
-            "42%",
-            "55%",
-            "61%",
+            "0.75 GB",
+            "2 GB",
+            "1.5 GB",
             "58 FPS",
             "1",
             "512 MB",
@@ -445,6 +445,29 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertNotIn("peak_ccu", query_plan[date(2026, 3, 10)])
         self.assertIn("average_session_time", query_plan[date(2026, 3, 10)])
         self.assertIn("day1_retention", query_plan[date(2026, 3, 10)])
+
+    def test_old_memory_percentages_are_cleared_and_scheduled_for_gb_backfill(self) -> None:
+        old_row = [""] * len(PROJECT_METRICS_HEADERS)
+        old_row[_column("日期")] = "2026-03-10（周二）"
+        old_row[_column("平板内存")] = "42%"
+        old_row[_column("PC内存")] = "55%"
+        old_row[_column("手机内存")] = "61%"
+        existing_rows = [PROJECT_METRICS_HEADERS.copy(), old_row]
+
+        table_state = build_project_metrics_table(existing_rows, [])
+        query_plan = build_project_metrics_query_plan(
+            existing_rows,
+            date(2026, 3, 10),
+            date(2026, 3, 10),
+            max_data_rows=1,
+        )
+
+        self.assertEqual("", table_state.rows[1][_column("平板内存")])
+        self.assertEqual("", table_state.rows[1][_column("PC内存")])
+        self.assertEqual("", table_state.rows[1][_column("手机内存")])
+        self.assertIn("tablet_memory_gb", query_plan[date(2026, 3, 10)])
+        self.assertIn("pc_memory_gb", query_plan[date(2026, 3, 10)])
+        self.assertIn("phone_memory_gb", query_plan[date(2026, 3, 10)])
 
     def test_build_project_metrics_rank_color_cells_maps_thresholds_and_gradients(self) -> None:
         rows = [

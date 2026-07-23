@@ -91,6 +91,9 @@ class StorageTests(unittest.TestCase):
                 home_recommendation_new_users="44",
                 sponsored_ads_new_users="6",
                 client_crash_rate="0.12%",
+                tablet_memory_gb="0.75 GB",
+                pc_memory_gb="2 GB",
+                phone_memory_gb="1.5 GB",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
                 fetched_at="2026-03-12T01:02:03Z",
@@ -112,6 +115,9 @@ class StorageTests(unittest.TestCase):
                 home_recommendation_new_users="40",
                 sponsored_ads_new_users="5",
                 client_crash_rate="0.10%",
+                tablet_memory_gb="0.7 GB",
+                pc_memory_gb="1.9 GB",
+                phone_memory_gb="1.4 GB",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
                 fetched_at="2026-03-12T01:02:03Z",
@@ -123,6 +129,9 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(2, len(payload))
         self.assertEqual("44", payload[0]["home_recommendation_new_users"])
         self.assertEqual("6", payload[0]["sponsored_ads_new_users"])
+        self.assertEqual("0.75 GB", payload[0]["tablet_memory_gb"])
+        self.assertEqual("2 GB", payload[0]["pc_memory_gb"])
+        self.assertEqual("1.5 GB", payload[0]["phone_memory_gb"])
 
         with Path(csv_path).open("r", newline="", encoding="utf-8") as fp:
             rows = list(csv.DictReader(fp))
@@ -132,6 +141,7 @@ class StorageTests(unittest.TestCase):
         self.assertEqual("4.2", rows[0]["qptr"])
         self.assertEqual("5.2%", rows[0]["ptr"])
         self.assertEqual("1.2%", rows[0]["dptr"])
+        self.assertEqual("0.75 GB", rows[0]["tablet_memory_gb"])
 
 
 if __name__ == "__main__":

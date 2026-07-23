@@ -109,9 +109,9 @@ METRIC_DEFINITIONS = (
         ("sponsored ads new users", "ads new users"),
     ),
     MetricDefinition("client_crash_rate", ("client crash rate", "crash rate", "client crash rate 15m")),
-    MetricDefinition("tablet_memory_percentage", ("tablet memory percentage", "tablet memory usage percentage")),
-    MetricDefinition("pc_memory_percentage", ("pc memory percentage", "computer memory usage percentage", "pc memory usage percentage")),
-    MetricDefinition("phone_memory_percentage", ("phone memory percentage", "mobile memory usage percentage", "phone memory usage percentage")),
+    MetricDefinition("tablet_memory_gb", ("tablet memory", "tablet memory usage")),
+    MetricDefinition("pc_memory_gb", ("pc memory", "computer memory usage", "pc memory usage")),
+    MetricDefinition("phone_memory_gb", ("phone memory", "mobile memory usage", "phone memory usage")),
     MetricDefinition("client_frame_rate", ("client frame rate", "client fps", "frame rate", "fps")),
     MetricDefinition("server_crashes", ("server crashes", "server crash count")),
     MetricDefinition("server_memory", ("server memory", "server memory usage")),
@@ -188,29 +188,29 @@ DIRECT_QUERY_SPECS = (
     MetricQuerySpec("dptr", "RFYDeepEngagementRate", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec("client_crash_rate", "ClientCrashRate15m", "METRIC_GRANULARITY_ONE_DAY", 14, "ratio"),
     MetricQuerySpec(
-        "tablet_memory_percentage",
-        "ClientMemoryUsagePercentageAvg",
+        "tablet_memory_gb",
+        "ClientMemoryUsageAvg",
         "METRIC_GRANULARITY_ONE_DAY",
         14,
-        "breakdown_ratio",
+        "breakdown_memory_gb",
         breakdown_dimensions=("Platform",),
         breakdown_match_values=("Tablet",),
     ),
     MetricQuerySpec(
-        "pc_memory_percentage",
-        "ClientMemoryUsagePercentageAvg",
+        "pc_memory_gb",
+        "ClientMemoryUsageAvg",
         "METRIC_GRANULARITY_ONE_DAY",
         14,
-        "breakdown_ratio",
+        "breakdown_memory_gb",
         breakdown_dimensions=("Platform",),
         breakdown_match_values=("Computer", "Desktop", "PC"),
     ),
     MetricQuerySpec(
-        "phone_memory_percentage",
-        "ClientMemoryUsagePercentageAvg",
+        "phone_memory_gb",
+        "ClientMemoryUsageAvg",
         "METRIC_GRANULARITY_ONE_DAY",
         14,
-        "breakdown_ratio",
+        "breakdown_memory_gb",
         breakdown_dimensions=("Platform",),
         breakdown_match_values=("Phone", "Mobile"),
     ),
@@ -574,9 +574,9 @@ class RobloxCreatorMetricsClient:
                         "",
                     ),
                     client_crash_rate=metrics_by_field.get("client_crash_rate", {}).get(report_date, ""),
-                    tablet_memory_percentage=metrics_by_field.get("tablet_memory_percentage", {}).get(report_date, ""),
-                    pc_memory_percentage=metrics_by_field.get("pc_memory_percentage", {}).get(report_date, ""),
-                    phone_memory_percentage=metrics_by_field.get("phone_memory_percentage", {}).get(report_date, ""),
+                    tablet_memory_gb=metrics_by_field.get("tablet_memory_gb", {}).get(report_date, ""),
+                    pc_memory_gb=metrics_by_field.get("pc_memory_gb", {}).get(report_date, ""),
+                    phone_memory_gb=metrics_by_field.get("phone_memory_gb", {}).get(report_date, ""),
                     client_frame_rate=metrics_by_field.get("client_frame_rate", {}).get(report_date, ""),
                     server_crashes=metrics_by_field.get("server_crashes", {}).get(report_date, ""),
                     server_memory=metrics_by_field.get("server_memory", {}).get(report_date, ""),
@@ -1187,6 +1187,16 @@ class RobloxCreatorMetricsClient:
                 ),
                 ranks={},
             )
+        if spec.value_type == "breakdown_memory_gb":
+            if not spec.breakdown_match_values:
+                return MetricSeriesResult(values={}, ranks={})
+            return MetricSeriesResult(
+                values=_format_series(
+                    _extract_breakdown_daily_average(values, spec.breakdown_match_values, business_timezone),
+                    _format_gigabytes_from_megabytes,
+                ),
+                ranks={},
+            )
         datapoints = _flatten_numeric_datapoints(values)
         ranks = _extract_percentile_rank_series(values, business_timezone)
         if not datapoints:
@@ -1686,6 +1696,11 @@ def _format_memory_usage(value: float) -> str:
     if abs(value - round(value)) < 0.01:
         return f"{int(round(value))} MB"
     return f"{value:.2f}".rstrip("0").rstrip(".") + " MB"
+
+
+def _format_gigabytes_from_megabytes(value: float) -> str:
+    value_gb = value / 1024
+    return f"{value_gb:.2f}".rstrip("0").rstrip(".") + " GB"
 
 
 def _format_frame_rate(value: float) -> str:

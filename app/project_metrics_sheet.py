@@ -87,9 +87,9 @@ PROJECT_METRICS_FIELD_TO_HEADER = {
     "home_recommendation_new_users": "推荐新增",
     "sponsored_ads_new_users": "广告新增",
     "client_crash_rate": "崩溃率",
-    "tablet_memory_percentage": "平板内存",
-    "pc_memory_percentage": "PC内存",
-    "phone_memory_percentage": "手机内存",
+    "tablet_memory_gb": "平板内存",
+    "pc_memory_gb": "PC内存",
+    "phone_memory_gb": "手机内存",
     "client_frame_rate": "客户端帧率",
     "server_crashes": "服务器崩溃数",
     "server_memory": "服务器内存",
@@ -120,9 +120,9 @@ PROJECT_METRICS_LEGACY_FIELD_ORDER = (
     "fetched_at",
 )
 PROJECT_METRICS_PERFORMANCE_FIELD_NAMES = {
-    "tablet_memory_percentage",
-    "pc_memory_percentage",
-    "phone_memory_percentage",
+    "tablet_memory_gb",
+    "pc_memory_gb",
+    "phone_memory_gb",
     "client_frame_rate",
     "server_crashes",
     "server_memory",
@@ -351,9 +351,9 @@ def build_project_metrics_values(record: ProjectDailyMetricsRecord) -> list[obje
         record.home_recommendation_new_users,
         record.sponsored_ads_new_users,
         record.client_crash_rate,
-        record.tablet_memory_percentage,
-        record.pc_memory_percentage,
-        record.phone_memory_percentage,
+        record.tablet_memory_gb,
+        record.pc_memory_gb,
+        record.phone_memory_gb,
         record.client_frame_rate,
         record.server_crashes,
         record.server_memory,
@@ -661,9 +661,9 @@ def _extract_shifted_legacy_row_field_values(
             "client_crash_rate",
             legacy_values.get("client_crash_rate", ""),
         ),
-        "tablet_memory_percentage": current_values.get("tablet_memory_percentage", ""),
-        "pc_memory_percentage": current_values.get("pc_memory_percentage", ""),
-        "phone_memory_percentage": current_values.get("phone_memory_percentage", ""),
+        "tablet_memory_gb": current_values.get("tablet_memory_gb", ""),
+        "pc_memory_gb": current_values.get("pc_memory_gb", ""),
+        "phone_memory_gb": current_values.get("phone_memory_gb", ""),
         "client_frame_rate": current_values.get("client_frame_rate", ""),
         "server_crashes": current_values.get("server_crashes", ""),
         "server_memory": current_values.get("server_memory", ""),
@@ -805,11 +805,10 @@ def _normalize_field_value(field_name: str, value: str) -> str:
         "payer_conversion_rate",
         "five_minute_retention",
         "client_crash_rate",
-        "tablet_memory_percentage",
-        "pc_memory_percentage",
-        "phone_memory_percentage",
     }:
         return text if "%" in text else ""
+    if field_name in {"tablet_memory_gb", "pc_memory_gb", "phone_memory_gb"}:
+        return text if _looks_like_gigabytes_text(text) else ""
     if field_name in {
         "peak_ccu",
         "home_recommendations",
@@ -849,6 +848,13 @@ def _looks_like_decimal_number_text(value: str) -> bool:
     if not text:
         return False
     return text.replace(".", "", 1).isdigit()
+
+
+def _looks_like_gigabytes_text(value: str) -> bool:
+    text = value.strip()
+    if not text.upper().endswith(" GB"):
+        return False
+    return _looks_like_decimal_number_text(text[:-3])
 
 
 def _column_letter(index: int) -> str:

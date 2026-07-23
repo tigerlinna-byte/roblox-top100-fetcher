@@ -43,14 +43,25 @@ The system SHALL include project daily performance columns for client crash rate
 - **WHEN** an enabled project sheet contains historical dates with blank “推荐新增” or “广告新增” cells
 - **THEN** those dates SHALL participate in the existing field-level backfill plan
 
-### Requirement: Device Memory Percentage Semantics
-The system SHALL populate “平板内存”, “PC内存”, and “手机内存” from client memory usage percentage data for Tablet, Computer, and Phone respectively.
+### Requirement: Device Memory Actual Usage Semantics
+The system SHALL populate “平板内存”, “PC内存”, and “手机内存” from `ClientMemoryUsageAvg` actual memory usage data for Tablet, Computer, and Phone respectively. The system SHALL NOT use `ClientMemoryUsagePercentageAvg` for these columns.
 
-#### Scenario: Device breakdown values map to separate columns
-- **WHEN** Roblox Analytics returns Client Memory Usage Percentage values broken down by Tablet, Computer, and Phone for a report date
+#### Scenario: Device breakdown actual values map to separate columns
+- **WHEN** Roblox Analytics returns `ClientMemoryUsageAvg` values broken down by Tablet, Computer, and Phone for a report date
 - **THEN** the system SHALL write the Tablet value to “平板内存”
 - **THEN** the system SHALL write the Computer value to “PC内存”
 - **THEN** the system SHALL write the Phone value to “手机内存”
+
+#### Scenario: Device memory is converted from MB to GB
+- **WHEN** Roblox returns device memory values in MB
+- **THEN** the system SHALL average multiple values for the same platform and business date
+- **THEN** the system SHALL divide the daily MB value by 1024 and format the result with a `GB` suffix and at most two decimal places
+
+#### Scenario: Legacy percentages are scheduled for actual-value backfill
+- **WHEN** an existing “平板内存”, “PC内存”, or “手机内存” cell contains a percentage
+- **THEN** the percentage SHALL NOT be treated as a valid actual memory value
+- **THEN** the corresponding actual-memory field SHALL participate in the field-level historical backfill plan
+- **THEN** the cell SHALL remain blank when Roblox does not return an actual value
 
 ### Requirement: Crash Rate Header Rename
 The system SHALL treat the existing “报错率” value as client crash rate and display it as “崩溃率” after the migration.
@@ -67,7 +78,7 @@ The system SHALL write performance metric values for the natural date shown in t
 - **THEN** the system SHALL write that value into the row for the same report date
 
 ### Requirement: Historical Data Preservation
-The system SHALL preserve existing non-empty sheet values when Roblox Analytics does not return a replacement value for a newly added or existing metric.
+The system SHALL preserve existing non-empty sheet values when Roblox Analytics does not return a replacement value for a newly added or existing metric, except for legacy device-memory percentages that are incompatible with the current GB semantics.
 
 #### Scenario: Missing new metric leaves existing data intact
 - **WHEN** a project metrics row already contains values and a new Roblox response omits one performance metric for that date
@@ -87,7 +98,7 @@ The system MUST add the new columns without corrupting later column data or chan
 - **THEN** rank font reset, bold, and color updates SHALL apply only to the configured rank columns and SHALL NOT apply to the new performance columns
 
 ### Requirement: Metric Formatting
-The system SHALL format each performance metric according to its data type: crash rate and device memory as percentages, server crashes as a count, server memory as a readable MB value, and frame rate as a readable numeric frame-rate value.
+The system SHALL format each performance metric according to its data type: crash rate as a percentage, device memory as GB, server crashes as a count, server memory as a readable MB value, and frame rate as a readable numeric frame-rate value.
 
 #### Scenario: Returned metric values are formatted for the sheet
 - **WHEN** Roblox Analytics returns daily performance metric values

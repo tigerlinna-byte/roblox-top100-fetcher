@@ -172,7 +172,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "DailyActiveUsers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
-                                {"metric": "ClientMemoryUsagePercentageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "ClientMemoryUsageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientFpsAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ServerCrashCount", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "MemoryUsageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
@@ -302,26 +302,26 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {"time": "2026-03-10T00:00:00Z", "value": 0.0012},
                         {"time": "2026-03-11T00:00:00Z", "value": 0.0015},
                     ]}))
-                if metric == "ClientMemoryUsagePercentageAvg":
+                if metric == "ClientMemoryUsageAvg":
                     return _build_json_response(_wrap_query_result([
                         {
                             "breakdownValue": [{"dimension": "Platform", "value": "Tablet"}],
                             "dataPoints": [
-                                {"time": "2026-03-10T00:00:00Z", "value": 0.4},
-                                {"time": "2026-03-11T00:00:00Z", "value": 0.42},
-                                {"time": "2026-03-11T12:00:00Z", "value": 0.44},
+                                {"time": "2026-03-10T00:00:00Z", "value": 512},
+                                {"time": "2026-03-11T00:00:00Z", "value": 512},
+                                {"time": "2026-03-11T12:00:00Z", "value": 1024},
                             ],
                         },
                         {
                             "breakdownValue": [{"dimension": "Platform", "value": "Computer"}],
                             "dataPoints": [
-                                {"time": "2026-03-11T00:00:00Z", "value": 55},
+                                {"time": "2026-03-11T00:00:00Z", "value": 2048},
                             ],
                         },
                         {
                             "breakdownValue": [{"dimension": "Platform", "value": "Phone"}],
                             "dataPoints": [
-                                {"time": "2026-03-11T00:00:00Z", "value": 0.61},
+                                {"time": "2026-03-11T00:00:00Z", "value": 1536},
                             ],
                         },
                     ]))
@@ -378,9 +378,9 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("7", record_map["2026-03-11"].sponsored_ads_new_users)
         self.assertEqual("0", record_map["2026-03-10"].sponsored_ads_new_users)
         self.assertEqual("0.15%", record_map["2026-03-11"].client_crash_rate)
-        self.assertEqual("43%", record_map["2026-03-11"].tablet_memory_percentage)
-        self.assertEqual("55%", record_map["2026-03-11"].pc_memory_percentage)
-        self.assertEqual("61%", record_map["2026-03-11"].phone_memory_percentage)
+        self.assertEqual("0.75 GB", record_map["2026-03-11"].tablet_memory_gb)
+        self.assertEqual("2 GB", record_map["2026-03-11"].pc_memory_gb)
+        self.assertEqual("1.5 GB", record_map["2026-03-11"].phone_memory_gb)
         self.assertEqual("59.5 FPS", record_map["2026-03-11"].client_frame_rate)
         self.assertEqual("5", record_map["2026-03-11"].server_crashes)
         self.assertEqual("513 MB", record_map["2026-03-11"].server_memory)
@@ -399,7 +399,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
             json_payload["query"]
             for call in session.request.call_args_list
             if isinstance((json_payload := call.kwargs.get("json")), dict)
-            and json_payload.get("query", {}).get("metric") == "ClientMemoryUsagePercentageAvg"
+            and json_payload.get("query", {}).get("metric") == "ClientMemoryUsageAvg"
         ]
         self.assertTrue(memory_requests)
         self.assertTrue(all(request["breakdown"] == [{"dimensions": ["Platform"]}] for request in memory_requests))
