@@ -306,6 +306,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 - `RFYDeepEngagementRate`
 - `TotalSessionsEndedInBucket`
 - `UniqueUsersWithImpressions`
+- `DailyActiveUsers`（`IsNewUser=New`，按 `AcquisitionSource` 拆分）
 - `ClientCrashRate15m`
 - `ClientMemoryUsageAvg`
 - `ClientFpsAvg`
@@ -325,9 +326,19 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 - 用于过滤还未成熟的留存和 cohort 数据
 - 避免把“未来还没产出”的空数据错误写进日报
 
+`Home Recommendation数量` 与新增用户来源列是两个不同口径：
+
+- `Home Recommendation数量` 继续使用 `UniqueUsersWithImpressions`，表示 Home Recommendation 曝光用户数。
+- `推荐新增` 使用 `DailyActiveUsers`，筛选 `IsNewUser=New` 后取 `AcquisitionSource=Home Recommendation` 的每日人数。
+- `广告新增` 使用同一次 `DailyActiveUsers` 查询，取 `AcquisitionSource=Sponsored Ads` 的每日人数。
+- 接口明确返回 `0` 时写入 `0`；接口未返回对应日期或来源时留空，不把缺失数据伪装成零。
+- 两个新增用户来源字段参与已有的按日期、按字段历史回填，适用于所有启用的项目日报。
+
 #### 项目日报表格表现层规则
 
 项目日报表包含 `ARPDAU` 列，数据来源为 Roblox Creator Analytics 的 `AverageRevenuePerUser` 日粒度指标。该列位于 `付费率` 前方，按货币格式写入，不参与同类排名字体颜色或加粗样式。
+
+`Home Recommendation数量` 后依次为 `推荐新增`、`广告新增`。既有飞书表首次迁移时会在该位置真实插入两列，使原有后续列的数据、字体和单元格格式整体右移；迁移逻辑会识别已经插入但尚未重写表头的中间状态，避免失败重试时重复插列。当前表格最后一列为 `AC`，读写范围由表头数量自动推导，避免以后新增列时再次漏读后部字段。
 
 项目日报的同类排名列会按单元格内容中的数值部分设置字体颜色：
 

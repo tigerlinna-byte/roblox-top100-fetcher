@@ -88,6 +88,8 @@ class StorageTests(unittest.TestCase):
                 dptr="1.2%",
                 five_minute_retention="40%",
                 home_recommendations="98",
+                home_recommendation_new_users="44",
+                sponsored_ads_new_users="6",
                 client_crash_rate="0.12%",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
@@ -107,6 +109,8 @@ class StorageTests(unittest.TestCase):
                 dptr="1.0%",
                 five_minute_retention="39%",
                 home_recommendations="90",
+                home_recommendation_new_users="40",
+                sponsored_ads_new_users="5",
                 client_crash_rate="0.10%",
                 project_id="9682356542",
                 source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
@@ -117,6 +121,8 @@ class StorageTests(unittest.TestCase):
         json_path, csv_path = write_project_metrics_output(str(self.base), sample)
         payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
         self.assertEqual(2, len(payload))
+        self.assertEqual("44", payload[0]["home_recommendation_new_users"])
+        self.assertEqual("6", payload[0]["sponsored_ads_new_users"])
 
         with Path(csv_path).open("r", newline="", encoding="utf-8") as fp:
             rows = list(csv.DictReader(fp))

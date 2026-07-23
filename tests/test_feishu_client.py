@@ -855,6 +855,56 @@ class FeishuClientTests(unittest.TestCase):
         self.assertEqual(1, first_width_kwargs["json"]["dimension"]["startIndex"])
         self.assertEqual(3, second_width_kwargs["json"]["dimension"]["startIndex"])
 
+    def test_insert_sheet_columns_uses_insert_dimension_range_and_preserves_shift_semantics(self) -> None:
+        session = Mock()
+
+        auth_response = Mock()
+        auth_response.status_code = 200
+        auth_response.json.return_value = {
+            "code": 0,
+            "tenant_access_token": "tenant-token",
+        }
+        insert_response = Mock()
+        insert_response.status_code = 200
+        insert_response.json.return_value = {"code": 0, "data": {}}
+        session.request.side_effect = [auth_response, insert_response]
+
+        client = FeishuClient(
+            Config(
+                feishu_app_id="cli_xxx",
+                feishu_app_secret="secret",
+                request_timeout_seconds=3,
+                retry_max_attempts=1,
+            ),
+            session=session,
+        )
+
+        client.insert_sheet_columns(
+            "shtcn_sheet",
+            "sheet001",
+            start_index=18,
+            end_index=20,
+        )
+
+        insert_kwargs = session.request.call_args_list[1].kwargs
+        self.assertEqual("POST", insert_kwargs["method"])
+        self.assertEqual(
+            "https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/shtcn_sheet/insert_dimension_range",
+            insert_kwargs["url"],
+        )
+        self.assertEqual(
+            {
+                "dimension": {
+                    "sheetId": "sheet001",
+                    "majorDimension": "COLUMNS",
+                    "startIndex": 18,
+                    "endIndex": 20,
+                },
+                "inheritStyle": "BEFORE",
+            },
+            insert_kwargs["json"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

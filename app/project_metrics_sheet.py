@@ -39,6 +39,8 @@ PROJECT_METRICS_HEADERS = [
     "DPTR",
     "五分钟留存",
     "Home Recommendation数量",
+    "推荐新增",
+    "广告新增",
     "崩溃率",
     "平板内存",
     "PC内存",
@@ -82,6 +84,8 @@ PROJECT_METRICS_FIELD_TO_HEADER = {
     "dptr": "DPTR",
     "five_minute_retention": "五分钟留存",
     "home_recommendations": "Home Recommendation数量",
+    "home_recommendation_new_users": "推荐新增",
+    "sponsored_ads_new_users": "广告新增",
     "client_crash_rate": "崩溃率",
     "tablet_memory_percentage": "平板内存",
     "pc_memory_percentage": "PC内存",
@@ -96,6 +100,11 @@ PROJECT_METRICS_HEADER_TO_FIELD = {
     header: field_name for field_name, header in PROJECT_METRICS_FIELD_TO_HEADER.items()
 }
 PROJECT_METRICS_HEADER_TO_FIELD["报错率"] = "client_crash_rate"
+PRE_NEW_USER_PROJECT_METRICS_HEADERS = [
+    header
+    for header in PROJECT_METRICS_HEADERS
+    if header not in {"推荐新增", "广告新增"}
+]
 PROJECT_METRICS_LEGACY_FIELD_ORDER = (
     "report_date",
     "peak_ccu",
@@ -339,6 +348,8 @@ def build_project_metrics_values(record: ProjectDailyMetricsRecord) -> list[obje
         record.dptr,
         record.five_minute_retention,
         record.home_recommendations,
+        record.home_recommendation_new_users,
+        record.sponsored_ads_new_users,
         record.client_crash_rate,
         record.tablet_memory_percentage,
         record.pc_memory_percentage,
@@ -453,6 +464,43 @@ def build_project_metrics_rank_color_cells(rows: list[list[object]]) -> list[Pro
     return cells
 
 
+def resolve_project_metrics_column_insert_range(
+    existing_rows: list[list[object]],
+) -> tuple[int, int] | None:
+    """返回新增用户两列需要插入的 0-based 半开区间；已迁移时返回空。"""
+
+    if not existing_rows:
+        return None
+    header_row = [str(cell).strip() if cell is not None else "" for cell in existing_rows[0]]
+    if "推荐新增" in header_row or "广告新增" in header_row:
+        return None
+    try:
+        home_recommendation_index = header_row.index("Home Recommendation数量")
+    except ValueError:
+        return None
+
+    following_headers = header_row[home_recommendation_index + 1 :]
+    if len(following_headers) >= 3:
+        already_inserted = (
+            not following_headers[0]
+            and not following_headers[1]
+            and following_headers[2] in {"崩溃率", "报错率"}
+        )
+        if already_inserted:
+            return None
+    if not following_headers or following_headers[0] not in {"崩溃率", "报错率"}:
+        return None
+
+    start_index = home_recommendation_index + 1
+    return start_index, start_index + 2
+
+
+def get_project_metrics_end_column_letter() -> str:
+    """按当前表头数量返回日报表最后一列，避免新增列后读写范围漂移。"""
+
+    return _column_letter(len(PROJECT_METRICS_HEADERS))
+
+
 def _merge_single_record(rows: list[list[object]], record: ProjectDailyMetricsRecord) -> None:
     date_to_index = _build_date_index(rows)
     row_values = build_project_metrics_values(record)
@@ -550,7 +598,7 @@ def _extract_row_field_values(header_row: list[str], row_cells: list[str]) -> di
     if _looks_like_legacy_header(header_row):
         return _extract_legacy_row_field_values(row_cells)
     if _looks_like_current_header(header_row) and _looks_like_legacy_shifted_row(row_cells):
-        return _extract_shifted_legacy_row_field_values(row_cells)
+        return _extract_shifted_legacy_row_field_values(header_row, row_cells)
     return _extract_row_field_values_by_header(header_row, row_cells)
 
 
@@ -577,9 +625,12 @@ def _extract_legacy_row_field_values(row_cells: list[str]) -> dict[str, str]:
     return field_values
 
 
-def _extract_shifted_legacy_row_field_values(row_cells: list[str]) -> dict[str, str]:
+def _extract_shifted_legacy_row_field_values(
+    header_row: list[str],
+    row_cells: list[str],
+) -> dict[str, str]:
     legacy_values = _extract_legacy_row_field_values(row_cells)
-    current_values = _extract_row_field_values_by_header(PROJECT_METRICS_HEADERS, row_cells)
+    current_values = _extract_row_field_values_by_header(header_row, row_cells)
     has_current_fetched_at = bool(current_values.get("fetched_at", ""))
     field_values: dict[str, str] = {
         "report_date": legacy_values.get("report_date", current_values.get("report_date", "")),
@@ -604,6 +655,8 @@ def _extract_shifted_legacy_row_field_values(row_cells: list[str]) -> dict[str, 
             "home_recommendations",
             legacy_values.get("home_recommendations", ""),
         ),
+        "home_recommendation_new_users": current_values.get("home_recommendation_new_users", ""),
+        "sponsored_ads_new_users": current_values.get("sponsored_ads_new_users", ""),
         "client_crash_rate": current_values.get(
             "client_crash_rate",
             legacy_values.get("client_crash_rate", ""),
@@ -711,8 +764,13 @@ def _looks_like_legacy_header(header_row: list[str]) -> bool:
 
 
 def _looks_like_current_header(header_row: list[str]) -> bool:
-    normalized_header = [cell.strip() for cell in header_row[: len(PROJECT_METRICS_HEADERS)]]
-    return normalized_header == PROJECT_METRICS_HEADERS
+    normalized_header = [cell.strip() for cell in header_row]
+    current_header = normalized_header[: len(PROJECT_METRICS_HEADERS)]
+    previous_header = normalized_header[: len(PRE_NEW_USER_PROJECT_METRICS_HEADERS)]
+    return (
+        current_header == PROJECT_METRICS_HEADERS
+        or previous_header == PRE_NEW_USER_PROJECT_METRICS_HEADERS
+    )
 
 
 def _looks_like_legacy_shifted_row(row_cells: list[str]) -> bool:
@@ -752,7 +810,13 @@ def _normalize_field_value(field_name: str, value: str) -> str:
         "phone_memory_percentage",
     }:
         return text if "%" in text else ""
-    if field_name in {"peak_ccu", "home_recommendations", "server_crashes"}:
+    if field_name in {
+        "peak_ccu",
+        "home_recommendations",
+        "home_recommendation_new_users",
+        "sponsored_ads_new_users",
+        "server_crashes",
+    }:
         return text if _looks_like_number_text(text) else ""
     if field_name in PROJECT_METRICS_PERFORMANCE_FIELD_NAMES:
         return text

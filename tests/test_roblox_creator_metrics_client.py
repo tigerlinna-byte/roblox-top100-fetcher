@@ -170,6 +170,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                                 {"metric": "ForwardD7Retention", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "TotalSessionsEndedInBucket", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "UniqueUsersWithImpressions", "latestAvailableTime": "2026-03-11T00:00:00Z"},
+                                {"metric": "DailyActiveUsers", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientCrashRate15m", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientMemoryUsagePercentageAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
                                 {"metric": "ClientFpsAvg", "latestAvailableTime": "2026-03-11T00:00:00Z"},
@@ -275,6 +276,27 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                             ]
                         )
                     )
+                if metric == "DailyActiveUsers":
+                    return _build_json_response(
+                        _wrap_query_result(
+                            [
+                                {
+                                    "breakdownValue": [{"dimension": "AcquisitionSource", "value": "HomeRecommendation"}],
+                                    "dataPoints": [
+                                        {"time": "2026-03-10T00:00:00Z", "value": 44},
+                                        {"time": "2026-03-11T00:00:00Z", "value": 50},
+                                    ],
+                                },
+                                {
+                                    "breakdownValue": [{"dimension": "AcquisitionSource", "value": "Sponsored Ads"}],
+                                    "dataPoints": [
+                                        {"time": "2026-03-10T00:00:00Z", "value": 0},
+                                        {"time": "2026-03-11T00:00:00Z", "value": 7},
+                                    ],
+                                },
+                            ]
+                        )
+                    )
                 if metric == "ClientCrashRate15m":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 0.0012},
@@ -352,6 +374,9 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("1.5%", record_map["2026-03-11"].dptr)
         self.assertEqual("50%", record_map["2026-03-11"].five_minute_retention)
         self.assertEqual("610", record_map["2026-03-11"].home_recommendations)
+        self.assertEqual("50", record_map["2026-03-11"].home_recommendation_new_users)
+        self.assertEqual("7", record_map["2026-03-11"].sponsored_ads_new_users)
+        self.assertEqual("0", record_map["2026-03-10"].sponsored_ads_new_users)
         self.assertEqual("0.15%", record_map["2026-03-11"].client_crash_rate)
         self.assertEqual("43%", record_map["2026-03-11"].tablet_memory_percentage)
         self.assertEqual("55%", record_map["2026-03-11"].pc_memory_percentage)
@@ -386,6 +411,85 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         ]
         self.assertTrue(server_memory_requests)
         self.assertTrue(all(request["breakdown"] == [] for request in server_memory_requests))
+
+    def test_fetch_project_daily_metrics_queries_new_users_by_source_once(self) -> None:
+        session = Mock()
+
+        def request(method: str, url: str, **kwargs):
+            if method == "GET" and "feature-permissions" in url:
+                return _build_json_response({"userCanViewAnalyticsForUniverse": True})
+            if method == "GET" and "status-config" in url:
+                return _build_json_response({"annotationConfigurations": []})
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({
+                    "operation": {
+                        "done": True,
+                        "metricMetadataResult": {
+                            "metadata": [
+                                {"metric": "DailyActiveUsers", "latestAvailableTime": "2026-03-10T00:00:00Z"},
+                            ]
+                        },
+                    }
+                })
+            if method == "POST" and "analytics-query-gateway" in url:
+                query = kwargs["json"]["query"]
+                self.assertEqual("DailyActiveUsers", query["metric"])
+                self.assertEqual("METRIC_GRANULARITY_ONE_DAY", query["granularity"])
+                self.assertEqual([{"dimensions": ["AcquisitionSource"]}], query["breakdown"])
+                self.assertEqual(
+                    [
+                        {
+                            "dimension": "IsNewUser",
+                            "values": ["New"],
+                            "operation": "FILTER_OPERATION_CONTAINS",
+                        }
+                    ],
+                    query["filter"],
+                )
+                return _build_json_response(_wrap_query_result([
+                    {
+                        "breakdownValue": [{"dimension": "AcquisitionSource", "value": "Home Recommendation"}],
+                        "dataPoints": [{"time": "2026-03-10T00:00:00Z", "value": 25}],
+                    },
+                    {
+                        "breakdownValue": [{"dimension": "AcquisitionSource", "value": "SponsoredAds"}],
+                        "dataPoints": [{"time": "2026-03-10T00:00:00Z", "value": 3}],
+                    },
+                ]))
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                roblox_creator_cookie="cookie",
+                retry_max_attempts=1,
+                feishu_timezone="UTC",
+            ),
+            session=session,
+        )
+        report_date = date(2026, 3, 10)
+
+        records = client.fetch_project_daily_metrics(
+            report_dates=(report_date,),
+            requested_fields_by_date={
+                report_date: (
+                    "home_recommendation_new_users",
+                    "sponsored_ads_new_users",
+                )
+            },
+        )
+
+        self.assertEqual(1, len(records))
+        self.assertEqual("25", records[0].home_recommendation_new_users)
+        self.assertEqual("3", records[0].sponsored_ads_new_users)
+        daily_active_user_requests = [
+            call
+            for call in session.request.call_args_list
+            if isinstance(call.kwargs.get("json"), dict)
+            and call.kwargs["json"].get("query", {}).get("metric") == "DailyActiveUsers"
+        ]
+        self.assertEqual(1, len(daily_active_user_requests))
 
     def test_fetch_project_daily_metrics_uses_daily_explore_metrics_for_core_fields(self) -> None:
         session = Mock()

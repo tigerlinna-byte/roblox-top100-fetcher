@@ -385,6 +385,34 @@ class FeishuClient:
                 access_token=access_token,
             )
 
+    def insert_sheet_columns(
+        self,
+        spreadsheet_token: str,
+        sheet_id: str,
+        *,
+        start_index: int,
+        end_index: int,
+    ) -> None:
+        """按 0-based 半开区间插入列，并让原有列连同格式整体右移。"""
+
+        if start_index < 0 or end_index <= start_index:
+            raise ValueError("Invalid Feishu column insertion range")
+        access_token = self._fetch_tenant_access_token()
+        self._request_json(
+            "POST",
+            f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/insert_dimension_range",
+            json_payload={
+                "dimension": {
+                    "sheetId": sheet_id,
+                    "majorDimension": "COLUMNS",
+                    "startIndex": start_index,
+                    "endIndex": end_index,
+                },
+                "inheritStyle": "BEFORE",
+            },
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
     def reset_sheet_font_colors(
         self,
         spreadsheet_token: str,

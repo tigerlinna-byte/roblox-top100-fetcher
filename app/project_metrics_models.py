@@ -36,6 +36,8 @@ PROJECT_METRICS_FIELD_NAMES = (
     "dptr",
     "five_minute_retention",
     "home_recommendations",
+    "home_recommendation_new_users",
+    "sponsored_ads_new_users",
     "client_crash_rate",
     "tablet_memory_percentage",
     "pc_memory_percentage",
@@ -69,6 +71,8 @@ class ProjectDailyMetricsRecord:
     dptr: str = ""
     five_minute_retention: str = ""
     home_recommendations: str = ""
+    home_recommendation_new_users: str = ""
+    sponsored_ads_new_users: str = ""
     client_crash_rate: str = ""
     tablet_memory_percentage: str = ""
     pc_memory_percentage: str = ""

@@ -11,10 +11,17 @@ from app.main import (
     _notify_success,
     _persist_top_trending_previous_ranks,
     _resolve_project_metrics_report_variables,
+    _sync_project_metrics_sheet,
     _write_report_outputs,
 )
 from app.models import GameRecord
 from app.project_metrics_models import ProjectDailyMetricsRecord
+from app.project_metrics_sheet import (
+    PRE_NEW_USER_PROJECT_METRICS_HEADERS,
+    PROJECT_METRICS_HEADERS,
+    ProjectMetricsSheetVariables,
+    ProjectMetricsSpreadsheetTarget,
+)
 from app.roblox_money_models import (
     RobloxMoneyFetchFailure,
     RobloxMoneyProjectRevenue,
@@ -25,6 +32,63 @@ from app.roblox_creator_metrics_client import RobloxCreatorMetricsClientError
 
 
 class MainTests(unittest.TestCase):
+    @patch("app.main.GitHubClient")
+    @patch("app.main.get_saved_project_metrics_target")
+    def test_sync_project_metrics_sheet_inserts_new_columns_before_rebuild(
+        self,
+        get_saved_target,
+        github_client_cls,
+    ) -> None:
+        del github_client_cls
+        target = ProjectMetricsSpreadsheetTarget(
+            spreadsheet_token="shtcn_project",
+            sheet_id="sheet001",
+            url="https://feishu.cn/sheets/shtcn_project",
+        )
+        get_saved_target.return_value = target
+        variables = ProjectMetricsSheetVariables(
+            project_id="9682356542",
+            overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            spreadsheet_token_variable_name="FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN",
+            sheet_id_variable_name="FEISHU_PROJECT_METRICS_SHEET_ID",
+            spreadsheet_token=target.spreadsheet_token,
+            sheet_id=target.sheet_id,
+            spreadsheet_title="Shoot Or Shot",
+        )
+        old_row = [""] * len(PRE_NEW_USER_PROJECT_METRICS_HEADERS)
+        old_row[0] = "2026-03-10"
+        old_row[PRE_NEW_USER_PROJECT_METRICS_HEADERS.index("崩溃率")] = "0.10%"
+        feishu_client = MagicMock()
+        feishu_client.read_sheet_values.return_value = [
+            PRE_NEW_USER_PROJECT_METRICS_HEADERS.copy(),
+            old_row,
+        ]
+
+        _sync_project_metrics_sheet(Config(), [], feishu_client, variables)
+
+        feishu_client.read_sheet_values.assert_called_once_with(
+            target.spreadsheet_token,
+            target.sheet_id,
+            end_column="AC",
+            end_row=365,
+        )
+        feishu_client.insert_sheet_columns.assert_called_once_with(
+            target.spreadsheet_token,
+            target.sheet_id,
+            start_index=18,
+            end_index=20,
+        )
+        written_rows = feishu_client.write_sheet_values.call_args.args[2]
+        self.assertEqual(PROJECT_METRICS_HEADERS, written_rows[0])
+        self.assertEqual("", written_rows[1][PROJECT_METRICS_HEADERS.index("推荐新增")])
+        self.assertEqual("", written_rows[1][PROJECT_METRICS_HEADERS.index("广告新增")])
+        self.assertEqual("0.10%", written_rows[1][PROJECT_METRICS_HEADERS.index("崩溃率")])
+        method_names = [call[0] for call in feishu_client.method_calls]
+        self.assertLess(
+            method_names.index("insert_sheet_columns"),
+            method_names.index("write_sheet_values"),
+        )
+
     @patch("app.main._persist_top_trending_previous_ranks")
     @patch("app.main.FeishuClient")
     def test_top_trending_success_sends_briefing_without_sheet_url(self, feishu_client_cls, persist_ranks) -> None:

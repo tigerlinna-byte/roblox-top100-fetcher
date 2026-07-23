@@ -100,6 +100,14 @@ METRIC_DEFINITIONS = (
             "home impressions",
         ),
     ),
+    MetricDefinition(
+        "home_recommendation_new_users",
+        ("home recommendation new users", "recommendation new users"),
+    ),
+    MetricDefinition(
+        "sponsored_ads_new_users",
+        ("sponsored ads new users", "ads new users"),
+    ),
     MetricDefinition("client_crash_rate", ("client crash rate", "crash rate", "client crash rate 15m")),
     MetricDefinition("tablet_memory_percentage", ("tablet memory percentage", "tablet memory usage percentage")),
     MetricDefinition("pc_memory_percentage", ("pc memory percentage", "computer memory usage percentage", "pc memory usage percentage")),
@@ -232,6 +240,25 @@ HOME_RECOMMENDATIONS_SPEC = MetricQuerySpec(
     10,
     "breakdown_count",
     breakdown_dimensions=("AcquisitionSource",),
+)
+NEW_USER_ACQUISITION_FIELD_NAMES = (
+    "home_recommendation_new_users",
+    "sponsored_ads_new_users",
+)
+NEW_USER_ACQUISITION_SPEC = MetricQuerySpec(
+    "new_users_by_acquisition_source",
+    "DailyActiveUsers",
+    "METRIC_GRANULARITY_ONE_DAY",
+    28,
+    "acquisition_new_user_counts",
+    breakdown_dimensions=("AcquisitionSource",),
+    filters=(
+        {
+            "dimension": "IsNewUser",
+            "values": ["New"],
+            "operation": "FILTER_OPERATION_CONTAINS",
+        },
+    ),
 )
 PROJECT_METRIC_RANK_FIELDS = (
     "average_session_time",
@@ -538,6 +565,14 @@ class RobloxCreatorMetricsClient:
                     dptr=metrics_by_field.get("dptr", {}).get(report_date, ""),
                     five_minute_retention=metrics_by_field.get("five_minute_retention", {}).get(report_date, ""),
                     home_recommendations=metrics_by_field.get("home_recommendations", {}).get(report_date, ""),
+                    home_recommendation_new_users=metrics_by_field.get(
+                        "home_recommendation_new_users",
+                        {},
+                    ).get(report_date, ""),
+                    sponsored_ads_new_users=metrics_by_field.get("sponsored_ads_new_users", {}).get(
+                        report_date,
+                        "",
+                    ),
                     client_crash_rate=metrics_by_field.get("client_crash_rate", {}).get(report_date, ""),
                     tablet_memory_percentage=metrics_by_field.get("tablet_memory_percentage", {}).get(report_date, ""),
                     pc_memory_percentage=metrics_by_field.get("pc_memory_percentage", {}).get(report_date, ""),
@@ -663,6 +698,32 @@ class RobloxCreatorMetricsClient:
             )
             if home_recommendations.values:
                 metrics["home_recommendations"] = home_recommendations.values
+        if _is_field_requested_in_window(
+            requested_fields_by_date,
+            start_date,
+            end_date,
+            NEW_USER_ACQUISITION_FIELD_NAMES,
+        ):
+            requested_dates = _resolve_requested_dates_for_fields(
+                requested_fields_by_date,
+                start_date,
+                end_date,
+                NEW_USER_ACQUISITION_FIELD_NAMES,
+            )
+            acquisition_series = self._query_new_user_acquisition_series_for_dates(
+                project_id,
+                start_time,
+                end_time,
+                attempts,
+                business_timezone,
+                start_date,
+                end_date,
+                metadata_by_metric,
+                requested_dates,
+            )
+            for field_name, values in acquisition_series.items():
+                if values:
+                    metrics[field_name] = values
         return metrics, metric_ranks
 
     def _fetch_daily_scorecard_ranks(
@@ -756,6 +817,135 @@ class RobloxCreatorMetricsClient:
             ranks.update(series.ranks)
         return MetricSeriesResult(values=values, ranks=ranks)
 
+    def _query_new_user_acquisition_series_for_dates(
+        self,
+        project_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        attempts: list[QueryAttempt],
+        business_timezone: timezone | ZoneInfo,
+        start_date: date,
+        end_date: date,
+        metadata_by_metric: dict[str, date],
+        requested_dates: tuple[date, ...] | None,
+    ) -> dict[str, dict[str, str]]:
+        """用一次 acquisition breakdown 查询同时返回推荐和广告新增用户。"""
+
+        if requested_dates is None:
+            return self._query_new_user_acquisition_series(
+                project_id,
+                start_time,
+                end_time,
+                attempts,
+                business_timezone,
+                start_date,
+                end_date,
+                metadata_by_metric,
+            )
+
+        combined = {field_name: {} for field_name in NEW_USER_ACQUISITION_FIELD_NAMES}
+        for range_start, range_end in _split_dates_into_query_ranges(
+            list(requested_dates),
+            PROJECT_METRICS_MAX_QUERY_WINDOW_DAYS,
+        ):
+            range_start_time, range_end_time, _, _ = _build_project_query_window(
+                range_start,
+                range_end,
+                business_timezone,
+            )
+            series_by_field = self._query_new_user_acquisition_series(
+                project_id,
+                range_start_time,
+                range_end_time,
+                attempts,
+                business_timezone,
+                range_start,
+                range_end,
+                metadata_by_metric,
+            )
+            for field_name, values in series_by_field.items():
+                combined[field_name].update(values)
+        return combined
+
+    def _query_new_user_acquisition_series(
+        self,
+        project_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        attempts: list[QueryAttempt],
+        business_timezone: timezone | ZoneInfo,
+        start_date: date,
+        end_date: date,
+        metadata_by_metric: dict[str, date],
+    ) -> dict[str, dict[str, str]]:
+        """查询每日新增用户，并按 acquisition source 拆成两个日报字段。"""
+
+        spec = NEW_USER_ACQUISITION_SPEC
+        url = ANALYTICS_QUERY_GATEWAY_URL_TEMPLATE.format(
+            resource_type=ANALYTICS_RESOURCE_TYPE,
+            resource_id=project_id,
+        )
+        request_payload = self._build_metric_request_payload(project_id, spec, start_time, end_time)
+        try:
+            payload = self._request_json("POST", url, json_body=request_payload)
+            payload = self._poll_query_result(url, request_payload, payload)
+        except RobloxCreatorMetricsClientError as exc:
+            attempts.append(
+                QueryAttempt(
+                    spec.metric,
+                    url,
+                    "POST",
+                    f"error: {exc}",
+                    _truncate_json(request_payload),
+                    "",
+                )
+            )
+            return {}
+        attempts.append(
+            QueryAttempt(
+                spec.metric,
+                url,
+                "POST",
+                "ok",
+                _truncate_json(request_payload),
+                _truncate_json(payload),
+            )
+        )
+        query_values = self._extract_query_values(payload)
+        source_definitions = (
+            (
+                "home_recommendation_new_users",
+                "Home Recommendation",
+                ("HomeRecommendation",),
+            ),
+            (
+                "sponsored_ads_new_users",
+                "Sponsored Ads",
+                ("SponsoredAds",),
+            ),
+        )
+        series_by_field: dict[str, dict[str, str]] = {}
+        for field_name, source_name, aliases in source_definitions:
+            formatted_series = _format_series(
+                _extract_breakdown_daily_counts(
+                    query_values,
+                    source_name,
+                    business_timezone,
+                    aliases=aliases,
+                ),
+                _format_count,
+            )
+            series_by_field[field_name] = _filter_metric_series(
+                formatted_series,
+                field_name,
+                project_id,
+                start_date,
+                end_date,
+                metadata_by_metric,
+                source_metric=spec.metric,
+            )
+        return series_by_field
+
     def _query_revenue_metric_series_for_range(
         self,
         project_id: str,
@@ -845,7 +1035,15 @@ class RobloxCreatorMetricsClient:
         """抓取指标最新可用日期，避免把未成熟数据写进表。"""
 
         del project_id
-        requested_metrics = sorted({spec.metric for spec in DIRECT_QUERY_SPECS + (FIVE_MINUTE_RETENTION_SPEC, HOME_RECOMMENDATIONS_SPEC)})
+        requested_metrics = sorted({
+            spec.metric
+            for spec in DIRECT_QUERY_SPECS
+            + (
+                FIVE_MINUTE_RETENTION_SPEC,
+                HOME_RECOMMENDATIONS_SPEC,
+                NEW_USER_ACQUISITION_SPEC,
+            )
+        })
         return self._fetch_metric_metadata_for_metrics(requested_metrics, attempts)
 
     def _fetch_metric_metadata_for_metrics(

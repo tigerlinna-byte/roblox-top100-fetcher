@@ -22,8 +22,26 @@ The system SHALL include project daily performance columns for client crash rate
 
 #### Scenario: Sheet header includes performance columns
 - **WHEN** a project metrics sheet is rebuilt
-- **THEN** the header SHALL contain “崩溃率”, “平板内存”, “PC内存”, “手机内存”, “客户端帧率”, “服务器崩溃数”, “服务器内存”, “服务器帧率”, and “更新时间” in that order after “Home Recommendation数量”
+- **THEN** the header SHALL contain “推荐新增”, “广告新增”, “崩溃率”, “平板内存”, “PC内存”, “手机内存”, “客户端帧率”, “服务器崩溃数”, “服务器内存”, “服务器帧率”, and “更新时间” in that order after “Home Recommendation数量”
 - **THEN** the header SHALL NOT contain “客户端内存”
+
+### Requirement: Daily New Users By Acquisition Source
+系统 SHALL 使用 Roblox Creator Analytics 的 `DailyActiveUsers` 日粒度指标，在筛选 `IsNewUser=New` 后按 `AcquisitionSource` 拆分每日新增用户。系统 SHALL 将 `Home Recommendation` 写入“推荐新增”，将 `Sponsored Ads` 写入“广告新增”，且 SHALL NOT 使用 `UniqueUsersWithImpressions` 填充这两列。
+
+#### Scenario: Recommendation and sponsored new users share one breakdown query
+- **WHEN** a report date needs either acquisition new-user field
+- **THEN** the system SHALL query `DailyActiveUsers` with `IsNewUser=New` and an `AcquisitionSource` breakdown
+- **THEN** values for `Home Recommendation` and `Sponsored Ads` SHALL be written to “推荐新增” and “广告新增” for the matching natural date
+
+#### Scenario: Missing source is not converted to zero
+- **WHEN** Roblox explicitly returns zero for an acquisition source and date
+- **THEN** the corresponding sheet cell SHALL contain `0`
+- **WHEN** Roblox omits the source or date from the response
+- **THEN** the corresponding sheet cell SHALL remain blank
+
+#### Scenario: Existing project sheets backfill acquisition new users
+- **WHEN** an enabled project sheet contains historical dates with blank “推荐新增” or “广告新增” cells
+- **THEN** those dates SHALL participate in the existing field-level backfill plan
 
 ### Requirement: Device Memory Percentage Semantics
 The system SHALL populate “平板内存”, “PC内存”, and “手机内存” from client memory usage percentage data for Tablet, Computer, and Phone respectively.
@@ -57,6 +75,12 @@ The system SHALL preserve existing non-empty sheet values when Roblox Analytics 
 
 ### Requirement: Sheet Layout And Styling Stability
 The system MUST add the new columns without corrupting later column data or changing rank font color and bold behavior.
+
+#### Scenario: Existing later columns retain formatting after acquisition columns are added
+- **WHEN** an existing sheet does not yet contain “推荐新增” and “广告新增”
+- **THEN** the system SHALL insert two physical columns immediately after “Home Recommendation数量”
+- **THEN** all later columns SHALL move right with their existing values, fonts, and cell formatting
+- **THEN** retrying a partially completed migration SHALL NOT insert the two columns again
 
 #### Scenario: Rank styling remains scoped to rank columns
 - **WHEN** the project metrics sheet is written after adding performance columns

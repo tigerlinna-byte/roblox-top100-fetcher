@@ -7,6 +7,7 @@ from app.config import Config
 from app.project_metrics_models import ProjectDailyMetricsRecord
 from app.project_metrics_sheet import (
     LEGACY_PROJECT_METRICS_HEADERS,
+    PRE_NEW_USER_PROJECT_METRICS_HEADERS,
     PROJECT_METRICS_HEADERS,
     build_project_metrics_query_dates,
     build_project_metrics_query_plan,
@@ -14,6 +15,8 @@ from app.project_metrics_sheet import (
     build_project_metrics_rebuild_rows,
     build_project_metrics_table,
     build_project_metrics_values,
+    get_project_metrics_end_column_letter,
+    resolve_project_metrics_column_insert_range,
     resolve_project_metrics_variables,
 )
 
@@ -68,6 +71,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             dptr="1.2%",
             five_minute_retention="40%",
             home_recommendations="98",
+            home_recommendation_new_users="44",
+            sponsored_ads_new_users="6",
             client_crash_rate="0.12%",
             tablet_memory_percentage="42%",
             pc_memory_percentage="55%",
@@ -96,6 +101,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("4.2", row[_column("QPTR")])
         self.assertEqual("5.2%", row[_column("PTR")])
         self.assertEqual("1.2%", row[_column("DPTR")])
+        self.assertEqual("44", row[_column("推荐新增")])
+        self.assertEqual("6", row[_column("广告新增")])
         self.assertEqual("0.12%", row[_column("崩溃率")])
         self.assertEqual("42%", row[_column("平板内存")])
         self.assertEqual("55%", row[_column("PC内存")])
@@ -270,7 +277,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_rebuild_rows_preserves_existing_non_empty_cells(self) -> None:
         existing_rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-11（周三）", "200", "15m", "82th", "31%", "71th", "", "", "", "", "", "", "", "4.5%", "", "", "", "88", "0.10%", "42%", "55%", "61%", "58 FPS", "1", "512 MB", "60 FPS", "2026-03-11T01:02:03Z"],
+            ["2026-03-11（周三）", "200", "15m", "82th", "31%", "71th", "", "", "", "", "", "", "", "4.5%", "", "", "", "88", "44", "6", "0.10%", "42%", "55%", "61%", "58 FPS", "1", "512 MB", "60 FPS", "2026-03-11T01:02:03Z"],
         ]
         records = [
             ProjectDailyMetricsRecord(
@@ -301,6 +308,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("71th", rows[1][5])
         self.assertEqual("4.5%", rows[1][_column("QPTR")])
         self.assertEqual("88", rows[1][_column("Home Recommendation数量")])
+        self.assertEqual("44", rows[1][_column("推荐新增")])
+        self.assertEqual("6", rows[1][_column("广告新增")])
         self.assertEqual("0.10%", rows[1][_column("崩溃率")])
         self.assertEqual("42%", rows[1][_column("平板内存")])
         self.assertEqual("55%", rows[1][_column("PC内存")])
@@ -331,6 +340,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             "1.1%",
             "38%",
             "61",
+            "45",
+            "7",
             "0.09%",
             "42%",
             "55%",
@@ -379,6 +390,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
             "1.1%",
             "38%",
             "61",
+            "45",
+            "7",
             "0.09%",
             "42%",
             "55%",
@@ -436,8 +449,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
     def test_build_project_metrics_rank_color_cells_maps_thresholds_and_gradients(self) -> None:
         rows = [
             PROJECT_METRICS_HEADERS.copy(),
-            ["2026-03-12", "", "", "90th", "", "50th", "", "25th", "", "", "0th", "", "同类 70th"] + [""] * 12,
-            ["2026-03-11", "", "", "10th", "", "40th", "", "bad", "", "", "", "", "-3th"] + [""] * 12,
+            ["2026-03-12", "", "", "90th", "", "50th", "", "25th", "", "", "0th", "", "同类 70th"] + [""] * (len(PROJECT_METRICS_HEADERS) - 13),
+            ["2026-03-11", "", "", "10th", "", "40th", "", "bad", "", "", "", "", "-3th"] + [""] * (len(PROJECT_METRICS_HEADERS) - 13),
         ]
 
         cells = build_project_metrics_rank_color_cells(rows)
@@ -547,6 +560,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("", table_state.rows[1][_column("DPTR")])
         self.assertEqual("35%", table_state.rows[1][_column("五分钟留存")])
         self.assertEqual("50", table_state.rows[1][_column("Home Recommendation数量")])
+        self.assertEqual("", table_state.rows[1][_column("推荐新增")])
+        self.assertEqual("", table_state.rows[1][_column("广告新增")])
         self.assertEqual("0.10%", table_state.rows[1][_column("崩溃率")])
         self.assertEqual("", table_state.rows[1][_column("平板内存")])
         self.assertEqual("", table_state.rows[1][_column("PC内存")])
@@ -583,6 +598,8 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("", table_state.rows[1][_column("DPTR")])
         self.assertEqual("35%", table_state.rows[1][_column("五分钟留存")])
         self.assertEqual("50", table_state.rows[1][_column("Home Recommendation数量")])
+        self.assertEqual("", table_state.rows[1][_column("推荐新增")])
+        self.assertEqual("", table_state.rows[1][_column("广告新增")])
         self.assertEqual("0.10%", table_state.rows[1][_column("崩溃率")])
         self.assertEqual("", table_state.rows[1][_column("平板内存")])
         self.assertEqual("", table_state.rows[1][_column("PC内存")])
@@ -591,6 +608,40 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("", table_state.rows[1][_column("服务器崩溃数")])
         self.assertEqual("", table_state.rows[1][_column("服务器内存")])
         self.assertEqual("", table_state.rows[1][_column("服务器帧率")])
+        self.assertEqual("2026-03-10T01:02:03Z", table_state.rows[1][_column("更新时间")])
+
+    def test_project_metrics_end_column_matches_current_header_count(self) -> None:
+        self.assertEqual("AC", get_project_metrics_end_column_letter())
+
+    def test_resolve_project_metrics_column_insert_range_detects_old_schema_once(self) -> None:
+        old_rows = [PRE_NEW_USER_PROJECT_METRICS_HEADERS.copy()]
+
+        self.assertEqual((18, 20), resolve_project_metrics_column_insert_range(old_rows))
+        self.assertIsNone(resolve_project_metrics_column_insert_range([PROJECT_METRICS_HEADERS.copy()]))
+
+        partially_migrated_header = PRE_NEW_USER_PROJECT_METRICS_HEADERS.copy()
+        home_index = partially_migrated_header.index("Home Recommendation数量") + 1
+        partially_migrated_header[home_index:home_index] = ["", ""]
+        self.assertIsNone(resolve_project_metrics_column_insert_range([partially_migrated_header]))
+
+    def test_build_project_metrics_table_preserves_old_schema_values_after_new_columns(self) -> None:
+        old_row = [""] * len(PRE_NEW_USER_PROJECT_METRICS_HEADERS)
+        old_row[PRE_NEW_USER_PROJECT_METRICS_HEADERS.index("日期")] = "2026-03-10"
+        old_row[PRE_NEW_USER_PROJECT_METRICS_HEADERS.index("Home Recommendation数量")] = "50"
+        old_row[PRE_NEW_USER_PROJECT_METRICS_HEADERS.index("崩溃率")] = "0.10%"
+        old_row[PRE_NEW_USER_PROJECT_METRICS_HEADERS.index("服务器帧率")] = "60 FPS"
+        old_row[PRE_NEW_USER_PROJECT_METRICS_HEADERS.index("更新时间")] = "2026-03-10T01:02:03Z"
+
+        table_state = build_project_metrics_table(
+            [PRE_NEW_USER_PROJECT_METRICS_HEADERS.copy(), old_row],
+            [],
+        )
+
+        self.assertEqual("50", table_state.rows[1][_column("Home Recommendation数量")])
+        self.assertEqual("", table_state.rows[1][_column("推荐新增")])
+        self.assertEqual("", table_state.rows[1][_column("广告新增")])
+        self.assertEqual("0.10%", table_state.rows[1][_column("崩溃率")])
+        self.assertEqual("60 FPS", table_state.rows[1][_column("服务器帧率")])
         self.assertEqual("2026-03-10T01:02:03Z", table_state.rows[1][_column("更新时间")])
 
 
