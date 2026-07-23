@@ -1193,7 +1193,7 @@ class RobloxCreatorMetricsClient:
             return MetricSeriesResult(
                 values=_format_series(
                     _extract_breakdown_daily_average(values, spec.breakdown_match_values, business_timezone),
-                    _format_gigabytes_from_megabytes,
+                    _format_gigabytes_from_bytes,
                 ),
                 ranks={},
             )
@@ -1698,8 +1698,10 @@ def _format_memory_usage(value: float) -> str:
     return f"{value:.2f}".rstrip("0").rstrip(".") + " MB"
 
 
-def _format_gigabytes_from_megabytes(value: float) -> str:
-    value_gb = value / 1024
+def _format_gigabytes_from_bytes(value: float) -> str:
+    """将 ClientMemoryUsageAvg 返回的字节数转换为 GiB，并沿用 GB 展示。"""
+
+    value_gb = value / (1024 ** 3)
     return f"{value_gb:.2f}".rstrip("0").rstrip(".") + " GB"
 
 

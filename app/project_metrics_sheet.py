@@ -167,6 +167,8 @@ PROJECT_METRICS_RANK_COLOR_STOPS = (
 )
 PROJECT_METRICS_RANK_MAX_COLOR_VALUE = 90.0
 RANK_NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
+# Roblox 客户端内存实际不会达到 1 TiB；超过该值的 GB 是旧版字节换算错误产生的异常值。
+MAX_REASONABLE_DEVICE_MEMORY_GB = 1024.0
 
 
 @dataclass(frozen=True)
@@ -808,7 +810,7 @@ def _normalize_field_value(field_name: str, value: str) -> str:
     }:
         return text if "%" in text else ""
     if field_name in {"tablet_memory_gb", "pc_memory_gb", "phone_memory_gb"}:
-        return text if _looks_like_gigabytes_text(text) else ""
+        return text if _looks_like_device_memory_gigabytes_text(text) else ""
     if field_name in {
         "peak_ccu",
         "home_recommendations",
@@ -850,11 +852,18 @@ def _looks_like_decimal_number_text(value: str) -> bool:
     return text.replace(".", "", 1).isdigit()
 
 
-def _looks_like_gigabytes_text(value: str) -> bool:
+def _looks_like_device_memory_gigabytes_text(value: str) -> bool:
     text = value.strip()
     if not text.upper().endswith(" GB"):
         return False
-    return _looks_like_decimal_number_text(text[:-3])
+    numeric_text = text[:-3].strip()
+    if not _looks_like_decimal_number_text(numeric_text):
+        return False
+    try:
+        numeric_value = float(numeric_text.replace(",", ""))
+    except ValueError:
+        return False
+    return 0 <= numeric_value < MAX_REASONABLE_DEVICE_MEMORY_GB
 
 
 def _column_letter(index: int) -> str:

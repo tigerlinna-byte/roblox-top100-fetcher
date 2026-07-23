@@ -52,14 +52,20 @@ The system SHALL populate “平板内存”, “PC内存”, and “手机内�
 - **THEN** the system SHALL write the Computer value to “PC内存”
 - **THEN** the system SHALL write the Phone value to “手机内存”
 
-#### Scenario: Device memory is converted from MB to GB
-- **WHEN** Roblox returns device memory values in MB
+#### Scenario: Device memory is converted from bytes to GB
+- **WHEN** Roblox returns device memory values in bytes
 - **THEN** the system SHALL average multiple values for the same platform and business date
-- **THEN** the system SHALL divide the daily MB value by 1024 and format the result with a `GB` suffix and at most two decimal places
+- **THEN** the system SHALL divide the daily byte value by `1024^3` and format the result with a `GB` suffix and at most two decimal places
 
 #### Scenario: Legacy percentages are scheduled for actual-value backfill
 - **WHEN** an existing “平板内存”, “PC内存”, or “手机内存” cell contains a percentage
 - **THEN** the percentage SHALL NOT be treated as a valid actual memory value
+- **THEN** the corresponding actual-memory field SHALL participate in the field-level historical backfill plan
+- **THEN** the cell SHALL remain blank when Roblox does not return an actual value
+
+#### Scenario: Legacy byte-scaled values are scheduled for actual-value backfill
+- **WHEN** an existing device-memory cell contains a value at or above `1024 GB`
+- **THEN** the value SHALL be treated as an invalid legacy conversion result
 - **THEN** the corresponding actual-memory field SHALL participate in the field-level historical backfill plan
 - **THEN** the cell SHALL remain blank when Roblox does not return an actual value
 

@@ -307,21 +307,21 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         {
                             "breakdownValue": [{"dimension": "Platform", "value": "Tablet"}],
                             "dataPoints": [
-                                {"time": "2026-03-10T00:00:00Z", "value": 512},
-                                {"time": "2026-03-11T00:00:00Z", "value": 512},
-                                {"time": "2026-03-11T12:00:00Z", "value": 1024},
+                                {"time": "2026-03-10T00:00:00Z", "value": 536870912},
+                                {"time": "2026-03-11T00:00:00Z", "value": 536870912},
+                                {"time": "2026-03-11T12:00:00Z", "value": 1073741824},
                             ],
                         },
                         {
                             "breakdownValue": [{"dimension": "Platform", "value": "Computer"}],
                             "dataPoints": [
-                                {"time": "2026-03-11T00:00:00Z", "value": 2048},
+                                {"time": "2026-03-11T00:00:00Z", "value": 2147483648},
                             ],
                         },
                         {
                             "breakdownValue": [{"dimension": "Platform", "value": "Phone"}],
                             "dataPoints": [
-                                {"time": "2026-03-11T00:00:00Z", "value": 1536},
+                                {"time": "2026-03-11T00:00:00Z", "value": 1610612736},
                             ],
                         },
                     ]))

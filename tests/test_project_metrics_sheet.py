@@ -469,6 +469,29 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertIn("pc_memory_gb", query_plan[date(2026, 3, 10)])
         self.assertIn("phone_memory_gb", query_plan[date(2026, 3, 10)])
 
+    def test_old_byte_scaled_memory_gb_values_are_cleared_and_scheduled_for_backfill(self) -> None:
+        old_row = [""] * len(PROJECT_METRICS_HEADERS)
+        old_row[_column("日期")] = "2026-03-10（周二）"
+        old_row[_column("平板内存")] = "1098008.25 GB"
+        old_row[_column("PC内存")] = "2307574.38 GB"
+        old_row[_column("手机内存")] = "968724.98 GB"
+        existing_rows = [PROJECT_METRICS_HEADERS.copy(), old_row]
+
+        table_state = build_project_metrics_table(existing_rows, [])
+        query_plan = build_project_metrics_query_plan(
+            existing_rows,
+            date(2026, 3, 10),
+            date(2026, 3, 10),
+            max_data_rows=1,
+        )
+
+        self.assertEqual("", table_state.rows[1][_column("平板内存")])
+        self.assertEqual("", table_state.rows[1][_column("PC内存")])
+        self.assertEqual("", table_state.rows[1][_column("手机内存")])
+        self.assertIn("tablet_memory_gb", query_plan[date(2026, 3, 10)])
+        self.assertIn("pc_memory_gb", query_plan[date(2026, 3, 10)])
+        self.assertIn("phone_memory_gb", query_plan[date(2026, 3, 10)])
+
     def test_build_project_metrics_rank_color_cells_maps_thresholds_and_gradients(self) -> None:
         rows = [
             PROJECT_METRICS_HEADERS.copy(),
