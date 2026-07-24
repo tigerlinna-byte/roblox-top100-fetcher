@@ -433,8 +433,14 @@ class RobloxCreatorMetricsClient:
         for metric in ROBLOX_MONEY_REVENUE_METRIC_CANDIDATES:
             metadata_latest_date = metadata_by_metric.get(metric)
             report_end_date = latest_allowed_date
-            if metadata_latest_date is not None:
-                report_end_date = min(report_end_date, metadata_latest_date)
+            if metadata_latest_date is not None and metadata_latest_date < latest_allowed_date:
+                logging.info(
+                    "Revenue metadata for %s is behind the query window (%s < %s); "
+                    "using the revenue series response as the source of truth.",
+                    project_id,
+                    metadata_latest_date.isoformat(),
+                    latest_allowed_date.isoformat(),
+                )
             if report_end_date < minimum_start_date:
                 continue
 

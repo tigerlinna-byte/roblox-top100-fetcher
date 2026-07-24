@@ -14,6 +14,7 @@ from app.roblox_creator_metrics_client import (
     RobloxCreatorMetricsClientError,
     resolve_project_metrics_query_date_bounds,
 )
+from app.roblox_money_models import ROBLOX_MONEY_REVENUE_METRIC_CANDIDATES
 
 
 def _build_json_response(payload: dict, *, status_code: int = 200, headers: dict[str, str] | None = None) -> Mock:
@@ -89,7 +90,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         self.assertEqual((date(2026, 7, 6), date(2026, 7, 7)), bounds)
 
-    def test_fetch_project_revenue_series_uses_latest_available_revenue_month(self) -> None:
+    def test_fetch_project_revenue_series_ignores_stale_revenue_metadata_date(self) -> None:
         session = Mock()
 
         def request(method: str, url: str, **kwargs):
@@ -99,14 +100,22 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         "done": True,
                         "metricMetadataResult": {
                             "metadata": [
-                                {"metric": "Revenue", "latestAvailableTime": "2026-05-04T00:00:00Z"},
+                                {
+                                    "metric": metric,
+                                    "latestAvailableTime": "2026-05-02T00:00:00Z",
+                                }
+                                for metric in ROBLOX_MONEY_REVENUE_METRIC_CANDIDATES
                             ]
                         },
                     }
                 })
             if method == "POST" and "analytics-query-gateway" in url:
                 metric = kwargs["json"]["query"]["metric"]
-                self.assertEqual("Revenue", metric)
+                self.assertEqual("2026-05-05T00:00:00.000Z", kwargs["json"]["query"]["endTime"])
+                if metric != "DailyRevenue":
+                    return _build_json_response(
+                        _wrap_query_result({"breakdownValue": [], "dataPoints": []})
+                    )
                 return _build_json_response(
                     _wrap_query_result(
                         {"breakdownValue": [], "dataPoints": [
@@ -136,7 +145,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 minimum_start_date=date(2026, 5, 1),
             )
 
-        self.assertEqual("Revenue", series.metric)
+        self.assertEqual("DailyRevenue", series.metric)
         self.assertEqual(
             {
                 "2026-05-01": 1000,

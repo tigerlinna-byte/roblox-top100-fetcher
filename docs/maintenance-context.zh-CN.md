@@ -326,6 +326,9 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 - 用于过滤还未成熟的留存和 cohort 数据
 - 避免把“未来还没产出”的空数据错误写进日报
 
+收入日报是例外：Creator Analytics 的收入 metadata 可能落后于 Explore 页面实际返回的收入序列，
+因此 `roblox_money` 不使用 metadata 的日期截断收入查询，而是以实际收入序列返回的最大业务日期为准。
+
 `Home Recommendation数量` 与新增用户来源列是两个不同口径：
 
 - `Home Recommendation数量` 继续使用 `UniqueUsersWithImpressions`，表示 Home Recommendation 曝光用户数。
@@ -405,6 +408,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 #### 收入口径
 
 - 每日收入展示 Roblox Analytics 当前最新可用收入日期的一天收入，避免早上抓到尚未产出的日期
+- 收入查询以实际收入序列返回的最大业务日期为准，不使用可能滞后的 `metrics/metadata` 日期硬截断
 - 月累计按统计日所在自然月计算，从自然月 1 日累计到该统计日
 - 2026 年 5 月因为功能起始日是 `2026-05-01`，所以本月累计从 `2026-05-01` 开始
 - 后续月份自动从当月 1 日开始累计
