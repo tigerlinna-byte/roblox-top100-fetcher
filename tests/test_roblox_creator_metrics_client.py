@@ -326,10 +326,22 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                         },
                     ]))
                 if metric == "ClientFpsAvg":
-                    return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
-                        {"time": "2026-03-10T00:00:00Z", "value": 58.25},
-                        {"time": "2026-03-11T00:00:00Z", "value": 59.5},
-                    ]}))
+                    return _build_json_response(_wrap_query_result([
+                        {
+                            "breakdownValue": [{"dimension": "Platform", "value": "Tablet"}],
+                            "dataPoints": [
+                                {"time": "2026-03-11T00:00:00Z", "value": 30.0},
+                            ],
+                        },
+                        {
+                            "breakdownValue": [{"dimension": "Platform", "value": "Phone"}],
+                            "dataPoints": [
+                                {"time": "2026-03-10T00:00:00Z", "value": 58.25},
+                                {"time": "2026-03-11T00:00:00Z", "value": 58.5},
+                                {"time": "2026-03-11T12:00:00Z", "value": 60.5},
+                            ],
+                        },
+                    ]))
                 if metric == "ServerCrashCount":
                     return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": [
                         {"time": "2026-03-10T00:00:00Z", "value": 1},
@@ -403,6 +415,15 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         ]
         self.assertTrue(memory_requests)
         self.assertTrue(all(request["breakdown"] == [{"dimensions": ["Platform"]}] for request in memory_requests))
+        frame_rate_requests = [
+            json_payload["query"]
+            for call in session.request.call_args_list
+            if isinstance((json_payload := call.kwargs.get("json")), dict)
+            and json_payload.get("query", {}).get("metric") == "ClientFpsAvg"
+        ]
+        self.assertTrue(frame_rate_requests)
+        self.assertTrue(all(request["breakdown"] == [{"dimensions": ["Platform"]}] for request in frame_rate_requests))
+        self.assertTrue(all("filter" not in request for request in frame_rate_requests))
         server_memory_requests = [
             json_payload["query"]
             for call in session.request.call_args_list

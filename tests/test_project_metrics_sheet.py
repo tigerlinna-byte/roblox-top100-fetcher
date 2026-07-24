@@ -107,7 +107,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("0.75 GB", row[_column("平板内存")])
         self.assertEqual("2 GB", row[_column("PC内存")])
         self.assertEqual("1.5 GB", row[_column("手机内存")])
-        self.assertEqual("59.5 FPS", row[_column("客户端帧率")])
+        self.assertEqual("59.5 FPS", row[_column("移动端帧率")])
         self.assertEqual("2", row[_column("服务器崩溃数")])
         self.assertEqual("512 MB", row[_column("服务器内存")])
         self.assertEqual("60 FPS", row[_column("服务器帧率")])
@@ -314,7 +314,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("0.75 GB", rows[1][_column("平板内存")])
         self.assertEqual("2 GB", rows[1][_column("PC内存")])
         self.assertEqual("1.5 GB", rows[1][_column("手机内存")])
-        self.assertEqual("58 FPS", rows[1][_column("客户端帧率")])
+        self.assertEqual("58 FPS", rows[1][_column("移动端帧率")])
         self.assertEqual("1", rows[1][_column("服务器崩溃数")])
         self.assertEqual("512 MB", rows[1][_column("服务器内存")])
         self.assertEqual("60 FPS", rows[1][_column("服务器帧率")])
@@ -492,6 +492,32 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertIn("pc_memory_gb", query_plan[date(2026, 3, 10)])
         self.assertIn("phone_memory_gb", query_plan[date(2026, 3, 10)])
 
+    def test_old_all_platform_frame_rate_is_cleared_and_scheduled_for_phone_backfill(self) -> None:
+        old_headers = PROJECT_METRICS_HEADERS.copy()
+        old_headers[_column("移动端帧率")] = "客户端帧率"
+        old_row = [""] * len(old_headers)
+        old_row[_column("日期")] = "2026-03-10（周二）"
+        old_row[_column("移动端帧率")] = "58 FPS"
+        old_row[_column("服务器崩溃数")] = "2"
+        old_row[_column("服务器内存")] = "512 MB"
+        old_row[_column("服务器帧率")] = "60 FPS"
+        existing_rows = [old_headers, old_row]
+
+        table_state = build_project_metrics_table(existing_rows, [])
+        query_plan = build_project_metrics_query_plan(
+            existing_rows,
+            date(2026, 3, 10),
+            date(2026, 3, 10),
+            max_data_rows=1,
+        )
+
+        self.assertEqual("移动端帧率", table_state.rows[0][_column("移动端帧率")])
+        self.assertEqual("", table_state.rows[1][_column("移动端帧率")])
+        self.assertEqual("2", table_state.rows[1][_column("服务器崩溃数")])
+        self.assertEqual("512 MB", table_state.rows[1][_column("服务器内存")])
+        self.assertEqual("60 FPS", table_state.rows[1][_column("服务器帧率")])
+        self.assertIn("client_frame_rate", query_plan[date(2026, 3, 10)])
+
     def test_build_project_metrics_rank_color_cells_maps_thresholds_and_gradients(self) -> None:
         rows = [
             PROJECT_METRICS_HEADERS.copy(),
@@ -612,7 +638,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("", table_state.rows[1][_column("平板内存")])
         self.assertEqual("", table_state.rows[1][_column("PC内存")])
         self.assertEqual("", table_state.rows[1][_column("手机内存")])
-        self.assertEqual("", table_state.rows[1][_column("客户端帧率")])
+        self.assertEqual("", table_state.rows[1][_column("移动端帧率")])
         self.assertEqual("", table_state.rows[1][_column("服务器崩溃数")])
         self.assertEqual("", table_state.rows[1][_column("服务器内存")])
         self.assertEqual("", table_state.rows[1][_column("服务器帧率")])
@@ -650,7 +676,7 @@ class ProjectMetricsSheetTests(unittest.TestCase):
         self.assertEqual("", table_state.rows[1][_column("平板内存")])
         self.assertEqual("", table_state.rows[1][_column("PC内存")])
         self.assertEqual("", table_state.rows[1][_column("手机内存")])
-        self.assertEqual("", table_state.rows[1][_column("客户端帧率")])
+        self.assertEqual("", table_state.rows[1][_column("移动端帧率")])
         self.assertEqual("", table_state.rows[1][_column("服务器崩溃数")])
         self.assertEqual("", table_state.rows[1][_column("服务器内存")])
         self.assertEqual("", table_state.rows[1][_column("服务器帧率")])

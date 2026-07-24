@@ -336,6 +336,8 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 
 客户端设备内存使用 `ClientMemoryUsageAvg`，沿用 `Platform` breakdown 分别读取 `Tablet`、`Computer` 和 `Phone`。接口原始值按字节处理，同一业务日有多个点时先取日平均，再按 `1024^3 bytes = 1 GB` 换算，最多保留两位小数并去掉末尾多余零。飞书中的 `平板内存`、`PC内存`、`手机内存` 均显示为 GB；旧表中的百分比和明显超过 `1024 GB` 的旧版错误换算值属于已废弃口径，读取时会视为空值并进入字段级历史回填，不能回填实际值的日期保持空白。
 
+`移动端帧率` 继续使用 `ClientFpsAvg` 的 Daily 指标和 Universe 查询范围，只增加 `Platform` breakdown 并提取 `Phone` 序列；不增加 `Place` 筛选。同一业务日有多个 Phone 数据点时取平均并显示为 FPS。旧表中的 `客户端帧率` 是未区分平台的旧口径，迁移时不再沿用其数值，而是把对应日期的 `client_frame_rate` 字段置空并进入历史回填；内部字段名及 JSON/CSV 键名仍保持 `client_frame_rate`。
+
 #### 项目日报表格表现层规则
 
 项目日报表包含 `ARPDAU` 列，数据来源为 Roblox Creator Analytics 的 `AverageRevenuePerUser` 日粒度指标。该列位于 `付费率` 前方，按货币格式写入，不参与同类排名字体颜色或加粗样式。

@@ -214,7 +214,15 @@ DIRECT_QUERY_SPECS = (
         breakdown_dimensions=("Platform",),
         breakdown_match_values=("Phone", "Mobile"),
     ),
-    MetricQuerySpec("client_frame_rate", "ClientFpsAvg", "METRIC_GRANULARITY_ONE_DAY", 14, "frame_rate"),
+    MetricQuerySpec(
+        "client_frame_rate",
+        "ClientFpsAvg",
+        "METRIC_GRANULARITY_ONE_DAY",
+        14,
+        "breakdown_frame_rate",
+        breakdown_dimensions=("Platform",),
+        breakdown_match_values=("Phone",),
+    ),
     MetricQuerySpec("server_crashes", "ServerCrashCount", "METRIC_GRANULARITY_ONE_DAY", 14, "daily_sum"),
     MetricQuerySpec(
         "server_memory",
@@ -1194,6 +1202,16 @@ class RobloxCreatorMetricsClient:
                 values=_format_series(
                     _extract_breakdown_daily_average(values, spec.breakdown_match_values, business_timezone),
                     _format_gigabytes_from_bytes,
+                ),
+                ranks={},
+            )
+        if spec.value_type == "breakdown_frame_rate":
+            if not spec.breakdown_match_values:
+                return MetricSeriesResult(values={}, ranks={})
+            return MetricSeriesResult(
+                values=_format_series(
+                    _extract_breakdown_daily_average(values, spec.breakdown_match_values, business_timezone),
+                    _format_frame_rate,
                 ),
                 ranks={},
             )

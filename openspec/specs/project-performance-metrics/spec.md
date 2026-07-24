@@ -18,11 +18,11 @@ TBD - created by archiving change add-project-performance-metrics. Update Purpos
 - **THEN** columns that previously held rank values SHALL have stale rank font color and bold styling cleared when they now hold ordinary metric values
 
 ### Requirement: Daily Performance Columns
-The system SHALL include project daily performance columns for client crash rate, tablet client memory percentage, PC client memory percentage, phone client memory percentage, client frame rate, server crashes, server memory usage, and server frame rate in each project metrics Feishu sheet. The system SHALL NOT include a generic client memory usage column.
+The system SHALL include project daily performance columns for client crash rate, tablet client memory usage, PC client memory usage, phone client memory usage, phone frame rate, server crashes, server memory usage, and server frame rate in each project metrics Feishu sheet. The system SHALL NOT include a generic client memory usage column.
 
 #### Scenario: Sheet header includes performance columns
 - **WHEN** a project metrics sheet is rebuilt
-- **THEN** the header SHALL contain “推荐新增”, “广告新增”, “崩溃率”, “平板内存”, “PC内存”, “手机内存”, “客户端帧率”, “服务器崩溃数”, “服务器内存”, “服务器帧率”, and “更新时间” in that order after “Home Recommendation数量”
+- **THEN** the header SHALL contain “推荐新增”, “广告新增”, “崩溃率”, “平板内存”, “PC内存”, “手机内存”, “移动端帧率”, “服务器崩溃数”, “服务器内存”, “服务器帧率”, and “更新时间” in that order after “Home Recommendation数量”
 - **THEN** the header SHALL NOT contain “客户端内存”
 
 ### Requirement: Daily New Users By Acquisition Source
@@ -69,6 +69,21 @@ The system SHALL populate “平板内存”, “PC内存”, and “手机内�
 - **THEN** the corresponding actual-memory field SHALL participate in the field-level historical backfill plan
 - **THEN** the cell SHALL remain blank when Roblox does not return an actual value
 
+### Requirement: Phone Frame Rate Semantics
+The system SHALL populate “移动端帧率” from the `Phone` series of the daily `ClientFpsAvg` metric with a `Platform` breakdown. The query SHALL keep the existing Universe scope and SHALL NOT add a `Place` filter.
+
+#### Scenario: Phone platform is selected from the frame-rate breakdown
+- **WHEN** Roblox Analytics returns `ClientFpsAvg` series for multiple platforms
+- **THEN** the system SHALL use only the series whose `Platform` breakdown value is `Phone`
+- **THEN** the system SHALL average multiple Phone values for the same business date
+- **THEN** Tablet and Computer values SHALL NOT contribute to “移动端帧率”
+
+#### Scenario: Legacy all-platform frame rate is scheduled for Phone backfill
+- **WHEN** an existing sheet uses the “客户端帧率” header
+- **THEN** its all-platform values SHALL NOT be treated as valid Phone frame-rate values
+- **THEN** the system SHALL rename the header to “移动端帧率” without shifting later columns
+- **THEN** the corresponding `client_frame_rate` field SHALL participate in the historical backfill plan
+
 ### Requirement: Crash Rate Header Rename
 The system SHALL treat the existing “报错率” value as client crash rate and display it as “崩溃率” after the migration.
 
@@ -84,7 +99,7 @@ The system SHALL write performance metric values for the natural date shown in t
 - **THEN** the system SHALL write that value into the row for the same report date
 
 ### Requirement: Historical Data Preservation
-The system SHALL preserve existing non-empty sheet values when Roblox Analytics does not return a replacement value for a newly added or existing metric, except for legacy device-memory percentages that are incompatible with the current GB semantics.
+The system SHALL preserve existing non-empty sheet values when Roblox Analytics does not return a replacement value for a newly added or existing metric, except for legacy device-memory values that are incompatible with the current GB semantics and legacy all-platform client frame-rate values that are incompatible with the Phone-only semantics.
 
 #### Scenario: Missing new metric leaves existing data intact
 - **WHEN** a project metrics row already contains values and a new Roblox response omits one performance metric for that date
