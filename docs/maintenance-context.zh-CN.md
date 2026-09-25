@@ -219,7 +219,11 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 
 如果 `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT=true`，项目日报会临时跳过第二项目槽位 `ROBLOX_CREATOR_OVERVIEW_URL_2`。这只影响 `roblox_project_daily_metrics`：不抓取第二项目、不写第二项目飞书表、不在 `project_metrics_*.json/csv` 中输出第二项目记录，也不发送第二项目表格链接；`roblox_money` 收入日报默认使用第一、第三、第四和第五项目槽位，不受该开关影响。当前 GitHub Actions workflow 未配置该变量时按 `true` 注入，默认不发送第二项目 Jail Ur Fiends 的日报表格；如需恢复第二项目日报，则在 GitHub Variables 中明确设为 `false`。
 
-第一项目 `Shoot Or Shot` 的项目日报表格仍会更新并写入 artifacts，但表格链接只发送到 test 群。Worker 会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 作为 `project_metrics_primary_project_test_chat_ids` 传给 GitHub Actions，Python 侧只向 `RUN_CHAT_ID` 与这组 test 群的交集发送第一项目链接；其他项目链接仍发送给本次 `RUN_CHAT_ID` 的所有群。如果不是通过 Worker 触发，可用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 作为兜底。
+第一项目 `Shoot Or Shot` 的项目日报表格仍会更新并写入 artifacts，但表格链接只发送到 test 群。Worker 会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 作为 `project_metrics_primary_project_test_chat_ids` 传给 GitHub Actions，Python 侧只向 `RUN_CHAT_ID` 与这组 test 群的交集发送第一项目链接。如果不是通过 Worker 触发，可用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 作为兜底。
+
+`Soccer RNG`（`10304101434`）和 `soccer大亨版`（`10403337696`）的项目日报链接及抓取失败明细也只发到上述 test 群名单中的本次目标群，即全量群；精简群不接收这两个项目的日报信息。规则按项目 ID 判断，不依赖群名、项目显示名称或配置槽位。其他启用项目的链接仍发送给本次全部目标群，项目抓取、表格更新和 artifacts 仍包含这两个 Soccer 项目。
+
+项目日报失败摘要按接收群生成：全量群保留完整明细，精简群移除两个 Soccer 项目的失败明细并重新计算失败项目数；过滤后没有失败项则不发摘要。处理包含 Soccer 项目的结果时，若全量群名单或 `RUN_CHAT_ID` 为空，会在表格同步与结果发送前报错；需要向全量群发送但缺少飞书应用凭据时同样报错，不回退到全群或固定 webhook。
 
 #### 当前项目日报能力边界
 
@@ -472,9 +476,9 @@ Worker 允许通过环境变量改命令文本：
 | 维护称呼 | 含义 | 实际飞书群名 | `chat_id` |
 | --- | --- | --- | --- |
 | 全量群 | 接收较完整的推送，包括受限的第一项目日报链接和收入日报 | 待核对线上配置 | 待核对线上配置 |
-| 精简群 | 接收部分推送，按规则不发送某些消息或链接 | 待核对线上配置 | 待核对线上配置 |
+| 精简群 | 不接收收入日报、Shoot Or Shot 日报链接，以及两个 Soccer 项目的日报链接和失败明细 | 待核对线上配置 | 待核对线上配置 |
 
-截至 2026-09-25，这两个称呼依据使用者描述建立，尚未核对线上群名、`chat_id` 和配置归属。不能仅凭群名或“第一个群 / 第二个群”判断目标，也不能把示例 ID 当成真实 ID。核对后应补齐上表。
+截至 2026-09-25，使用者已确认“精简群”就是原先不接收收入日报、也不接收 Shoot Or Shot 日报链接的群，分流复用现有 test 群名单。尚未核对线上真实群名与 `chat_id`，核对后应补齐上表；不能把示例 ID 当成真实 ID。
 
 代码目前没有名为“全量群 / 精简群”的独立配置或完整订阅模型，而是通过以下规则分流：
 
@@ -482,18 +486,19 @@ Worker 允许通过环境变量改命令文本：
 | --- | --- | --- |
 | 今日关注卡片 | 定时发到 `SCHEDULE_CHAT_IDS`；飞书命令触发时回到来源群 | `worker/src/index.js`、`app/main.py` |
 | 第一项目 Shoot Or Shot 日报链接 | 限制名单非空时，只发到 `RUN_CHAT_ID` 与 `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 的交集 | `app/main.py` 的 `_send_primary_project_metrics_url()` |
-| 其他启用项目的日报链接 | 本次 `RUN_CHAT_ID` 中的所有目标群 | `app/main.py` 的 `_notify_success()` |
+| 两个 Soccer 项目的日报链接和失败明细 | 只发到 `RUN_CHAT_ID` 与 `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 的交集；名单缺失时报错 | `app/main.py` 的 `_resolve_soccer_notification_config()`、`_notify_success()` |
+| 其余启用项目的日报链接 | 本次 `RUN_CHAT_ID` 中的所有目标群 | `app/main.py` 的 `_notify_success()` |
 | 收入日报 | 定时只发到 `ROBLOX_MONEY_TEST_CHAT_IDS`；该名单非空时，飞书命令仅允许名单内的群触发并接收结果 | `worker/src/index.js` |
 
-Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作流的 `project_metrics_primary_project_test_chat_ids`，作为第一项目链接的限制名单；该输入为空时，工作流尝试使用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`。因此，代码中称为 test 群的名单承担了更多信息的接收职责，但其对应哪个真实群仍须核对线上配置。
+Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作流的 `project_metrics_primary_project_test_chat_ids`，作为第一项目链接及两个 Soccer 项目日报消息的限制名单；该输入为空时，工作流尝试使用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`。变量名为兼容现有 Worker 和工作流而保留，实际用途已不限于第一项目。
 
 这里的 test 群名单与 Top Trending 的“正式 / 测试历史排名变量”是两个独立概念：历史排名变量按 `RUN_TRIGGER_SOURCE` 选择，不按群名或群角色选择。
 
 #### 只修改一个群时
 
-需求必须明确“目标群角色及真实 `chat_id`、消息类型、具体变化”，例如：
+需求必须明确“目标群（已确认对应关系的群角色或真实 `chat_id`）、消息类型、具体变化”，例如：
 
-> 只改精简群（填写已核对的真实 `chat_id`）：不再推送 Soccer RNG 日报链接；全量群保持现状。
+> 只改精简群（通过已确认的群角色或真实 `chat_id` 定位）：隐藏 Soccer RNG 和 soccer大亨版的日报链接及失败明细；全量群保持现状。
 
 | 修改内容 | 当前影响范围与处理要求 |
 | --- | --- |
@@ -502,11 +507,12 @@ Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作�
 | 日报表格的列或数据 | 表格按项目共用，修改同一张表会影响所有可访问该表的人；如需按群展示不同表格内容，需要独立表格或其他明确的隔离方案 |
 | 项目抓取或全局开关 | 影响整个运行链路；例如 `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT` 是全局跳过第二项目，不是某一个群的隐藏开关 |
 
-当前“隐藏”主要表示不发送消息或链接，不会同步修改飞书表格的访问权限。第一项目表格仍会更新并写入 artifacts；项目日报的部分失败说明仍发到本次所有目标群，不能把成功链接的过滤理解为该项目全部信息均已隔离。
+当前“隐藏”表示过滤后续项目日报消息，不会删除已发送消息或修改飞书表格的访问权限。第一项目和两个 Soccer 项目的表格仍会更新并写入 artifacts；两个 Soccer 项目的失败明细按群过滤，其他项目的失败明细仍发送给本次全部目标群。
 
 #### 配置边界
 
 - 第一项目限制名单最终为空时，`_send_primary_project_metrics_url()` 会恢复向本次全部目标群发送链接，不会默认隐藏。
+- 两个 Soccer 项目的日报采用严格名单校验：名单或本次目标群为空时报错；向全量群投递必须具备飞书应用凭据，并禁用固定 webhook 回退。配置错误时本次项目日报在结果发送前停止，不能依赖第一项目的旧回退行为发送 Soccer 信息。
 - `ROBLOX_MONEY_TEST_CHAT_IDS` 为空时，收入日报定时任务会跳过；但手动命令的名单校验使用 `isAllowedValue()`，空名单默认放行，仍受 `ALLOWED_CHAT_IDS` / `ALLOWED_OPEN_IDS` 限制。上文“仅 test 群可触发”的描述以该名单非空为前提。
 - Python 收入日报发送逻辑直接使用 `RUN_CHAT_ID`，不会再次校验 Worker 的 test 群名单；从 GitHub Actions 直接运行时必须明确核对接收群。
 - 按 `chat_id` 精确投递依赖可用的飞书应用身份。缺少应用凭据时，发送函数可能改用已配置的固定 `FEISHU_BOT_WEBHOOK`，此路径不能按 `RUN_CHAT_ID` 区分群。
@@ -567,7 +573,7 @@ Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作�
 - `ROBLOX_CREATOR_OVERVIEW_URL_4`
 - `ROBLOX_CREATOR_OVERVIEW_URL_5`
 - `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT`，可选；当前 GitHub Actions 未配置时按 `true` 注入，默认跳过第二项目槽位；如需恢复第二项目日报则设为 `false`
-- `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`，可选；Worker 触发时通常由 `ROBLOX_MONEY_TEST_CHAT_IDS` 自动传入，用于限制第一项目表格链接只发 test 群
+- `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`；Worker 触发时通常由 `ROBLOX_MONEY_TEST_CHAT_IDS` 自动传入，用于限制第一项目表格链接及两个 Soccer 项目日报消息只发 test 群。包含 Soccer 项目的日报结果要求该名单非空；直接从 GitHub Actions 运行时需配置该 Variable 或同名用途的工作流输入
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE`

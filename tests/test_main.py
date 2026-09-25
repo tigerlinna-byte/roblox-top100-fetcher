@@ -238,6 +238,10 @@ class MainTests(unittest.TestCase):
     def test_project_metrics_success_sends_each_project_sheet_url(self, feishu_client_cls, sync_sheet) -> None:
         cfg = Config(
             run_report_mode="roblox_project_daily_metrics",
+            run_chat_id="oc_full_chat",
+            project_metrics_primary_project_test_chat_ids="oc_full_chat",
+            feishu_app_id="test_app",
+            feishu_app_secret="test_secret",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
             roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
             roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
