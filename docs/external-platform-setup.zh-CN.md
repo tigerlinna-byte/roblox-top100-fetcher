@@ -320,6 +320,8 @@ npx wrangler deploy
 
 拿到后再回填限制，最后重新部署 Worker。
 
+对于已有的两个推送群，还应将核对后的群名与 `chat_id` 填入维护手册的“全量群 / 精简群”对照表，并核对它们在 `SCHEDULE_CHAT_IDS`、`ROBLOX_MONEY_TEST_CHAT_IDS` 及第一项目链接限制名单中的归属。现有分流规则、空配置行为和单群修改边界见[维护手册 4.3 节](./maintenance-context.zh-CN.md#43-全量群精简群与单群修改范围)。不能只凭群名判断接收范围。
+
 ## 7. 联调命令
 
 当前默认支持 4 条命令：

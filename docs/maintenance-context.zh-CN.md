@@ -465,6 +465,54 @@ Worker 允许通过环境变量改命令文本：
 - Python 侧会拆分后逐个群发送
 - 收入日报定时只使用 `ROBLOX_MONEY_TEST_CHAT_IDS`，并且手动 `/roblox-money` 也只允许这些群触发
 
+### 4.3 全量群、精简群与单群修改范围
+
+维护沟通中统一使用以下称呼，实际发送与修改以飞书 `chat_id` 唯一定位，群名仅作为辅助说明：
+
+| 维护称呼 | 含义 | 实际飞书群名 | `chat_id` |
+| --- | --- | --- | --- |
+| 全量群 | 接收较完整的推送，包括受限的第一项目日报链接和收入日报 | 待核对线上配置 | 待核对线上配置 |
+| 精简群 | 接收部分推送，按规则不发送某些消息或链接 | 待核对线上配置 | 待核对线上配置 |
+
+截至 2026-09-25，这两个称呼依据使用者描述建立，尚未核对线上群名、`chat_id` 和配置归属。不能仅凭群名或“第一个群 / 第二个群”判断目标，也不能把示例 ID 当成真实 ID。核对后应补齐上表。
+
+代码目前没有名为“全量群 / 精简群”的独立配置或完整订阅模型，而是通过以下规则分流：
+
+| 消息类型 | 当前接收范围 | 实现位置 |
+| --- | --- | --- |
+| 今日关注卡片 | 定时发到 `SCHEDULE_CHAT_IDS`；飞书命令触发时回到来源群 | `worker/src/index.js`、`app/main.py` |
+| 第一项目 Shoot Or Shot 日报链接 | 限制名单非空时，只发到 `RUN_CHAT_ID` 与 `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 的交集 | `app/main.py` 的 `_send_primary_project_metrics_url()` |
+| 其他启用项目的日报链接 | 本次 `RUN_CHAT_ID` 中的所有目标群 | `app/main.py` 的 `_notify_success()` |
+| 收入日报 | 定时只发到 `ROBLOX_MONEY_TEST_CHAT_IDS`；该名单非空时，飞书命令仅允许名单内的群触发并接收结果 | `worker/src/index.js` |
+
+Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作流的 `project_metrics_primary_project_test_chat_ids`，作为第一项目链接的限制名单；该输入为空时，工作流尝试使用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`。因此，代码中称为 test 群的名单承担了更多信息的接收职责，但其对应哪个真实群仍须核对线上配置。
+
+这里的 test 群名单与 Top Trending 的“正式 / 测试历史排名变量”是两个独立概念：历史排名变量按 `RUN_TRIGGER_SOURCE` 选择，不按群名或群角色选择。
+
+#### 只修改一个群时
+
+需求必须明确“目标群角色及真实 `chat_id`、消息类型、具体变化”，例如：
+
+> 只改精简群（填写已核对的真实 `chat_id`）：不再推送 Soccer RNG 日报链接；全量群保持现状。
+
+| 修改内容 | 当前影响范围与处理要求 |
+| --- | --- |
+| 接收哪些消息或项目链接 | 可以按目标 `chat_id` 调整发送规则；现有配置没有覆盖的单群规则需要补充实现 |
+| 卡片文案、样式或展示字段 | 当前共用消息生成逻辑，直接修改公共模板会影响使用它的所有群；单群差异需要按群生成内容并分别投递 |
+| 日报表格的列或数据 | 表格按项目共用，修改同一张表会影响所有可访问该表的人；如需按群展示不同表格内容，需要独立表格或其他明确的隔离方案 |
+| 项目抓取或全局开关 | 影响整个运行链路；例如 `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT` 是全局跳过第二项目，不是某一个群的隐藏开关 |
+
+当前“隐藏”主要表示不发送消息或链接，不会同步修改飞书表格的访问权限。第一项目表格仍会更新并写入 artifacts；项目日报的部分失败说明仍发到本次所有目标群，不能把成功链接的过滤理解为该项目全部信息均已隔离。
+
+#### 配置边界
+
+- 第一项目限制名单最终为空时，`_send_primary_project_metrics_url()` 会恢复向本次全部目标群发送链接，不会默认隐藏。
+- `ROBLOX_MONEY_TEST_CHAT_IDS` 为空时，收入日报定时任务会跳过；但手动命令的名单校验使用 `isAllowedValue()`，空名单默认放行，仍受 `ALLOWED_CHAT_IDS` / `ALLOWED_OPEN_IDS` 限制。上文“仅 test 群可触发”的描述以该名单非空为前提。
+- Python 收入日报发送逻辑直接使用 `RUN_CHAT_ID`，不会再次校验 Worker 的 test 群名单；从 GitHub Actions 直接运行时必须明确核对接收群。
+- 按 `chat_id` 精确投递依赖可用的飞书应用身份。缺少应用凭据时，发送函数可能改用已配置的固定 `FEISHU_BOT_WEBHOOK`，此路径不能按 `RUN_CHAT_ID` 区分群。
+
+修改前先核对群映射及相关线上配置，再判断影响的是发送范围、消息生成还是共享表格；验证单群变更时，应同时检查另一个群的接收规则和内容是否保持预期。
+
 ## 5. 配置到底放在哪里
 
 ### 5.1 GitHub Actions Secrets
