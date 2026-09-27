@@ -89,13 +89,16 @@ Top Trending 当前不再创建或更新飞书表格，只会回写历史排名�
 - 可选：`ROBLOX_CREATOR_OVERVIEW_URL_3`；未配置时 GitHub Actions 默认使用 `Troll ur friends` 的 overview URL
 - 可选：`ROBLOX_CREATOR_OVERVIEW_URL_4`；未配置时 GitHub Actions 默认使用 `Soccer RNG` 的 overview URL
 - 可选：`ROBLOX_CREATOR_OVERVIEW_URL_5`；未配置时 GitHub Actions 默认使用 `soccer大亨版` 的 overview URL
+- 可选：`ROBLOX_CREATOR_OVERVIEW_URL_6`；未配置时 GitHub Actions 默认使用 `TNT`（`10767359040`）的 overview URL，仅接入项目日报表格，统计起始日为 `2026-09-26`；按“统计到昨天”的规则，从北京时间 `2026-09-27` 开始查询首日数据
 - 可选：`ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT`；当前 GitHub Actions 未配置时按 `true` 注入，默认跳过第二项目槽位；需要恢复第二项目日报时设为 `false`，不影响收入日报
-- `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`；用于限制第一项目链接及 `Soccer RNG`（`10304101434`）、`soccer大亨版`（`10403337696`）的日报链接和失败明细只发全量群（test 群）。Worker 触发时自动复用 `ROBLOX_MONEY_TEST_CHAT_IDS`；直接从 GitHub Actions 运行时须通过此 Variable 或工作流输入提供名单。处理含 Soccer 项目的日报结果时，名单或 `RUN_CHAT_ID` 为空会报错，向全量群投递须具备飞书应用凭据，不回退到固定 webhook
+- `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`；用于限制第一项目链接及 `Soccer RNG`（`10304101434`）、`soccer大亨版`（`10403337696`）、`TNT`（`10767359040`）的日报链接和失败明细只发全量群（test 群）。Worker 触发时自动复用 `ROBLOX_MONEY_TEST_CHAT_IDS`；直接从 GitHub Actions 运行时须通过此 Variable 或工作流输入提供名单。处理含上述三个受限项目的日报结果时，名单或 `RUN_CHAT_ID` 为空会报错，向全量群投递须具备飞书应用凭据，不回退到固定 webhook
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE`
 - 可选：`FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE`
 - 可选：`FEISHU_PROJECT_METRICS_3_SPREADSHEET_TITLE`
 - 可选：`FEISHU_PROJECT_METRICS_4_SPREADSHEET_TITLE`
 - 可选：`FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE`
+- 可选：`FEISHU_PROJECT_METRICS_6_SPREADSHEET_TITLE`，默认 `TNT`
+- `FEISHU_PROJECT_METRICS_6_SPREADSHEET_TOKEN` / `FEISHU_PROJECT_METRICS_6_SHEET_ID` 首次成功同步后自动回写，后续运行用于复用 TNT 表格
 
 如果你要跑收入日报：
 

@@ -75,8 +75,8 @@ PROJECT_METRICS_REPORT_MODE = "roblox_project_daily_metrics"
 ROBLOX_MONEY_REPORT_MODE = "roblox_money"
 PROJECT_METRICS_SHEET_MAX_ROWS = 365
 PROJECT_METRICS_SHEET_END_COLUMN = get_project_metrics_end_column_letter()
-# Soccer 项目日报信息仅发送到现有全量群（test 群）名单。
-SOCCER_PROJECT_IDS = frozenset({"10304101434", "10403337696"})
+# 以下项目的日报信息仅发送到现有全量群（test 群）名单。
+FULL_GROUP_ONLY_PROJECT_IDS = frozenset({"10304101434", "10403337696", "10767359040"})
 # Top Earning 今日关注需要覆盖前 300 名，用于发现收入榜新上榜游戏。
 TOP_EARNING_FETCH_LIMIT = 300
 
@@ -413,9 +413,9 @@ def _notify_success(cfg: Config, report_payload) -> None:
         reported_project_ids = set(report_payload.records_by_project_id) | {
             failure.project_id for failure in report_payload.failures
         }
-        soccer_cfg = (
-            _resolve_soccer_notification_config(cfg)
-            if reported_project_ids & SOCCER_PROJECT_IDS
+        full_group_cfg = (
+            _resolve_full_group_notification_config(cfg)
+            if reported_project_ids & FULL_GROUP_ONLY_PROJECT_IDS
             else None
         )
         feishu_client = FeishuClient(cfg)
@@ -428,19 +428,19 @@ def _notify_success(cfg: Config, report_payload) -> None:
                 feishu_client,
                 variables,
             )
-            if variables.project_id in SOCCER_PROJECT_IDS:
-                if soccer_cfg is not None:
-                    FeishuClient(soccer_cfg).send_group_markdown(target.url)
+            if variables.project_id in FULL_GROUP_ONLY_PROJECT_IDS:
+                if full_group_cfg is not None:
+                    FeishuClient(full_group_cfg).send_group_markdown(target.url)
             elif variables.spreadsheet_token_variable_name == PROJECT_METRICS_SPREADSHEET_TOKEN_VAR:
                 _send_primary_project_metrics_url(cfg, target.url)
             else:
                 feishu_client.send_group_markdown(target.url)
         if report_payload.failures:
             failures = [(failure.project_id, failure.reason) for failure in report_payload.failures]
-            if any(project_id in SOCCER_PROJECT_IDS for project_id, _ in failures):
-                if soccer_cfg is not None:
-                    FeishuClient(soccer_cfg).send_group_markdown(
-                        build_project_metrics_partial_failure_markdown(soccer_cfg, failures)
+            if any(project_id in FULL_GROUP_ONLY_PROJECT_IDS for project_id, _ in failures):
+                if full_group_cfg is not None:
+                    FeishuClient(full_group_cfg).send_group_markdown(
+                        build_project_metrics_partial_failure_markdown(full_group_cfg, failures)
                     )
                 full_chat_ids = set(_split_csv_values(cfg.project_metrics_primary_project_test_chat_ids))
                 limited_chat_ids = tuple(
@@ -448,7 +448,7 @@ def _notify_success(cfg: Config, report_payload) -> None:
                     if chat_id not in full_chat_ids
                 )
                 visible_failures = [
-                    failure for failure in failures if failure[0] not in SOCCER_PROJECT_IDS
+                    failure for failure in failures if failure[0] not in FULL_GROUP_ONLY_PROJECT_IDS
                 ]
                 if limited_chat_ids and visible_failures:
                     limited_cfg = replace(cfg, run_chat_id=",".join(limited_chat_ids))
@@ -670,20 +670,20 @@ def _sync_project_metrics_sheet(
 
 
 
-def _resolve_soccer_notification_config(cfg: Config) -> Config | None:
+def _resolve_full_group_notification_config(cfg: Config) -> Config | None:
     """仅允许精确投递到已配置的全量群，不回退到全群或固定 webhook。"""
 
     allowed_chat_ids = set(_split_csv_values(cfg.project_metrics_primary_project_test_chat_ids))
     if not allowed_chat_ids:
-        raise FeishuClientError("Soccer 项目消息分流需要配置 PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS")
+        raise FeishuClientError("全量群项目消息分流需要配置 PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS")
     run_chat_ids = _split_csv_values(cfg.run_chat_id)
     if not run_chat_ids:
-        raise FeishuClientError("Soccer 项目消息分流需要配置 RUN_CHAT_ID")
+        raise FeishuClientError("全量群项目消息分流需要配置 RUN_CHAT_ID")
     target_chat_ids = tuple(chat_id for chat_id in run_chat_ids if chat_id in allowed_chat_ids)
     if not target_chat_ids:
         return None
     if not cfg.feishu_app_id or not cfg.feishu_app_secret:
-        raise FeishuClientError("Soccer 项目消息分流需要 FEISHU_APP_ID 和 FEISHU_APP_SECRET")
+        raise FeishuClientError("全量群项目消息分流需要 FEISHU_APP_ID 和 FEISHU_APP_SECRET")
     return replace(cfg, run_chat_id=",".join(target_chat_ids), feishu_bot_webhook="")
 
 

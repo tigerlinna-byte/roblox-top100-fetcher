@@ -36,6 +36,17 @@ class WorkflowConfigTests(unittest.TestCase):
             workflow_content,
         )
 
+    def test_project_metrics_sixth_project_defaults_to_tnt_and_reuses_its_sheet(self) -> None:
+        workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/roblox_rank_sync.yml"
+        workflow_content = workflow_path.read_text(encoding="utf-8")
+        for expected in (
+            "ROBLOX_CREATOR_OVERVIEW_URL_6: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL_6 || 'https://create.roblox.com/dashboard/creations/experiences/10767359040/overview' }}",
+            "FEISHU_PROJECT_METRICS_6_SPREADSHEET_TITLE: ${{ vars.FEISHU_PROJECT_METRICS_6_SPREADSHEET_TITLE || 'TNT' }}",
+            "FEISHU_PROJECT_METRICS_6_SPREADSHEET_TOKEN: ${{ vars.FEISHU_PROJECT_METRICS_6_SPREADSHEET_TOKEN }}",
+            "FEISHU_PROJECT_METRICS_6_SHEET_ID: ${{ vars.FEISHU_PROJECT_METRICS_6_SHEET_ID }}",
+        ):
+            self.assertIn(expected, workflow_content)
+
     def test_project_metrics_fifth_project_defaults_to_soccer_tycoon(self) -> None:
         workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/roblox_rank_sync.yml"
         workflow_content = workflow_path.read_text(encoding="utf-8")
