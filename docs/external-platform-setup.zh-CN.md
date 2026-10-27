@@ -85,20 +85,14 @@ Top Trending 当前不再创建或更新飞书表格，只会回写历史排名�
 如果你要跑项目日报：
 
 - `ROBLOX_CREATOR_OVERVIEW_URL`
-- 可选：`ROBLOX_CREATOR_OVERVIEW_URL_2`
 - 可选：`ROBLOX_CREATOR_OVERVIEW_URL_3`；未配置时 GitHub Actions 默认使用 `Troll ur friends` 的 overview URL
 - 可选：`ROBLOX_CREATOR_OVERVIEW_URL_4`；未配置时 GitHub Actions 默认使用 `Soccer RNG` 的 overview URL
 - 可选：`ROBLOX_CREATOR_OVERVIEW_URL_5`；未配置时 GitHub Actions 默认使用 `soccer大亨版` 的 overview URL
-- 可选：`ROBLOX_CREATOR_OVERVIEW_URL_6`；未配置时 GitHub Actions 默认使用 `TNT`（`10767359040`）的 overview URL，仅接入项目日报表格，统计起始日为 `2026-09-26`；按“统计到昨天”的规则，从北京时间 `2026-09-27` 开始查询首日数据
-- 可选：`ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT`；当前 GitHub Actions 未配置时按 `true` 注入，默认跳过第二项目槽位；需要恢复第二项目日报时设为 `false`，不影响收入日报
-- `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`；用于限制第一项目链接及 `Soccer RNG`（`10304101434`）、`soccer大亨版`（`10403337696`）、`TNT`（`10767359040`）的日报链接和失败明细只发全量群（test 群）。Worker 触发时自动复用 `ROBLOX_MONEY_TEST_CHAT_IDS`；直接从 GitHub Actions 运行时须通过此 Variable 或工作流输入提供名单。处理含上述三个受限项目的日报结果时，名单或 `RUN_CHAT_ID` 为空会报错，向全量群投递须具备飞书应用凭据，不回退到固定 webhook
+- `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`；用于限制第一项目链接及 `Soccer RNG`（`10304101434`）、`soccer大亨版`（`10403337696`）的日报链接和失败明细只发全量群（test 群）。Worker 触发时自动复用 `ROBLOX_MONEY_TEST_CHAT_IDS`；直接从 GitHub Actions 运行时须通过此 Variable 或工作流输入提供名单。处理含上述两个受限项目的日报结果时，名单或 `RUN_CHAT_ID` 为空会报错，向全量群投递须具备飞书应用凭据，不回退到固定 webhook
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE`
-- 可选：`FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE`
 - 可选：`FEISHU_PROJECT_METRICS_3_SPREADSHEET_TITLE`
 - 可选：`FEISHU_PROJECT_METRICS_4_SPREADSHEET_TITLE`
 - 可选：`FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE`
-- 可选：`FEISHU_PROJECT_METRICS_6_SPREADSHEET_TITLE`，默认 `TNT`
-- `FEISHU_PROJECT_METRICS_6_SPREADSHEET_TOKEN` / `FEISHU_PROJECT_METRICS_6_SHEET_ID` 首次成功同步后自动回写，后续运行用于复用 TNT 表格
 
 如果你要跑收入日报：
 
@@ -122,9 +116,8 @@ Top Trending 当前不再创建或更新飞书表格，只会回写历史排名�
 
 `Actions -> Roblox Rank Sync -> Run workflow`
 
-建议先试两个模式：
+`report_mode` 为下拉选项，只列出在线模式；`top100_message` 已下线，不在选项中。建议先试：
 
-- `report_mode=top100_message`
 - `report_mode=top_trending_sheet`
 
 成功标准：
@@ -207,7 +200,6 @@ cp .dev.vars.example .dev.vars
 - `ALLOWED_OPEN_IDS`
 - `SCHEDULE_CHAT_IDS`
 - `ROBLOX_MONEY_TEST_CHAT_IDS`
-- `COMMAND_TEXT`
 - `TOP_DAY_COMMAND_TEXT`
 - `PROJECT_METRICS_COMMAND_TEXT`
 - `ROBLOX_MONEY_COMMAND_TEXT`
@@ -297,7 +289,6 @@ npx wrangler deploy
 
 如果只配了 webhook，没有可用的飞书应用身份，那么：
 
-- `top100_message` 还有机会通过 webhook 发摘要
 - `top_trending_sheet` 仍可通过 webhook 发送 `今日关注` 卡片，但不能按 `RUN_CHAT_ID` 精确投递到多个群
 - `roblox_project_daily_metrics` 将无法创建或更新飞书表格
 
@@ -327,10 +318,9 @@ npx wrangler deploy
 
 ## 7. 联调命令
 
-当前默认支持 4 条命令：
+当前默认支持 3 条命令（`/roblox-top100` 已下线，Worker 收到后忽略）：
 
 ```text
-/roblox-top100
 /roblox-top-day
 /roblox-project-metrics
 /roblox-money
@@ -338,17 +328,15 @@ npx wrangler deploy
 
 它们分别对应：
 
-- `/roblox-top100` -> `top100_message`
 - `/roblox-top-day` -> `top_trending_sheet`
 - `/roblox-project-metrics` -> `roblox_project_daily_metrics`
 - `/roblox-money` -> `roblox_money`
 
 联调时建议按这个顺序：
 
-1. 先测 `/roblox-top100`
-2. 再测 `/roblox-top-day`
-3. 最后测 `/roblox-project-metrics`
-4. 如已配置收入日报，再在 test 群测 `/roblox-money`
+1. 先测 `/roblox-top-day`
+2. 再测 `/roblox-project-metrics`
+3. 如已配置收入日报，再在 test 群测 `/roblox-money`
 
 ### `/roblox-top-day` 特别注意
 
@@ -385,13 +373,12 @@ Top Trending 和项目日报复用同一个：
 1. GitHub 手动 `Run workflow` 成功
 2. Worker `/health` 正常
 3. 飞书事件 URL 校验成功
-4. 飞书群发送 `/roblox-top100` 能触发并回结果
-5. 飞书群发送 `/roblox-top-day` 能收到 `今日关注` 卡片
-6. 飞书群发送 `/roblox-project-metrics` 能写项目日报表并回链接
-7. test 群发送 `/roblox-money` 能收到收入文本
-8. 非 test 群发送 `/roblox-money` 不触发任务
-9. 确认 `SCHEDULE_CHAT_IDS` 和 `ROBLOX_MONEY_TEST_CHAT_IDS` 已按需配置
-10. 等待或手动验证 cron 分支是否能触发
+4. 飞书群发送 `/roblox-top-day` 能收到 `今日关注` 卡片
+5. 飞书群发送 `/roblox-project-metrics` 能写项目日报表并回链接
+6. test 群发送 `/roblox-money` 能收到收入文本
+7. 非 test 群发送 `/roblox-money` 不触发任务
+8. 确认 `SCHEDULE_CHAT_IDS` 和 `ROBLOX_MONEY_TEST_CHAT_IDS` 已按需配置
+9. 等待或手动验证 cron 分支是否能触发
 
 ## 10. 排障顺序
 

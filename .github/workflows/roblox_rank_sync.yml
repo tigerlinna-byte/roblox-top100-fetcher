@@ -4,9 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       report_mode:
-        description: Runtime report mode
-        required: false
-        default: top100_message
+        description: Runtime report mode (top100_message is offline; add it back here to re-enable)
+        required: true
+        type: choice
+        default: top_trending_sheet
+        options:
+          - top_trending_sheet
+          - roblox_project_daily_metrics
+          - roblox_money
       trigger_source:
         description: Trigger source label shown in Feishu notification
         required: false
@@ -28,7 +33,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     env:
-      RUN_REPORT_MODE: ${{ github.event.inputs.report_mode || 'top100_message' }}
+      RUN_REPORT_MODE: ${{ github.event.inputs.report_mode || 'top_trending_sheet' }}
       RUN_TRIGGER_SOURCE: ${{ github.event.inputs.trigger_source || github.event_name }}
       RUN_TRIGGER_ACTOR: ${{ github.event.inputs.trigger_actor || github.actor }}
       RUN_CHAT_ID: ${{ github.event.inputs.chat_id || '' }}
@@ -54,12 +59,9 @@ jobs:
           ROBLOX_SORT_ID: top-playing-now
           ROBLOX_TOP_TRENDING_SORT_ID: Top_Trending_V4
           ROBLOX_CREATOR_OVERVIEW_URL: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL }}
-          ROBLOX_CREATOR_OVERVIEW_URL_2: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL_2 }}
           ROBLOX_CREATOR_OVERVIEW_URL_3: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL_3 || 'https://create.roblox.com/dashboard/creations/experiences/10170801715/overview' }}
           ROBLOX_CREATOR_OVERVIEW_URL_4: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL_4 || 'https://create.roblox.com/dashboard/creations/experiences/10304101434/overview' }}
           ROBLOX_CREATOR_OVERVIEW_URL_5: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL_5 || 'https://create.roblox.com/dashboard/creations/experiences/10403337696/overview' }}
-          ROBLOX_CREATOR_OVERVIEW_URL_6: ${{ vars.ROBLOX_CREATOR_OVERVIEW_URL_6 || 'https://create.roblox.com/dashboard/creations/experiences/10767359040/overview' }}
-          ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT: ${{ vars.ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT || 'true' }}
           PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS: ${{ github.event.inputs.project_metrics_primary_project_test_chat_ids || vars.PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS || '' }}
           ROBLOX_CREATOR_COOKIE: ${{ secrets.ROBLOX_CREATOR_COOKIE }}
           ROBLOX_MONEY_START_DATE: ${{ vars.ROBLOX_MONEY_START_DATE || '2026-05-01' }}
@@ -91,9 +93,6 @@ jobs:
           FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN: ${{ vars.FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN }}
           FEISHU_PROJECT_METRICS_SHEET_ID: ${{ vars.FEISHU_PROJECT_METRICS_SHEET_ID }}
           FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE: ${{ vars.FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE }}
-          FEISHU_PROJECT_METRICS_2_SPREADSHEET_TOKEN: ${{ vars.FEISHU_PROJECT_METRICS_2_SPREADSHEET_TOKEN }}
-          FEISHU_PROJECT_METRICS_2_SHEET_ID: ${{ vars.FEISHU_PROJECT_METRICS_2_SHEET_ID }}
-          FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE: ${{ vars.FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE }}
           FEISHU_PROJECT_METRICS_3_SPREADSHEET_TOKEN: ${{ vars.FEISHU_PROJECT_METRICS_3_SPREADSHEET_TOKEN }}
           FEISHU_PROJECT_METRICS_3_SHEET_ID: ${{ vars.FEISHU_PROJECT_METRICS_3_SHEET_ID }}
           FEISHU_PROJECT_METRICS_3_SPREADSHEET_TITLE: ${{ vars.FEISHU_PROJECT_METRICS_3_SPREADSHEET_TITLE || 'Troll ur friends' }}
@@ -103,9 +102,6 @@ jobs:
           FEISHU_PROJECT_METRICS_5_SPREADSHEET_TOKEN: ${{ vars.FEISHU_PROJECT_METRICS_5_SPREADSHEET_TOKEN }}
           FEISHU_PROJECT_METRICS_5_SHEET_ID: ${{ vars.FEISHU_PROJECT_METRICS_5_SHEET_ID }}
           FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE: ${{ vars.FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE || 'soccer大亨版' }}
-          FEISHU_PROJECT_METRICS_6_SPREADSHEET_TOKEN: ${{ vars.FEISHU_PROJECT_METRICS_6_SPREADSHEET_TOKEN }}
-          FEISHU_PROJECT_METRICS_6_SHEET_ID: ${{ vars.FEISHU_PROJECT_METRICS_6_SHEET_ID }}
-          FEISHU_PROJECT_METRICS_6_SPREADSHEET_TITLE: ${{ vars.FEISHU_PROJECT_METRICS_6_SPREADSHEET_TITLE || 'TNT' }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
           GITHUB_VARIABLES_TOKEN: ${{ secrets.GH_TOKEN }}

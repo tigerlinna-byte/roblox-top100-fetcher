@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 from unittest.mock import Mock, patch
 
 from app.config import Config
-from app.project_metrics_models import get_project_required_fields
+from app.project_metrics_models import PROJECT_REQUIRED_FIELDS, PROJECT_START_DATES, get_project_required_fields
 from app.roblox_creator_metrics_client import (
     RobloxCreatorAuthenticationError,
     RobloxCreatorMetricsClient,
@@ -17,6 +17,21 @@ from app.roblox_creator_metrics_client import (
     resolve_project_metrics_query_date_bounds,
 )
 from app.roblox_money_models import ROBLOX_MONEY_REVENUE_METRIC_CANDIDATES
+
+
+# 测试专用项目：不校验核心字段 peak_ccu，用于覆盖“按项目放宽核心字段”的分支，
+# 不依赖真实项目配置，避免项目上下线时测试随之失效。
+RELAXED_FIXTURE_PROJECT_ID = "9707829514"
+RELAXED_FIXTURE_OVERVIEW_URL = (
+    f"https://create.roblox.com/dashboard/creations/experiences/{RELAXED_FIXTURE_PROJECT_ID}/overview"
+)
+
+
+def _patch_relaxed_fixture_project(test_func):
+    """为单个测试注入放宽核心字段的测试项目及其统计起始日。"""
+
+    test_func = patch.dict(PROJECT_REQUIRED_FIELDS, {RELAXED_FIXTURE_PROJECT_ID: ()})(test_func)
+    return patch.dict(PROJECT_START_DATES, {RELAXED_FIXTURE_PROJECT_ID: "2026-03-17"})(test_func)
 
 
 def _build_json_response(payload: dict, *, status_code: int = 200, headers: dict[str, str] | None = None) -> Mock:
@@ -56,9 +71,10 @@ def _build_empty_scorecard_response(url: str) -> Mock:
 
 
 class RobloxCreatorMetricsClientTests(unittest.TestCase):
+    @_patch_relaxed_fixture_project
     def test_get_project_required_fields_returns_project_specific_override(self) -> None:
         self.assertEqual(("peak_ccu",), get_project_required_fields("9682356542"))
-        self.assertEqual((), get_project_required_fields("9707829514"))
+        self.assertEqual((), get_project_required_fields(RELAXED_FIXTURE_PROJECT_ID))
 
     def test_resolve_project_metrics_query_date_bounds_keeps_full_project_backfill_window(self) -> None:
         mocked_midnight = datetime(2026, 5, 5, 0, 0, tzinfo=timezone.utc)
@@ -68,11 +84,12 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         self.assertEqual((date(2026, 3, 9), date(2026, 5, 4)), bounds)
 
+    @_patch_relaxed_fixture_project
     def test_resolve_project_metrics_query_date_bounds_keeps_full_backfill_for_non_required_peak_ccu(self) -> None:
         mocked_midnight = datetime(2026, 5, 5, 0, 0, tzinfo=timezone.utc)
 
         with patch("app.roblox_creator_metrics_client._business_midnight_now", return_value=mocked_midnight):
-            bounds = resolve_project_metrics_query_date_bounds("9707829514", "UTC")
+            bounds = resolve_project_metrics_query_date_bounds(RELAXED_FIXTURE_PROJECT_ID, "UTC")
 
         self.assertEqual((date(2026, 3, 17), date(2026, 5, 4)), bounds)
 
@@ -628,6 +645,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("5.2%", record_map["2026-03-10"].ptr)
         self.assertEqual("1.2%", record_map["2026-03-10"].dptr)
 
+    @_patch_relaxed_fixture_project
     def test_fetch_project_daily_metrics_uses_daily_scorecard_as_rank_fallback(self) -> None:
         session = Mock()
         scorecard_metrics: list[str] = []
@@ -673,7 +691,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         session.request.side_effect = request
         client = RobloxCreatorMetricsClient(
             Config(
-                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+                roblox_creator_overview_url=RELAXED_FIXTURE_OVERVIEW_URL,
                 roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
                 retry_max_attempts=1,
                 feishu_timezone="UTC",
@@ -1101,6 +1119,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("", records[0].peak_ccu)
         self.assertEqual("12m 30s", records[0].average_session_time)
 
+    @_patch_relaxed_fixture_project
     def test_fetch_project_daily_metrics_allows_project_without_required_peak_ccu(self) -> None:
         session = Mock()
 
@@ -1167,7 +1186,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         session.request.side_effect = request
         client = RobloxCreatorMetricsClient(
             Config(
-                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+                roblox_creator_overview_url=RELAXED_FIXTURE_OVERVIEW_URL,
                 roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
                 retry_max_attempts=1,
                 feishu_timezone="Asia/Shanghai",
@@ -1182,6 +1201,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("5m 12s", records[0].average_session_time)
         self.assertEqual("0%", records[0].payer_conversion_rate)
 
+    @_patch_relaxed_fixture_project
     def test_fetch_project_daily_metrics_splits_large_peak_ccu_backfill_windows(self) -> None:
         session = Mock()
         peak_windows: list[tuple[datetime, datetime]] = []
@@ -1217,7 +1237,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         client = RobloxCreatorMetricsClient(
             Config(
                 output_dir=".test-output",
-                roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+                roblox_creator_overview_url=RELAXED_FIXTURE_OVERVIEW_URL,
                 roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
                 retry_max_attempts=1,
                 retry_backoff_seconds=0,

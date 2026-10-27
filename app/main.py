@@ -12,7 +12,6 @@ from .github_client import GitHubClient, GitHubClientError
 from .models import GameRecord
 from .project_metrics_models import ProjectDailyMetricsRecord, now_iso
 from .project_metrics_sheet import (
-    PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR,
     PROJECT_METRICS_3_SPREADSHEET_TOKEN_VAR,
     PROJECT_METRICS_4_SPREADSHEET_TOKEN_VAR,
     PROJECT_METRICS_5_SPREADSHEET_TOKEN_VAR,
@@ -77,7 +76,7 @@ ROBLOX_MONEY_REPORT_MODE = "roblox_money"
 PROJECT_METRICS_SHEET_MAX_ROWS = 365
 PROJECT_METRICS_SHEET_END_COLUMN = get_project_metrics_end_column_letter()
 # 以下项目的日报信息仅发送到现有全量群（test 群）名单。
-FULL_GROUP_ONLY_PROJECT_IDS = frozenset({"10304101434", "10403337696", "10767359040"})
+FULL_GROUP_ONLY_PROJECT_IDS = frozenset({"10304101434", "10403337696"})
 # Top Earning 今日关注需要覆盖前 300 名，用于发现收入榜新上榜游戏。
 TOP_EARNING_FETCH_LIMIT = 300
 
@@ -162,7 +161,7 @@ def _fetch_report_payload(cfg: Config):
         return _fetch_roblox_money_payload(cfg)
 
     if cfg.run_report_mode == PROJECT_METRICS_REPORT_MODE:
-        variables_list = _resolve_project_metrics_report_variables(cfg)
+        variables_list = resolve_project_metrics_variables(cfg)
         if not variables_list:
             raise RobloxCreatorMetricsClientError("未配置任何项目日报 overview 地址")
 
@@ -471,7 +470,7 @@ def _notify_success(cfg: Config, report_payload) -> None:
             else None
         )
         feishu_client = FeishuClient(cfg)
-        for variables in _resolve_project_metrics_report_variables(cfg):
+        for variables in resolve_project_metrics_variables(cfg):
             if variables.project_id not in report_payload.records_by_project_id:
                 continue
             target = _sync_project_metrics_sheet(
@@ -759,19 +758,6 @@ def _send_primary_project_metrics_url(cfg: Config, sheet_url: str) -> None:
 
 
 
-def _resolve_project_metrics_report_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
-    """解析项目日报本次实际启用的项目，允许临时屏蔽第二项目槽位。"""
-
-    variables_list = resolve_project_metrics_variables(cfg)
-    if not cfg.roblox_project_metrics_disable_second_project:
-        return variables_list
-    return tuple(
-        variables
-        for variables in variables_list
-        if variables.spreadsheet_token_variable_name != PROJECT_METRICS_2_SPREADSHEET_TOKEN_VAR
-    )
-
-
 def _resolve_roblox_money_variables(cfg: Config) -> tuple[ProjectMetricsSheetVariables, ...]:
     """解析收入日报项目，统计第一、第三、第四和第五项目槽位。"""
 
@@ -907,7 +893,7 @@ def _write_report_outputs(cfg: Config, report_payload):
             cfg.output_dir,
             [
                 record
-                for variables in _resolve_project_metrics_report_variables(cfg)
+                for variables in resolve_project_metrics_variables(cfg)
                 for record in report_payload.records_by_project_id.get(variables.project_id, [])
             ],
             prefix=_output_prefix(cfg),

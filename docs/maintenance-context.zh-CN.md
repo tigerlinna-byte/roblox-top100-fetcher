@@ -8,11 +8,11 @@
 
 这个仓库当前维护的是一套“Roblox 数据 -> GitHub Actions -> 飞书”的自动化链路，而不是一个单独的脚本。
 
-当前有 4 条真实运行链路：
+当前有 3 条在线运行链路，另有 `top100_message` 已下线（入口已移除，代码保留）：
 
 | 运行模式 | 入口 | 数据来源 | 结果 |
 | --- | --- | --- | --- |
-| `top100_message` | 本地运行、GitHub Actions 手动触发、飞书 `/roblox-top100` | Roblox 榜单接口 | 输出 JSON/CSV，并发送 Top100 文本摘要 |
+| `top100_message`（已下线） | 仅本地运行；飞书 `/roblox-top100` 与 GitHub Actions 下拉选项已移除 | Roblox 榜单接口 | 输出 JSON/CSV |
 | `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron `0 1 * * *` | Roblox 榜单接口 | 发送 `今日关注` 卡片，更新历史排名，并输出 JSON |
 | `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron `10 1 * * *` | Roblox Creator Analytics 接口 | 更新每个项目自己的飞书表，并发送表格链接 |
 | `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron `20 1 * * *` | Roblox Creator Analytics 收入指标 | 发送第一、第三、第四和第五项目的收入卡片日报，并输出 JSON/CSV |
@@ -72,13 +72,18 @@
 
 ## 3. 四条运行模式的真实行为
 
-### 3.1 `top100_message`
+### 3.1 `top100_message`（已下线，代码保留）
 
-入口：
+2026-10-27 起该模式下线：Worker 不再响应 `/roblox-top100`，GitHub Actions 的 `report_mode` 下拉选项不再包含该模式；Python 侧抓取、输出代码保留，便于以后恢复。
 
-- 默认本地运行
-- GitHub Actions 手动触发，`report_mode=top100_message`
-- 飞书命令 `/roblox-top100`
+恢复方法：
+
+1. 在 [`worker/src/index.js`](../worker/src/index.js) 的 `resolveCommand()` 中加回 `/roblox-top100` -> `top100_message` 映射，并重新部署 Worker
+2. 在 [`/.github/workflows/roblox_rank_sync.yml`](../.github/workflows/roblox_rank_sync.yml) 的 `report_mode` 选项中加回 `top100_message`
+
+当前入口：
+
+- 仅本地运行（`RUN_REPORT_MODE` 未设置时默认就是该模式）
 
 执行路径：
 
@@ -211,41 +216,34 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 执行路径：
 
 1. `app/main.py` 调用 `resolve_project_metrics_variables()`
-2. 根据 `ROBLOX_CREATOR_OVERVIEW_URL`、`ROBLOX_CREATOR_OVERVIEW_URL_2`、`ROBLOX_CREATOR_OVERVIEW_URL_3`、`ROBLOX_CREATOR_OVERVIEW_URL_4`、`ROBLOX_CREATOR_OVERVIEW_URL_5` 和 `ROBLOX_CREATOR_OVERVIEW_URL_6` 解析需要抓取的项目
+2. 根据 `ROBLOX_CREATOR_OVERVIEW_URL`、`ROBLOX_CREATOR_OVERVIEW_URL_3`、`ROBLOX_CREATOR_OVERVIEW_URL_4` 和 `ROBLOX_CREATOR_OVERVIEW_URL_5` 解析需要抓取的项目
 3. 逐个项目调用 `RobloxCreatorMetricsClient.fetch_project_daily_metrics()`
 4. 按项目写各自的飞书表格
 5. 将所有成功项目的数据合并写入本地 JSON/CSV
 6. 对部分失败项目发送补充失败说明
 
-如果 `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT=true`，项目日报会临时跳过第二项目槽位 `ROBLOX_CREATOR_OVERVIEW_URL_2`。这只影响 `roblox_project_daily_metrics`：不抓取第二项目、不写第二项目飞书表、不在 `project_metrics_*.json/csv` 中输出第二项目记录，也不发送第二项目表格链接；`roblox_money` 收入日报默认使用第一、第三、第四和第五项目槽位，不受该开关影响。当前 GitHub Actions workflow 未配置该变量时按 `true` 注入，默认不发送第二项目 Jail Ur Fiends 的日报表格；如需恢复第二项目日报，则在 GitHub Variables 中明确设为 `false`。
+2026-10-27 起，第二槽位 Jail Ur Fiends（`9707829514`）和第六槽位 TNT（`10767359040`）已从代码中删除，不再抓取、写表或推送；原 `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT` 开关一并移除。两者的飞书表格保留为历史归档，不再更新。槽位编号保持 1、3、4、5 不变，避免改动已保存表格 token 的 GitHub Variables 名称。
 
 第一项目 `Shoot Or Shot` 的项目日报表格仍会更新并写入 artifacts，但表格链接只发送到 test 群。Worker 会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 作为 `project_metrics_primary_project_test_chat_ids` 传给 GitHub Actions，Python 侧只向 `RUN_CHAT_ID` 与这组 test 群的交集发送第一项目链接。如果不是通过 Worker 触发，可用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 作为兜底。
 
-`Soccer RNG`（`10304101434`）、`soccer大亨版`（`10403337696`）和 `TNT`（`10767359040`）的项目日报链接及抓取失败明细也只发到上述 test 群名单中的本次目标群，即全量群；精简群不接收上述三个项目的日报信息。规则按项目 ID 判断，不依赖群名、项目显示名称或配置槽位。其他启用项目的链接仍发送给本次全部目标群，项目抓取、表格更新和 artifacts 仍包含这三个受限项目（Soccer RNG、soccer大亨版、TNT）。
+`Soccer RNG`（`10304101434`）和 `soccer大亨版`（`10403337696`）的项目日报链接及抓取失败明细也只发到上述 test 群名单中的本次目标群，即全量群；精简群不接收上述两个项目的日报信息。规则按项目 ID 判断，不依赖群名、项目显示名称或配置槽位。其他启用项目的链接仍发送给本次全部目标群，项目抓取、表格更新和 artifacts 仍包含这两个受限项目（Soccer RNG、soccer大亨版）。
 
-项目日报失败摘要按接收群生成：全量群保留完整明细，精简群移除三个受限项目（Soccer RNG、soccer大亨版、TNT）的失败明细并重新计算失败项目数；过滤后没有失败项则不发摘要。处理包含受限项目的结果时，若全量群名单或 `RUN_CHAT_ID` 为空，会在表格同步与结果发送前报错；需要向全量群发送但缺少飞书应用凭据时同样报错，不回退到全群或固定 webhook。
-
-TNT 使用第六槽位 `ROBLOX_CREATOR_OVERVIEW_URL_6`，表格名称为 `TNT`，统计起始日为 `2026-09-26`；仅接入项目日报，不纳入 `roblox_money` 收入日报。日报按业务时区统计到昨天，因此从北京时间 `2026-09-27` 的运行开始查询 `2026-09-26` 的数据，具体指标能否写入取决于 Roblox 当时的数据可用性；在此之前不抓取 TNT 的历史指标，但运行同步仍可能创建空表并向全量群发送链接。首次成功同步会创建独立表格，并将其 token 与 sheet id 保存到第六槽位对应的 GitHub Variables，后续运行复用同一张表。
+项目日报失败摘要按接收群生成：全量群保留完整明细，精简群移除两个受限项目（Soccer RNG、soccer大亨版）的失败明细并重新计算失败项目数；过滤后没有失败项则不发摘要。处理包含受限项目的结果时，若全量群名单或 `RUN_CHAT_ID` 为空，会在表格同步与结果发送前报错；需要向全量群发送但缺少飞书应用凭据时同样报错，不回退到全群或固定 webhook。
 
 #### 当前项目日报能力边界
 
-当前支持最多 6 个项目，代码里提供六套配置槽位：
+当前支持 4 个项目，代码里提供四套配置槽位（编号 1、3、4、5）：
 
 - `ROBLOX_CREATOR_OVERVIEW_URL`
-- `ROBLOX_CREATOR_OVERVIEW_URL_2`
 - `ROBLOX_CREATOR_OVERVIEW_URL_3`
 - `ROBLOX_CREATOR_OVERVIEW_URL_4`
 - `ROBLOX_CREATOR_OVERVIEW_URL_5`
-- `ROBLOX_CREATOR_OVERVIEW_URL_6`
 
-以及对应六套飞书表变量：
+以及对应四套飞书表变量：
 
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE`
-- `FEISHU_PROJECT_METRICS_2_SPREADSHEET_TOKEN`
-- `FEISHU_PROJECT_METRICS_2_SHEET_ID`
-- `FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE`
 - `FEISHU_PROJECT_METRICS_3_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_3_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_3_SPREADSHEET_TITLE`
@@ -255,11 +253,8 @@ TNT 使用第六槽位 `ROBLOX_CREATOR_OVERVIEW_URL_6`，表格名称为 `TNT`�
 - `FEISHU_PROJECT_METRICS_5_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_5_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE`
-- `FEISHU_PROJECT_METRICS_6_SPREADSHEET_TOKEN`
-- `FEISHU_PROJECT_METRICS_6_SHEET_ID`
-- `FEISHU_PROJECT_METRICS_6_SPREADSHEET_TITLE`
 
-如果要接第七个项目，必须同步修改：
+如果要新增项目，必须同步修改：
 
 - [`app/config.py`](../app/config.py)
 - [`app/project_metrics_sheet.py`](../app/project_metrics_sheet.py)
@@ -280,11 +275,9 @@ TNT 使用第六槽位 `ROBLOX_CREATOR_OVERVIEW_URL_6`，表格名称为 `TNT`�
 当前项目起始日定义在 [`app/project_metrics_models.py`](../app/project_metrics_models.py)：
 
 - `9682356542`：`2026-03-09`
-- `9707829514`：`2026-03-17`
 - `10170801715`：`2026-05-31`
 - `10304101434`：`2026-06-18`
 - `10403337696`：`2026-07-06`
-- `10767359040`（TNT）：`2026-09-26`
 
 #### 当前指标来源
 
@@ -384,7 +377,7 @@ TNT 使用第六槽位 `ROBLOX_CREATOR_OVERVIEW_URL_6`，表格名称为 `TNT`�
 项目日报默认把 `peak_ccu` 视为核心字段：
 
 - `9682356542` 等未特殊配置的项目，如果某个待写入日期缺少 `peak_ccu`，该项目本次会进入失败摘要，不会把缺峰值 PCU 的日报行静默写入表格。
-- `9707829514` 当前在 Roblox analytics 接口中长期缺失 `PeakConcurrentPlayers`，因此显式放宽为不校验 `peak_ccu`，仍允许写入其他指标。
+- 若某项目在 Roblox analytics 接口中长期缺失 `PeakConcurrentPlayers`，可在 `app/project_metrics_models.py` 的 `PROJECT_REQUIRED_FIELDS` 中为该项目放宽核心字段；当前启用的项目都按默认规则校验。
 - 非核心指标缺失时仍会留空，并写出调试快照用于排查。
 
 当项目日报缺少任意指标时，会在 `OUTPUT_DIR` 下按项目写出：
@@ -419,7 +412,7 @@ TNT 使用第六槽位 `ROBLOX_CREATOR_OVERVIEW_URL_6`，表格名称为 `TNT`�
 执行路径：
 
 1. Worker 校验命令来源群必须在 `ROBLOX_MONEY_TEST_CHAT_IDS`
-2. `app/main.py` 调用收入日报项目解析逻辑，默认按顺序使用第一项目，以及第三槽位 `Troll ur friends`（`10170801715`）、第四槽位 `Soccer RNG`（`10304101434`）和第五槽位 `soccer大亨版`（`10403337696`）的 overview URL；未配置的项目槽位会自动跳过，第二槽位不参与收入日报
+2. `app/main.py` 调用收入日报项目解析逻辑，默认按顺序使用第一项目，以及第三槽位 `Troll ur friends`（`10170801715`）、第四槽位 `Soccer RNG`（`10304101434`）和第五槽位 `soccer大亨版`（`10403337696`）的 overview URL；未配置的项目槽位会自动跳过
 3. `RobloxCreatorMetricsClient.fetch_project_revenue_series()` 查询 Creator Analytics 总收入候选指标
 4. Python 侧按配置 `ROBLOX_MONEY_USD_PER_100K_ROBUX` 将 Robux 换算成美元
 5. 发送收入日报飞书卡片，不创建或更新飞书表格
@@ -451,16 +444,14 @@ TNT 使用第六槽位 `ROBLOX_CREATOR_OVERVIEW_URL_6`，表格名称为 `TNT`�
 
 | 飞书命令 | 运行模式 |
 | --- | --- |
-| `/roblox-top100` | `top100_message` |
 | `/roblox-top-day` | `top_trending_sheet` |
 | `/roblox-project-metrics` | `roblox_project_daily_metrics` |
 | `/roblox-money` | `roblox_money` |
 
-当前是严格全字匹配，不支持模糊匹配。
+当前是严格全字匹配，不支持模糊匹配。`/roblox-top100` 已下线，Worker 收到后按 `command_mismatch` 忽略。
 
 Worker 允许通过环境变量改命令文本：
 
-- `COMMAND_TEXT`
 - `TOP_DAY_COMMAND_TEXT`
 - `PROJECT_METRICS_COMMAND_TEXT`
 - `ROBLOX_MONEY_COMMAND_TEXT`
@@ -492,7 +483,7 @@ Worker 允许通过环境变量改命令文本：
 | 维护称呼 | 含义 | 实际飞书群名 | `chat_id` |
 | --- | --- | --- | --- |
 | 全量群 | 接收较完整的推送，包括受限的第一项目日报链接和收入日报 | 待核对线上配置 | 待核对线上配置 |
-| 精简群 | 不接收收入日报、Shoot Or Shot 日报链接，以及三个受限项目（Soccer RNG、soccer大亨版、TNT）的日报链接和失败明细 | 待核对线上配置 | 待核对线上配置 |
+| 精简群 | 不接收收入日报、Shoot Or Shot 日报链接，以及两个受限项目（Soccer RNG、soccer大亨版）的日报链接和失败明细 | 待核对线上配置 | 待核对线上配置 |
 
 截至 2026-09-25，使用者已确认“精简群”就是原先不接收收入日报、也不接收 Shoot Or Shot 日报链接的群，分流复用现有 test 群名单。尚未核对线上真实群名与 `chat_id`，核对后应补齐上表；不能把示例 ID 当成真实 ID。
 
@@ -502,11 +493,11 @@ Worker 允许通过环境变量改命令文本：
 | --- | --- | --- |
 | 今日关注卡片 | 定时发到 `SCHEDULE_CHAT_IDS`；飞书命令触发时回到来源群 | `worker/src/index.js`、`app/main.py` |
 | 第一项目 Shoot Or Shot 日报链接 | 限制名单非空时，只发到 `RUN_CHAT_ID` 与 `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 的交集 | `app/main.py` 的 `_send_primary_project_metrics_url()` |
-| 三个受限项目（Soccer RNG、soccer大亨版、TNT）的日报链接和失败明细 | 只发到 `RUN_CHAT_ID` 与 `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 的交集；名单缺失时报错 | `app/main.py` 的 `_resolve_full_group_notification_config()`、`_notify_success()` |
+| 两个受限项目（Soccer RNG、soccer大亨版）的日报链接和失败明细 | 只发到 `RUN_CHAT_ID` 与 `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 的交集；名单缺失时报错 | `app/main.py` 的 `_resolve_full_group_notification_config()`、`_notify_success()` |
 | 其余启用项目的日报链接 | 本次 `RUN_CHAT_ID` 中的所有目标群 | `app/main.py` 的 `_notify_success()` |
 | 收入日报 | 定时只发到 `ROBLOX_MONEY_TEST_CHAT_IDS`；该名单非空时，飞书命令仅允许名单内的群触发并接收结果 | `worker/src/index.js` |
 
-Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作流的 `project_metrics_primary_project_test_chat_ids`，作为第一项目链接及三个受限项目（Soccer RNG、soccer大亨版、TNT）日报消息的限制名单；该输入为空时，工作流尝试使用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`。变量名为兼容现有 Worker 和工作流而保留，实际用途已不限于第一项目。
+Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作流的 `project_metrics_primary_project_test_chat_ids`，作为第一项目链接及两个受限项目（Soccer RNG、soccer大亨版）日报消息的限制名单；该输入为空时，工作流尝试使用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`。变量名为兼容现有 Worker 和工作流而保留，实际用途已不限于第一项目。
 
 这里的 test 群名单与 Top Trending 的“正式 / 测试历史排名变量”是两个独立概念：历史排名变量按 `RUN_TRIGGER_SOURCE` 选择，不按群名或群角色选择。
 
@@ -521,14 +512,14 @@ Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作�
 | 接收哪些消息或项目链接 | 可以按目标 `chat_id` 调整发送规则；现有配置没有覆盖的单群规则需要补充实现 |
 | 卡片文案、样式或展示字段 | 当前共用消息生成逻辑，直接修改公共模板会影响使用它的所有群；单群差异需要按群生成内容并分别投递 |
 | 日报表格的列或数据 | 表格按项目共用，修改同一张表会影响所有可访问该表的人；如需按群展示不同表格内容，需要独立表格或其他明确的隔离方案 |
-| 项目抓取或全局开关 | 影响整个运行链路；例如 `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT` 是全局跳过第二项目，不是某一个群的隐藏开关 |
+| 项目抓取或全局开关 | 影响整个运行链路；例如删除或停用某个项目会对所有群生效，不是某一个群的隐藏开关 |
 
-当前“隐藏”表示过滤后续项目日报消息，不会删除已发送消息或修改飞书表格的访问权限。第一项目和三个受限项目（Soccer RNG、soccer大亨版、TNT）的表格仍会更新并写入 artifacts；三个受限项目（Soccer RNG、soccer大亨版、TNT）的失败明细按群过滤，其他项目的失败明细仍发送给本次全部目标群。
+当前“隐藏”表示过滤后续项目日报消息，不会删除已发送消息或修改飞书表格的访问权限。第一项目和两个受限项目（Soccer RNG、soccer大亨版）的表格仍会更新并写入 artifacts；两个受限项目（Soccer RNG、soccer大亨版）的失败明细按群过滤，其他项目的失败明细仍发送给本次全部目标群。
 
 #### 配置边界
 
 - 第一项目限制名单最终为空时，`_send_primary_project_metrics_url()` 会恢复向本次全部目标群发送链接，不会默认隐藏。
-- 三个受限项目（Soccer RNG、soccer大亨版、TNT）的日报采用严格名单校验：名单或本次目标群为空时报错；向全量群投递必须具备飞书应用凭据，并禁用固定 webhook 回退。配置错误时本次项目日报在结果发送前停止，不能依赖第一项目的旧回退行为发送受限项目信息。
+- 两个受限项目（Soccer RNG、soccer大亨版）的日报采用严格名单校验：名单或本次目标群为空时报错；向全量群投递必须具备飞书应用凭据，并禁用固定 webhook 回退。配置错误时本次项目日报在结果发送前停止，不能依赖第一项目的旧回退行为发送受限项目信息。
 - `ROBLOX_MONEY_TEST_CHAT_IDS` 为空时，收入日报定时任务会跳过；但手动命令的名单校验使用 `isAllowedValue()`，空名单默认放行，仍受 `ALLOWED_CHAT_IDS` / `ALLOWED_OPEN_IDS` 限制。上文“仅 test 群可触发”的描述以该名单非空为前提。
 - Python 收入日报发送逻辑直接使用 `RUN_CHAT_ID`，不会再次校验 Worker 的 test 群名单；从 GitHub Actions 直接运行时必须明确核对接收群。
 - 按 `chat_id` 精确投递依赖可用的飞书应用身份。缺少应用凭据时，发送函数可能改用已配置的固定 `FEISHU_BOT_WEBHOOK`，此路径不能按 `RUN_CHAT_ID` 区分群。
@@ -584,19 +575,13 @@ Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作�
 ### 项目日报相关
 
 - `ROBLOX_CREATOR_OVERVIEW_URL`
-- `ROBLOX_CREATOR_OVERVIEW_URL_2`
 - `ROBLOX_CREATOR_OVERVIEW_URL_3`
 - `ROBLOX_CREATOR_OVERVIEW_URL_4`
 - `ROBLOX_CREATOR_OVERVIEW_URL_5`
-- `ROBLOX_CREATOR_OVERVIEW_URL_6`
-- `ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT`，可选；当前 GitHub Actions 未配置时按 `true` 注入，默认跳过第二项目槽位；如需恢复第二项目日报则设为 `false`
-- `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`；Worker 触发时通常由 `ROBLOX_MONEY_TEST_CHAT_IDS` 自动传入，用于限制第一项目表格链接及三个受限项目（Soccer RNG、soccer大亨版、TNT）日报消息只发 test 群。包含受限项目的日报结果要求该名单非空；直接从 GitHub Actions 运行时需配置该 Variable 或同名用途的工作流输入
+- `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`；Worker 触发时通常由 `ROBLOX_MONEY_TEST_CHAT_IDS` 自动传入，用于限制第一项目表格链接及两个受限项目（Soccer RNG、soccer大亨版）日报消息只发 test 群。包含受限项目的日报结果要求该名单非空；直接从 GitHub Actions 运行时需配置该 Variable 或同名用途的工作流输入
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE`
-- `FEISHU_PROJECT_METRICS_2_SPREADSHEET_TOKEN`
-- `FEISHU_PROJECT_METRICS_2_SHEET_ID`
-- `FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE`
 - `FEISHU_PROJECT_METRICS_3_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_3_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_3_SPREADSHEET_TITLE`
@@ -606,14 +591,10 @@ Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作�
 - `FEISHU_PROJECT_METRICS_5_SPREADSHEET_TOKEN`
 - `FEISHU_PROJECT_METRICS_5_SHEET_ID`
 - `FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE`
-- `FEISHU_PROJECT_METRICS_6_SPREADSHEET_TOKEN`
-- `FEISHU_PROJECT_METRICS_6_SHEET_ID`
-- `FEISHU_PROJECT_METRICS_6_SPREADSHEET_TITLE`
 
 当前 GitHub Actions 会在 `ROBLOX_CREATOR_OVERVIEW_URL_3` 未配置时默认注入 `Troll ur friends` 的 overview URL：`https://create.roblox.com/dashboard/creations/experiences/10170801715/overview`。
 当前 GitHub Actions 会在 `ROBLOX_CREATOR_OVERVIEW_URL_4` 未配置时默认注入 `Soccer RNG` 的 overview URL：`https://create.roblox.com/dashboard/creations/experiences/10304101434/overview`。
 当前 GitHub Actions 会在 `ROBLOX_CREATOR_OVERVIEW_URL_5` 未配置时默认注入 `soccer大亨版` 的 overview URL：`https://create.roblox.com/dashboard/creations/experiences/10403337696/overview`。
-当前 GitHub Actions 会在 `ROBLOX_CREATOR_OVERVIEW_URL_6` 未配置时默认注入 `TNT` 的 overview URL：`https://create.roblox.com/dashboard/creations/experiences/10767359040/overview`。第六槽位只参与项目日报，不参与收入日报。
 
 ### 收入日报相关
 
@@ -649,7 +630,6 @@ Worker 当前必需配置：
 - `ALLOWED_OPEN_IDS`
 - `SCHEDULE_CHAT_IDS`
 - `ROBLOX_MONEY_TEST_CHAT_IDS`
-- `COMMAND_TEXT`
 - `TOP_DAY_COMMAND_TEXT`
 - `PROJECT_METRICS_COMMAND_TEXT`
 - `ROBLOX_MONEY_COMMAND_TEXT`
@@ -841,9 +821,9 @@ Worker 事件去重默认使用 Cloudflare KV：
 
 ### 8.2 新增一个项目日报项目
 
-如果只是修改现有六个项目，改变量即可。
+如果只是修改现有四个项目，改变量即可。
 
-如果要新增第七个项目，必须改代码：
+如果要新增项目，必须改代码：
 
 1. 在 [`app/config.py`](../app/config.py) 增加新字段
 2. 在工作流中增加对应环境变量注入

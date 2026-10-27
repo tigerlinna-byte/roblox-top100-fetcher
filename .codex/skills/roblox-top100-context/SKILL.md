@@ -19,7 +19,7 @@ description: Restore project context for roblox-top100-fetcher before handling n
 
 先判断用户请求属于哪些链路。一个需求可以命中多个分类：
 
-- 榜单摘要：`top100_message`
+- 榜单摘要：`top100_message`（已下线，入口已移除、代码保留）
 - Top Trending 多 Sheet：`top_trending_sheet`
 - 项目日报：`roblox_project_daily_metrics`
 - Worker / Cron / GitHub Actions 触发桥接

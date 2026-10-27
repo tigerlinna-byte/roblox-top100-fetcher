@@ -23,7 +23,6 @@ class ProjectMetricsRoutingTests(unittest.TestCase):
             roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
             roblox_creator_overview_url_4="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
             roblox_creator_overview_url_5="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
-            roblox_creator_overview_url_6="https://create.roblox.com/dashboard/creations/experiences/10767359040/overview",
         )
         send_patch = patch("app.main.FeishuClient.send_group_markdown", autospec=True)
         self.send = send_patch.start()
@@ -40,7 +39,6 @@ class ProjectMetricsRoutingTests(unittest.TestCase):
                 "10170801715": [],
                 "10304101434": [],
                 "10403337696": [],
-                "10767359040": [],
             },
             failures=(),
         )
@@ -69,7 +67,7 @@ class ProjectMetricsRoutingTests(unittest.TestCase):
                     if "oc_limited" in targets:
                         self.assertEqual(["https://feishu.cn/sheets/10170801715"], messages["oc_limited"])
                     self.assertNotIn("oc_other_full", messages)
-                    self.assertEqual(5, self.sync.call_count)
+                    self.assertEqual(4, self.sync.call_count)
 
     def test_project_ids_control_visibility_even_when_configuration_slots_change(self) -> None:
         cfg = replace(
@@ -90,11 +88,11 @@ class ProjectMetricsRoutingTests(unittest.TestCase):
         )
 
     def test_failure_summaries_are_filtered_and_recounted_for_each_audience(self) -> None:
-        payload = self.failure_payload(("10170801715", "10304101434", "10403337696", "10767359040"))
+        payload = self.failure_payload(("10170801715", "10304101434", "10403337696"))
         _notify_success(self.cfg, payload)
         messages = self.messages_by_chat()
         self.assertEqual(1, len(messages["oc_full"]))
-        self.assertIn("失败项目数: 4", messages["oc_full"][0])
+        self.assertIn("失败项目数: 3", messages["oc_full"][0])
         for failure in payload.failures:
             self.assertIn(failure.reason, messages["oc_full"][0])
         self.assertEqual(1, len(messages["oc_limited"]))
@@ -102,7 +100,6 @@ class ProjectMetricsRoutingTests(unittest.TestCase):
         self.assertIn("private-detail-10170801715", messages["oc_limited"][0])
         self.assertNotIn("10304101434", messages["oc_limited"][0])
         self.assertNotIn("10403337696", messages["oc_limited"][0])
-        self.assertNotIn("10767359040", messages["oc_limited"][0])
         self.sync.assert_not_called()
 
     def test_restricted_only_failures_do_not_send_empty_summary_to_limited_group(self) -> None:
@@ -111,7 +108,7 @@ class ProjectMetricsRoutingTests(unittest.TestCase):
                 self.send.reset_mock()
                 _notify_success(
                     replace(self.cfg, run_chat_id=targets),
-                    self.failure_payload(("10304101434", "10403337696", "10767359040")),
+                    self.failure_payload(("10304101434", "10403337696")),
                 )
                 messages = self.messages_by_chat()
                 self.assertNotIn("oc_limited", messages)
@@ -124,7 +121,7 @@ class ProjectMetricsRoutingTests(unittest.TestCase):
             ({"feishu_app_id": ""}, "FEISHU_APP_ID"),
             ({"feishu_app_secret": ""}, "FEISHU_APP_SECRET"),
         ):
-            for payload in (self.payload, self.failure_payload(("10304101434", "10403337696")), self.failure_payload(("10767359040",))):
+            for payload in (self.payload, self.failure_payload(("10304101434", "10403337696")), self.failure_payload(("10403337696",))):
                 with self.subTest(overrides=overrides, has_failures=bool(payload.failures)):
                     with self.assertRaisesRegex(FeishuClientError, expected_error):
                         _notify_success(replace(self.cfg, **overrides), payload)
@@ -135,7 +132,7 @@ class ProjectMetricsRoutingTests(unittest.TestCase):
         _notify_success(self.cfg, self.payload)
         for call in self.send.call_args_list:
             client, message = call.args
-            if any(project_id in message for project_id in ("10304101434", "10403337696", "10767359040")):
+            if any(project_id in message for project_id in ("10304101434", "10403337696")):
                 self.assertEqual("oc_full", client.config.run_chat_id)
                 self.assertEqual("", client.config.feishu_bot_webhook)
 

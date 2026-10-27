@@ -11,7 +11,6 @@ from app.main import (
     _fetch_report_payload,
     _notify_success,
     _persist_top_trending_previous_ranks,
-    _resolve_project_metrics_report_variables,
     _sync_project_metrics_sheet,
     _write_report_outputs,
 )
@@ -248,7 +247,6 @@ class MainTests(unittest.TestCase):
             feishu_app_id="test_app",
             feishu_app_secret="test_secret",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
             roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
             roblox_creator_overview_url_4="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
             roblox_creator_overview_url_5="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
@@ -270,24 +268,6 @@ class MainTests(unittest.TestCase):
                         client_crash_rate="0.10%",
                         project_id="9682356542",
                         source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-                        fetched_at="2026-03-18T01:02:03Z",
-                    )
-                ],
-                "9707829514": [
-                    ProjectDailyMetricsRecord(
-                        report_date="2026-03-18",
-                        peak_ccu="200",
-                        average_session_time="12m",
-                        day1_retention="12%",
-                        day7_retention="6%",
-                        payer_conversion_rate="2%",
-                        arppu="$2.00",
-                        qptr="2",
-                        five_minute_retention="25%",
-                        home_recommendations="20",
-                        client_crash_rate="0.20%",
-                        project_id="9707829514",
-                        source_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
                         fetched_at="2026-03-18T01:02:03Z",
                     )
                 ],
@@ -352,7 +332,6 @@ class MainTests(unittest.TestCase):
         feishu_client_cls.return_value = feishu_client
         sync_sheet.side_effect = [
             MagicMock(url="https://feishu.cn/sheets/project-one"),
-            MagicMock(url="https://feishu.cn/sheets/project-two"),
             MagicMock(url="https://feishu.cn/sheets/project-three"),
             MagicMock(url="https://feishu.cn/sheets/project-four"),
             MagicMock(url="https://feishu.cn/sheets/project-five"),
@@ -360,12 +339,11 @@ class MainTests(unittest.TestCase):
 
         _notify_success(cfg, report_payload)
 
-        self.assertEqual(5, sync_sheet.call_count)
-        self.assertEqual(5, feishu_client.send_group_markdown.call_count)
+        self.assertEqual(4, sync_sheet.call_count)
+        self.assertEqual(4, feishu_client.send_group_markdown.call_count)
         self.assertEqual(
             [
                 "https://feishu.cn/sheets/project-one",
-                "https://feishu.cn/sheets/project-two",
                 "https://feishu.cn/sheets/project-three",
                 "https://feishu.cn/sheets/project-four",
                 "https://feishu.cn/sheets/project-five",
@@ -476,138 +454,6 @@ class MainTests(unittest.TestCase):
             [call.args[0] for call in feishu_client.send_group_markdown.call_args_list],
         )
 
-    def test_project_metrics_report_variables_can_disable_second_project(self) -> None:
-        cfg = Config(
-            run_report_mode="roblox_project_daily_metrics",
-            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
-            roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
-            roblox_creator_overview_url_4="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
-            roblox_creator_overview_url_5="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
-            roblox_project_metrics_disable_second_project=True,
-        )
-
-        variables = _resolve_project_metrics_report_variables(cfg)
-
-        self.assertEqual(
-            ["9682356542", "10170801715", "10304101434", "10403337696"],
-            [item.project_id for item in variables],
-        )
-
-    @patch("app.main.write_project_metrics_output")
-    def test_project_metrics_output_ignores_disabled_second_project(self, write_project_metrics_output) -> None:
-        cfg = Config(
-            run_report_mode="roblox_project_daily_metrics",
-            output_dir="./data",
-            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
-            roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
-            roblox_creator_overview_url_4="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
-            roblox_creator_overview_url_5="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
-            roblox_project_metrics_disable_second_project=True,
-        )
-        first_record = ProjectDailyMetricsRecord(
-            report_date="2026-03-18",
-            peak_ccu="100",
-            average_session_time="10m",
-            day1_retention="10%",
-            day7_retention="5%",
-            payer_conversion_rate="1%",
-            arppu="$1.00",
-            qptr="1",
-            five_minute_retention="20%",
-            home_recommendations="10",
-            client_crash_rate="0.10%",
-            project_id="9682356542",
-            source_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-            fetched_at="2026-03-18T01:02:03Z",
-        )
-        second_record = ProjectDailyMetricsRecord(
-            report_date="2026-03-18",
-            peak_ccu="200",
-            average_session_time="12m",
-            day1_retention="12%",
-            day7_retention="6%",
-            payer_conversion_rate="2%",
-            arppu="$2.00",
-            qptr="2",
-            five_minute_retention="25%",
-            home_recommendations="20",
-            client_crash_rate="0.20%",
-            project_id="9707829514",
-            source_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
-            fetched_at="2026-03-18T01:02:03Z",
-        )
-        third_record = ProjectDailyMetricsRecord(
-            report_date="2026-05-31",
-            peak_ccu="300",
-            average_session_time="14m",
-            day1_retention="14%",
-            day7_retention="7%",
-            payer_conversion_rate="3%",
-            arppu="$3.00",
-            qptr="3",
-            five_minute_retention="30%",
-            home_recommendations="30",
-            client_crash_rate="0.30%",
-            project_id="10170801715",
-            source_url="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
-            fetched_at="2026-05-31T01:02:03Z",
-        )
-        fourth_record = ProjectDailyMetricsRecord(
-            report_date="2026-06-18",
-            peak_ccu="400",
-            average_session_time="16m",
-            day1_retention="16%",
-            day7_retention="8%",
-            payer_conversion_rate="4%",
-            arppu="$4.00",
-            qptr="4",
-            five_minute_retention="35%",
-            home_recommendations="40",
-            client_crash_rate="0.40%",
-            project_id="10304101434",
-            source_url="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
-            fetched_at="2026-06-18T01:02:03Z",
-        )
-        fifth_record = ProjectDailyMetricsRecord(
-            report_date="2026-07-06",
-            peak_ccu="500",
-            average_session_time="18m",
-            day1_retention="18%",
-            day7_retention="9%",
-            payer_conversion_rate="5%",
-            arppu="$5.00",
-            qptr="5",
-            five_minute_retention="40%",
-            home_recommendations="50",
-            client_crash_rate="0.50%",
-            project_id="10403337696",
-            source_url="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
-            fetched_at="2026-07-06T01:02:03Z",
-        )
-        write_project_metrics_output.return_value = ("data/project_metrics_2026-03-18.json", "data/project_metrics_2026-03-18.csv")
-
-        _write_report_outputs(
-            cfg,
-            ProjectMetricsReportPayload(
-                records_by_project_id={
-                    "9682356542": [first_record],
-                    "9707829514": [second_record],
-                    "10170801715": [third_record],
-                    "10304101434": [fourth_record],
-                    "10403337696": [fifth_record],
-                },
-                failures=(),
-            ),
-        )
-
-        write_project_metrics_output.assert_called_once_with(
-            "./data",
-            [first_record, third_record, fourth_record, fifth_record],
-            prefix="project_metrics",
-        )
-
     @patch("app.main._sync_project_metrics_sheet")
     @patch("app.main.FeishuClient")
     def test_project_metrics_partial_success_sends_sheet_urls_and_failure_summary(
@@ -618,7 +464,7 @@ class MainTests(unittest.TestCase):
         cfg = Config(
             run_report_mode="roblox_project_daily_metrics",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+            roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
         )
         report_payload = ProjectMetricsReportPayload(
             records_by_project_id={
@@ -643,8 +489,8 @@ class MainTests(unittest.TestCase):
             },
             failures=(
                 ProjectMetricsFetchFailure(
-                    project_id="9707829514",
-                    overview_url="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+                    project_id="10170801715",
+                    overview_url="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
                     reason="Creator 后台请求被重定向到登录页，请检查 Cookie 是否有效",
                 ),
             ),
@@ -662,7 +508,7 @@ class MainTests(unittest.TestCase):
             feishu_client.send_group_markdown.call_args_list[0].args[0],
         )
         self.assertIn(
-            "项目 9707829514",
+            "项目 10170801715",
             feishu_client.send_group_markdown.call_args_list[1].args[0],
         )
 
@@ -674,7 +520,7 @@ class MainTests(unittest.TestCase):
         cfg = Config(
             run_report_mode="roblox_project_daily_metrics",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+            roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
         )
         client = MagicMock()
         client_cls.return_value = client
@@ -711,7 +557,7 @@ class MainTests(unittest.TestCase):
 
         self.assertEqual(first_project_records, report_payload.records_by_project_id["9682356542"])
         self.assertEqual(1, len(report_payload.failures))
-        self.assertEqual("9707829514", report_payload.failures[0].project_id)
+        self.assertEqual("10170801715", report_payload.failures[0].project_id)
         self.assertIn("Cookie", report_payload.failures[0].reason)
 
     @patch("app.main.RobloxCreatorMetricsClient")
@@ -722,19 +568,19 @@ class MainTests(unittest.TestCase):
         cfg = Config(
             run_report_mode="roblox_project_daily_metrics",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
+            roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
         )
         client = MagicMock()
         client_cls.return_value = client
         client.fetch_project_daily_metrics.side_effect = [
             RobloxCreatorMetricsClientError("项目 9682356542 缺少 peak_ccu"),
-            RobloxCreatorMetricsClientError("项目 9707829514 缺少 peak_ccu"),
+            RobloxCreatorMetricsClientError("项目 10170801715 缺少 peak_ccu"),
         ]
 
         report_payload = _fetch_report_payload(cfg)
 
         self.assertEqual({}, report_payload.records_by_project_id)
-        self.assertEqual(["9682356542", "9707829514"], [failure.project_id for failure in report_payload.failures])
+        self.assertEqual(["9682356542", "10170801715"], [failure.project_id for failure in report_payload.failures])
         self.assertIn("peak_ccu", report_payload.failures[0].reason)
 
     @patch("app.main._build_project_metrics_query_plan_for_project")
@@ -850,11 +696,9 @@ class MainTests(unittest.TestCase):
         cfg = Config(
             run_report_mode="roblox_money",
             roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
             roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
             roblox_creator_overview_url_4="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
             roblox_creator_overview_url_5="https://create.roblox.com/dashboard/creations/experiences/10403337696/overview",
-            roblox_project_metrics_disable_second_project=True,
             roblox_money_start_date="2026-05-01",
             roblox_money_usd_per_100k_robux="350",
         )
@@ -872,30 +716,6 @@ class MainTests(unittest.TestCase):
             [item.project_id for item in payload.project_revenues],
         )
         self.assertEqual(4, client.fetch_project_revenue_series.call_count)
-
-    @patch("app.main.RobloxCreatorMetricsClient")
-    def test_roblox_money_payload_skips_second_project_without_troll_project(
-        self,
-        client_cls,
-    ) -> None:
-        cfg = Config(
-            run_report_mode="roblox_money",
-            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
-            roblox_creator_overview_url_2="https://create.roblox.com/dashboard/creations/experiences/9707829514/overview",
-            roblox_money_start_date="2026-05-01",
-            roblox_money_usd_per_100k_robux="350",
-        )
-        client = MagicMock()
-        client_cls.return_value = client
-        client.fetch_project_revenue_series.return_value = MagicMock(
-            metric="Revenue",
-            values={"2026-05-04": 4000},
-        )
-
-        payload = _fetch_report_payload(cfg)
-
-        self.assertEqual(["9682356542"], [item.project_id for item in payload.project_revenues])
-        self.assertEqual(1, client.fetch_project_revenue_series.call_count)
 
     @patch("app.main.RobloxCreatorMetricsClient")
     def test_roblox_money_payload_uses_natural_month_after_may(

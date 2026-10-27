@@ -7,18 +7,15 @@ from typing import Any
 
 PROJECT_START_DATES = {
     "9682356542": "2026-03-09",
-    "9707829514": "2026-03-17",
     "10170801715": "2026-05-31",
     "10304101434": "2026-06-18",
     "10403337696": "2026-07-06",
-    "10767359040": "2026-09-26",
 }
 DEFAULT_PROJECT_REQUIRED_FIELDS = ("peak_ccu",)
-PROJECT_REQUIRED_FIELDS = {
-    # 该项目当前在 Roblox analytics 接口中长期缺失 PeakConcurrentPlayers，
-    # 继续强制要求会让日报长期处于“部分失败”状态，因此这里放宽为不校验核心字段。
-    "9707829514": (),
-}
+# 按项目放宽核心字段校验：Roblox analytics 对个别项目长期不返回 PeakConcurrentPlayers 时，
+# 在此登记该项目实际要求的核心字段（如空元组），避免日报长期处于“部分失败”状态。
+# 当前启用的项目都按默认核心字段校验。
+PROJECT_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {}
 PROJECT_METRICS_FIELD_NAMES = (
     "peak_ccu",
     "average_session_time",

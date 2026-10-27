@@ -20,14 +20,14 @@
 
 | 命令 | report mode |
 | --- | --- |
-| `/roblox-top100` | `top100_message` |
 | `/roblox-top-day` | `top_trending_sheet` |
 | `/roblox-project-metrics` | `roblox_project_daily_metrics` |
 | `/roblox-money` | `roblox_money` |
 
+`/roblox-top100`（`top100_message`）已下线：Worker 不再响应该命令，Python 侧的 Top100 抓取与摘要代码保留，恢复时在 `resolveCommand()` 中加回命令映射，并把该模式加回 workflow 的 `report_mode` 选项。
+
 命令文本可以通过这些 Worker 环境变量覆盖：
 
-- `COMMAND_TEXT`
 - `TOP_DAY_COMMAND_TEXT`
 - `PROJECT_METRICS_COMMAND_TEXT`
 - `ROBLOX_MONEY_COMMAND_TEXT`

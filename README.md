@@ -6,7 +6,7 @@
 
 | `RUN_REPORT_MODE` | 典型触发方式 | 主要行为 | 主要输出 |
 | --- | --- | --- | --- |
-| `top100_message` | 手动本地运行、GitHub Actions 手动触发、飞书 `/roblox-top100` | 抓取 `top-playing-now` 榜单并写入本地产物；成功时不再发送飞书摘要 | `data/top100_YYYY-MM-DD.json/csv` |
+| `top100_message`（已下线，代码保留） | 仅本地运行；飞书 `/roblox-top100` 与 GitHub Actions 下拉选项已移除 | 抓取 `top-playing-now` 榜单并写入本地产物；成功时不再发送飞书摘要 | `data/top100_YYYY-MM-DD.json/csv` |
 | `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron | 抓取 `Top_Trending_V4`、`Up_And_Coming_V4`、`top-playing-now`、`top-earning`，更新飞书多 Sheet 表格并发送 `今日关注` 卡片 | `data/top_trending_YYYY-MM-DD.json/csv` + 飞书卡片 + 飞书表格链接 |
 | `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron | 抓取 Roblox Creator Analytics 项目日报，更新每个项目各自的飞书表格 | `data/project_metrics_YYYY-MM-DD.json/csv` + 每个项目的飞书表格链接 |
 | `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron | 抓取两个 Roblox 项目的总收入，按配置汇率换算美元并发送卡片日报 | `data/roblox_money_YYYY-MM-DD.json/csv` + 飞书收入卡片 |
@@ -25,7 +25,7 @@
 - `top-earning` 会通过分页尽量抓取前 300 名；如果 Roblox Explore 接口返回不足 300 条，则按实际返回写表和判断今日关注；如果该榜单临时失败，本次会保留旧收入榜 Sheet，不阻断其他 3 个榜单和今日关注卡片。
 - `ROBLOX_TOP_TRENDING_SORT_ID` 这个环境变量目前没有被主流程消费，不要把它当作 `/roblox-top-day` 的真实开关。
 - `/roblox-top-day` 的手动触发默认写“测试表”，只有 `trigger_source=cloudflare_cron` 时才会写“正式表”。
-- 项目日报当前支持六个项目入口：`ROBLOX_CREATOR_OVERVIEW_URL` 到 `ROBLOX_CREATOR_OVERVIEW_URL_6`。其中第 3、4、5、6 槽位在 GitHub Actions 中有默认项目；第六槽位为 TNT（`10767359040`），只接入项目日报表格，日报链接和失败明细仅发全量群。新增第七个项目需要扩展代码和工作流。
+- 项目日报当前支持四个项目入口：`ROBLOX_CREATOR_OVERVIEW_URL`、`ROBLOX_CREATOR_OVERVIEW_URL_3`、`ROBLOX_CREATOR_OVERVIEW_URL_4`、`ROBLOX_CREATOR_OVERVIEW_URL_5`，其中第 3、4、5 槽位在 GitHub Actions 中有默认项目。原第二槽位 Jail Ur Fiends 与第六槽位 TNT 已于 2026-10-27 删除。新增项目需要扩展代码和工作流。
 - `/roblox-money` 默认按顺序发送第一项目、`Troll ur friends`（`10170801715`）、`Soccer RNG`（`10304101434`）和 `soccer大亨版`（`10403337696`）的收入日报；手动和定时都只允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 中的 test 群触发和接收。
 - 收入日报展示 Roblox Analytics 当前最新可用收入日期的一天收入；月累计按该统计日所在自然月从 1 日累计到该统计日，2026 年 5 月从 `2026-05-01` 开始。
 - 收入日报不使用 ARPPU 推算总收入；如果 Roblox 返回 Robux 总收入，必须配置 `ROBLOX_MONEY_USD_PER_100K_ROBUX` 才能换算美元。

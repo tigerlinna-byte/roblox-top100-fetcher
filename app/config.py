@@ -14,12 +14,9 @@ class Config:
     roblox_sort_id: str = "top-playing-now"
     roblox_top_trending_sort_id: str = ""
     roblox_creator_overview_url: str = ""
-    roblox_creator_overview_url_2: str = ""
     roblox_creator_overview_url_3: str = ""
     roblox_creator_overview_url_4: str = ""
     roblox_creator_overview_url_5: str = ""
-    roblox_creator_overview_url_6: str = ""
-    roblox_project_metrics_disable_second_project: bool = False
     project_metrics_primary_project_test_chat_ids: str = ""
     roblox_creator_cookie: str = ""
     roblox_money_start_date: str = "2026-05-01"
@@ -58,9 +55,6 @@ class Config:
     feishu_project_metrics_spreadsheet_token: str = ""
     feishu_project_metrics_sheet_id: str = ""
     feishu_project_metrics_spreadsheet_title: str = "Shoot Or Shot"
-    feishu_project_metrics_2_spreadsheet_token: str = ""
-    feishu_project_metrics_2_sheet_id: str = ""
-    feishu_project_metrics_2_spreadsheet_title: str = "项目 9707829514"
     feishu_project_metrics_3_spreadsheet_token: str = ""
     feishu_project_metrics_3_sheet_id: str = ""
     feishu_project_metrics_3_spreadsheet_title: str = "Troll ur friends"
@@ -70,9 +64,6 @@ class Config:
     feishu_project_metrics_5_spreadsheet_token: str = ""
     feishu_project_metrics_5_sheet_id: str = ""
     feishu_project_metrics_5_spreadsheet_title: str = "soccer大亨版"
-    feishu_project_metrics_6_spreadsheet_token: str = ""
-    feishu_project_metrics_6_sheet_id: str = ""
-    feishu_project_metrics_6_spreadsheet_title: str = "TNT"
 
 
 
@@ -89,18 +80,6 @@ def _get_float(name: str, default: float) -> float:
     if not value:
         return default
     return float(value)
-
-
-def _get_bool(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    normalized = value.strip().lower()
-    if normalized in {"1", "true", "yes", "y", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "n", "off", ""}:
-        return False
-    return default
 
 
 
@@ -129,15 +108,9 @@ def load_config() -> Config:
         roblox_sort_id=os.getenv("ROBLOX_SORT_ID", "top-playing-now"),
         roblox_top_trending_sort_id=os.getenv("ROBLOX_TOP_TRENDING_SORT_ID", ""),
         roblox_creator_overview_url=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL", ""),
-        roblox_creator_overview_url_2=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL_2", ""),
         roblox_creator_overview_url_3=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL_3", ""),
         roblox_creator_overview_url_4=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL_4", ""),
         roblox_creator_overview_url_5=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL_5", ""),
-        roblox_creator_overview_url_6=os.getenv("ROBLOX_CREATOR_OVERVIEW_URL_6", ""),
-        roblox_project_metrics_disable_second_project=_get_bool(
-            "ROBLOX_PROJECT_METRICS_DISABLE_SECOND_PROJECT",
-            False,
-        ),
         project_metrics_primary_project_test_chat_ids=os.getenv(
             "PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS",
             "",
@@ -197,15 +170,6 @@ def load_config() -> Config:
             "FEISHU_PROJECT_METRICS_SPREADSHEET_TITLE",
             "Shoot Or Shot",
         ),
-        feishu_project_metrics_2_spreadsheet_token=os.getenv(
-            "FEISHU_PROJECT_METRICS_2_SPREADSHEET_TOKEN",
-            "",
-        ),
-        feishu_project_metrics_2_sheet_id=os.getenv("FEISHU_PROJECT_METRICS_2_SHEET_ID", ""),
-        feishu_project_metrics_2_spreadsheet_title=os.getenv(
-            "FEISHU_PROJECT_METRICS_2_SPREADSHEET_TITLE",
-            "项目 9707829514",
-        ),
         feishu_project_metrics_3_spreadsheet_token=os.getenv(
             "FEISHU_PROJECT_METRICS_3_SPREADSHEET_TOKEN",
             "",
@@ -232,14 +196,5 @@ def load_config() -> Config:
         feishu_project_metrics_5_spreadsheet_title=os.getenv(
             "FEISHU_PROJECT_METRICS_5_SPREADSHEET_TITLE",
             "soccer大亨版",
-        ),
-        feishu_project_metrics_6_spreadsheet_token=os.getenv(
-            "FEISHU_PROJECT_METRICS_6_SPREADSHEET_TOKEN",
-            "",
-        ),
-        feishu_project_metrics_6_sheet_id=os.getenv("FEISHU_PROJECT_METRICS_6_SHEET_ID", ""),
-        feishu_project_metrics_6_spreadsheet_title=os.getenv(
-            "FEISHU_PROJECT_METRICS_6_SPREADSHEET_TITLE",
-            "TNT",
         ),
     )

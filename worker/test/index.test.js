@@ -68,27 +68,7 @@ test("responds to Feishu challenge", async () => {
   assert.deepEqual(await response.json(), { challenge: "abc123" });
 });
 
-test("dispatches workflow and sends ack for allowed command", async () => {
-  const calls = [];
-  const ctx = buildCtx();
-  const fetchImpl = async (url, init = {}) => {
-    calls.push({ url, init });
-
-    if (String(url).includes("/dispatches")) {
-      return new Response(null, { status: 204 });
-    }
-
-    if (String(url).includes("/tenant_access_token/internal")) {
-      return Response.json({ code: 0, tenant_access_token: "tenant-token" });
-    }
-
-    if (String(url).includes("/im/v1/messages")) {
-      return Response.json({ code: 0, data: { message_id: "om_test" } });
-    }
-
-    throw new Error(`Unexpected fetch ${url}`);
-  };
-
+test("ignores offline /roblox-top100 command", async () => {
   const response = await handleRequest(
     buildRequest({
       header: { token: "verify-me", event_id: "evt_1" },
@@ -107,29 +87,14 @@ test("dispatches workflow and sends ack for allowed command", async () => {
       },
     }),
     buildEnv(),
-    ctx,
-    fetchImpl,
+    buildCtx(),
+    async () => {
+      throw new Error("fetch should not be called");
+    },
   );
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true, dispatched: true });
-  assert.equal(ctx.tasks.length, 1);
-
-  await Promise.all(ctx.tasks);
-  assert.equal(calls.length, 3);
-
-  const dispatchCall = calls[0];
-  assert.match(String(dispatchCall.url), /\/dispatches$/);
-  const dispatchBody = JSON.parse(dispatchCall.init.body);
-  assert.equal(dispatchBody.ref, "main");
-  assert.equal(dispatchBody.inputs.trigger_source, "feishu_chat_command");
-  assert.equal(dispatchBody.inputs.trigger_actor, "ou_test_user");
-  assert.equal(dispatchBody.inputs.chat_id, "oc_test_chat");
-  assert.equal(dispatchBody.inputs.report_mode, "top100_message");
-
-  const ackCall = calls[2];
-  const ackBody = JSON.parse(ackCall.init.body);
-  assert.equal(ackBody.receive_id, "oc_test_chat");
+  assert.deepEqual(await response.json(), { ok: true, ignored: "command_mismatch" });
 });
 
 test("dispatches project metrics workflow for /roblox-project-metrics", async () => {
@@ -341,7 +306,7 @@ test("ignores command from unauthorized chat", async () => {
         message: {
           chat_id: "oc_other_chat",
           message_type: "text",
-          content: JSON.stringify({ text: "/roblox-top100" }),
+          content: JSON.stringify({ text: "/roblox-top-day" }),
         },
       },
     }),
@@ -393,7 +358,7 @@ test("deduplicates repeated event ids with persistent store", async () => {
         message_id: "om_message_same",
         chat_id: "oc_test_chat",
         message_type: "text",
-        content: JSON.stringify({ text: "/roblox-top100" }),
+        content: JSON.stringify({ text: "/roblox-top-day" }),
       },
     },
   };

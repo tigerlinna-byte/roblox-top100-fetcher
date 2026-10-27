@@ -1,4 +1,3 @@
-const DEFAULT_TOP100_COMMAND = "/roblox-top100";
 const DEFAULT_TOP_DAY_COMMAND = "/roblox-top-day";
 const DEFAULT_PROJECT_METRICS_COMMAND = "/roblox-project-metrics";
 const DEFAULT_ROBLOX_MONEY_COMMAND = "/roblox-money";
@@ -461,10 +460,6 @@ async function dispatchWorkflow(fetchImpl, env, trigger, metadata = {}) {
 
 function resolveCommand(env, text) {
   const commands = [
-    {
-      text: env.COMMAND_TEXT || DEFAULT_TOP100_COMMAND,
-      reportMode: "top100_message",
-    },
     {
       text: env.TOP_DAY_COMMAND_TEXT || DEFAULT_TOP_DAY_COMMAND,
       reportMode: "top_trending_sheet",
