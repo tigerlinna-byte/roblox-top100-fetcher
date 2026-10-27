@@ -69,21 +69,17 @@
 
 ## 当前定时任务
 
-[`worker/wrangler.toml`](./wrangler.toml) 当前配置了三个 cron：
+[`worker/wrangler.toml`](./wrangler.toml) 当前只配置一个 cron：
 
 | Cron | 北京时间 | report mode |
 | --- | --- | --- |
-| `0 1 * * *` | `09:00` | `top_trending_sheet` |
-| `10 1 * * *` | `09:10` | `roblox_project_daily_metrics` |
-| `20 1 * * *` | `09:20` | `roblox_money` |
+| `10 1 * * *` | `09:10` | `daily_brief` |
 
 注意：
 
-- Top Trending 与项目日报定时任务都依赖 `SCHEDULE_CHAT_IDS`
-- 项目日报会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传给 GitHub Actions，用于让第一项目 `Shoot Or Shot` 链接只发送到 test 群
-- `/roblox-money` 定时任务只依赖 `ROBLOX_MONEY_TEST_CHAT_IDS`，不会复用 `SCHEDULE_CHAT_IDS`
-- 如果 `SCHEDULE_CHAT_IDS` 为空，Top Trending 与项目日报定时任务会被跳过
-- 如果 `ROBLOX_MONEY_TEST_CHAT_IDS` 为空，收入日报定时任务会被跳过
+- 早报发送到 `SCHEDULE_CHAT_IDS`；为空时定时任务会被跳过
+- Worker 会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 作为全量群名单传给 GitHub Actions，名单内的群收到含收入的完整版，其余群收到精简版
+- 原 09:00 今日关注、09:20 收入日报定时任务已于 2026-10-27 合并进早报，对应 cron 已移除
 
 ## 本地测试
 

@@ -13,9 +13,10 @@
 | 运行模式 | 入口 | 数据来源 | 结果 |
 | --- | --- | --- | --- |
 | `top100_message`（已下线） | 仅本地运行；飞书 `/roblox-top100` 与 GitHub Actions 下拉选项已移除 | Roblox 榜单接口 | 输出 JSON/CSV |
-| `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron `0 1 * * *` | Roblox 榜单接口 | 发送 `今日关注` 卡片，更新历史排名，并输出 JSON |
-| `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron `10 1 * * *` | Roblox Creator Analytics 接口 | 更新每个项目自己的飞书表，并发送表格链接 |
-| `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron `20 1 * * *` | Roblox Creator Analytics 收入指标 | 发送第一、第三、第四和第五项目的收入卡片日报，并输出 JSON/CSV |
+| `top_trending_sheet` | 飞书 `/roblox-top-day`（定时已并入每日早报） | Roblox 榜单接口 | 发送 `今日关注` 卡片，更新历史排名，并输出 JSON |
+| `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`（定时已并入每日早报） | Roblox Creator Analytics 接口 | 更新每个项目自己的飞书表，并发送表格链接 |
+| `roblox_money` | test 群 `/roblox-money`（定时已并入每日早报） | Roblox Creator Analytics 收入指标 | 发送第一、第三、第四和第五项目的收入卡片日报，并输出 JSON/CSV |
+| `daily_brief` | 飞书 `/roblox-brief`、Cloudflare Cron `10 1 * * *` | 榜单接口 + Creator Analytics | 同步项目表格，全量群与精简群各发一张每日早报卡片，并输出 JSON |
 
 如果有人还把它理解成“抓一下 Top100 然后发群”，那已经是过时认知。
 
@@ -109,7 +110,7 @@
 入口：
 
 - 飞书命令 `/roblox-top-day`
-- Cloudflare Cron `0 1 * * *`
+- 自 2026-10-27 起不再单独定时；定时的榜单抓取与正式历史排名维护由 `daily_brief` 完成
 
 执行路径：
 
@@ -211,7 +212,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 入口：
 
 - 飞书命令 `/roblox-project-metrics`
-- Cloudflare Cron `10 1 * * *`
+- 自 2026-10-27 起不再单独定时；每天的表格同步由 `daily_brief` 定时任务完成
 
 执行路径：
 
@@ -407,7 +408,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 入口：
 
 - test 群命令 `/roblox-money`
-- Cloudflare Cron `20 1 * * *`
+- 自 2026-10-27 起不再单独定时；每天的收入由 `daily_brief` 只发给全量群
 
 执行路径：
 
@@ -430,18 +431,15 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 
 #### test 群限制
 
-`roblox_money` 与现有两个定时任务不同：
-
 - 手动命令只允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 里的群触发
-- 定时消息也只发到 `ROBLOX_MONEY_TEST_CHAT_IDS`
-- 它不复用 `SCHEDULE_CHAT_IDS`
+- 每日早报中的收入部分同样只发给该名单内的全量群
 
-### 3.5 `daily_brief`（每日早报，试运行中）
+### 3.5 `daily_brief`（每日早报）
 
 入口：
 
 - 飞书命令 `/roblox-brief`
-- 尚未接入 Cloudflare Cron；在测试群确认卡片样式后，计划把现有三个定时任务合并为 `10 1 * * *` 一个早报任务
+- Cloudflare Cron `10 1 * * *`（北京时间 09:10），2026-10-27 起取代原来 09:00 / 09:10 / 09:20 三个定时任务
 
 执行路径：
 
@@ -495,19 +493,16 @@ Worker 允许通过环境变量改命令文本：
 
 | Cron | 北京时间 | 运行模式 |
 | --- | --- | --- |
-| `0 1 * * *` | `09:00` | `top_trending_sheet` |
-| `10 1 * * *` | `09:10` | `roblox_project_daily_metrics` |
-| `20 1 * * *` | `09:20` | `roblox_money` |
+| `10 1 * * *` | `09:10` | `daily_brief` |
 
-定时 dispatch 逻辑在 [`worker/src/index.js`](../worker/src/index.js)。
+定时 dispatch 逻辑在 [`worker/src/index.js`](../worker/src/index.js)。旧的 `0 1 * * *`、`20 1 * * *` 已从 `wrangler.toml` 移除，Worker 收到时按未知 cron 忽略。
 
 注意：
 
-- Top Trending 与项目日报复用同一个 `SCHEDULE_CHAT_IDS`
-- `SCHEDULE_CHAT_IDS` 支持逗号分隔多个 `chat_id`
-- 定时触发会把多个 `chat_id` 原样传入 `RUN_CHAT_ID`
-- Python 侧会拆分后逐个群发送
-- 收入日报定时只使用 `ROBLOX_MONEY_TEST_CHAT_IDS`，并且手动 `/roblox-money` 也只允许这些群触发
+- 早报发送到 `SCHEDULE_CHAT_IDS`，支持逗号分隔多个 `chat_id`，原样传入 `RUN_CHAT_ID`
+- Worker 同时把 `ROBLOX_MONEY_TEST_CHAT_IDS` 作为全量群名单传入 `project_metrics_primary_project_test_chat_ids`；Python 把 `RUN_CHAT_ID` 中属于该名单的群视为全量群，其余为精简群
+- 全量群名单为空时，所有群都按精简群处理，收入和受限项目不会发出
+- 手动 `/roblox-money` 仍只允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 里的群触发
 
 ### 4.3 全量群、精简群与单群修改范围
 
@@ -524,11 +519,12 @@ Worker 允许通过环境变量改命令文本：
 
 | 消息类型 | 当前接收范围 | 实现位置 |
 | --- | --- | --- |
-| 今日关注卡片 | 定时发到 `SCHEDULE_CHAT_IDS`；飞书命令触发时回到来源群 | `worker/src/index.js`、`app/main.py` |
+| 每日早报卡片 | 定时发到 `SCHEDULE_CHAT_IDS`，全量群收到完整版、其余群收到精简版；`/roblox-brief` 回到来源群并按同一规则判断 | `worker/src/index.js`、`app/daily_brief_audience.py` |
+| 今日关注卡片 | 仅飞书命令 `/roblox-top-day` 触发，回到来源群 | `worker/src/index.js`、`app/main.py` |
 | 第一项目 Shoot Or Shot 日报链接 | 限制名单非空时，只发到 `RUN_CHAT_ID` 与 `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 的交集 | `app/main.py` 的 `_send_primary_project_metrics_url()` |
 | 两个受限项目（Soccer RNG、soccer大亨版）的日报链接和失败明细 | 只发到 `RUN_CHAT_ID` 与 `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS` 的交集；名单缺失时报错 | `app/main.py` 的 `_resolve_full_group_notification_config()`、`_notify_success()` |
 | 其余启用项目的日报链接 | 本次 `RUN_CHAT_ID` 中的所有目标群 | `app/main.py` 的 `_notify_success()` |
-| 收入日报 | 定时只发到 `ROBLOX_MONEY_TEST_CHAT_IDS`；该名单非空时，飞书命令仅允许名单内的群触发并接收结果 | `worker/src/index.js` |
+| 收入日报 | 该名单非空时，飞书命令 `/roblox-money` 仅允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 内的群触发并接收结果 | `worker/src/index.js` |
 
 Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作流的 `project_metrics_primary_project_test_chat_ids`，作为第一项目链接及两个受限项目（Soccer RNG、soccer大亨版）日报消息的限制名单；该输入为空时，工作流尝试使用 GitHub Variable `PROJECT_METRICS_PRIMARY_PROJECT_TEST_CHAT_IDS`。变量名为兼容现有 Worker 和工作流而保留，实际用途已不限于第一项目。
 
@@ -553,7 +549,7 @@ Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作�
 
 - 第一项目限制名单最终为空时，`_send_primary_project_metrics_url()` 会恢复向本次全部目标群发送链接，不会默认隐藏。
 - 两个受限项目（Soccer RNG、soccer大亨版）的日报采用严格名单校验：名单或本次目标群为空时报错；向全量群投递必须具备飞书应用凭据，并禁用固定 webhook 回退。配置错误时本次项目日报在结果发送前停止，不能依赖第一项目的旧回退行为发送受限项目信息。
-- `ROBLOX_MONEY_TEST_CHAT_IDS` 为空时，收入日报定时任务会跳过；但手动命令的名单校验使用 `isAllowedValue()`，空名单默认放行，仍受 `ALLOWED_CHAT_IDS` / `ALLOWED_OPEN_IDS` 限制。上文“仅 test 群可触发”的描述以该名单非空为前提。
+- `ROBLOX_MONEY_TEST_CHAT_IDS` 为空时，每日早报不会把任何群视为全量群；手动命令的名单校验使用 `isAllowedValue()`，空名单默认放行，仍受 `ALLOWED_CHAT_IDS` / `ALLOWED_OPEN_IDS` 限制。上文“仅 test 群可触发”的描述以该名单非空为前提。
 - Python 收入日报发送逻辑直接使用 `RUN_CHAT_ID`，不会再次校验 Worker 的 test 群名单；从 GitHub Actions 直接运行时必须明确核对接收群。
 - 按 `chat_id` 精确投递依赖可用的飞书应用身份。缺少应用凭据时，发送函数可能改用已配置的固定 `FEISHU_BOT_WEBHOOK`，此路径不能按 `RUN_CHAT_ID` 区分群。
 

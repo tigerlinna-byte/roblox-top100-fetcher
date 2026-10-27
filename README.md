@@ -7,10 +7,10 @@
 | `RUN_REPORT_MODE` | 典型触发方式 | 主要行为 | 主要输出 |
 | --- | --- | --- | --- |
 | `top100_message`（已下线，代码保留） | 仅本地运行；飞书 `/roblox-top100` 与 GitHub Actions 下拉选项已移除 | 抓取 `top-playing-now` 榜单并写入本地产物；成功时不再发送飞书摘要 | `data/top100_YYYY-MM-DD.json/csv` |
-| `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron | 抓取 `Top_Trending_V4`、`Up_And_Coming_V4`、`top-playing-now`、`top-earning`，更新飞书多 Sheet 表格并发送 `今日关注` 卡片 | `data/top_trending_YYYY-MM-DD.json/csv` + 飞书卡片 + 飞书表格链接 |
-| `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron | 抓取 Roblox Creator Analytics 项目日报，更新每个项目各自的飞书表格 | `data/project_metrics_YYYY-MM-DD.json/csv` + 每个项目的飞书表格链接 |
-| `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron | 抓取两个 Roblox 项目的总收入，按配置汇率换算美元并发送卡片日报 | `data/roblox_money_YYYY-MM-DD.json/csv` + 飞书收入卡片 |
-| `daily_brief` | 飞书 `/roblox-brief`（试运行阶段，尚未接入 Cron） | 一次运行汇总行业趋势（大盘涨跌、值得关注项目、品类风向）、自家项目结论与收入，全量群与精简群各发一张早报卡片 | `data/daily_brief_YYYY-MM-DD.json` + `data/daily_brief_cards_YYYY-MM-DD.json` + 飞书早报卡片 |
+| `top_trending_sheet` | 飞书 `/roblox-top-day` | 抓取 `Top_Trending_V4`、`Up_And_Coming_V4`、`top-playing-now`、`top-earning`，更新飞书多 Sheet 表格并发送 `今日关注` 卡片 | `data/top_trending_YYYY-MM-DD.json/csv` + 飞书卡片 + 飞书表格链接 |
+| `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics` | 抓取 Roblox Creator Analytics 项目日报，更新每个项目各自的飞书表格 | `data/project_metrics_YYYY-MM-DD.json/csv` + 每个项目的飞书表格链接 |
+| `roblox_money` | test 群 `/roblox-money` | 抓取两个 Roblox 项目的总收入，按配置汇率换算美元并发送卡片日报 | `data/roblox_money_YYYY-MM-DD.json/csv` + 飞书收入卡片 |
+| `daily_brief` | 飞书 `/roblox-brief`、Cloudflare Cron（北京时间 09:10，唯一的定时任务） | 一次运行汇总行业趋势（大盘涨跌、值得关注项目、品类风向）、自家项目结论与收入，全量群与精简群各发一张早报卡片 | `data/daily_brief_YYYY-MM-DD.json` + `data/daily_brief_cards_YYYY-MM-DD.json` + 飞书早报卡片 |
 
 ## 系统结构
 
@@ -27,7 +27,7 @@
 - `ROBLOX_TOP_TRENDING_SORT_ID` 这个环境变量目前没有被主流程消费，不要把它当作 `/roblox-top-day` 的真实开关。
 - `/roblox-top-day` 的手动触发默认写“测试表”，只有 `trigger_source=cloudflare_cron` 时才会写“正式表”。
 - 项目日报当前支持四个项目入口：`ROBLOX_CREATOR_OVERVIEW_URL`、`ROBLOX_CREATOR_OVERVIEW_URL_3`、`ROBLOX_CREATOR_OVERVIEW_URL_4`、`ROBLOX_CREATOR_OVERVIEW_URL_5`，其中第 3、4、5 槽位在 GitHub Actions 中有默认项目。原第二槽位 Jail Ur Fiends 与第六槽位 TNT 已于 2026-10-27 删除。新增项目需要扩展代码和工作流。
-- `/roblox-money` 默认按顺序发送第一项目、`Troll ur friends`（`10170801715`）、`Soccer RNG`（`10304101434`）和 `soccer大亨版`（`10403337696`）的收入日报；手动和定时都只允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 中的 test 群触发和接收。
+- `/roblox-money` 默认按顺序发送第一项目、`Troll ur friends`（`10170801715`）、`Soccer RNG`（`10304101434`）和 `soccer大亨版`（`10403337696`）的收入日报；手动命令只允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 中的 test 群触发和接收；每天定时的收入改由每日早报只发给全量群。
 - 收入日报展示 Roblox Analytics 当前最新可用收入日期的一天收入；月累计按该统计日所在自然月从 1 日累计到该统计日，2026 年 5 月从 `2026-05-01` 开始。
 - 收入日报不使用 ARPPU 推算总收入；如果 Roblox 返回 Robux 总收入，必须配置 `ROBLOX_MONEY_USD_PER_100K_ROBUX` 才能换算美元。
 - 每日早报的阈值、打分权重与项目观测档位统一放在 [app/daily_brief_rules.py](./app/daily_brief_rules.py)；所有项目默认只在指标翻倍或腰斩时提醒，需要细看的项目在 `PROJECT_ALERT_PROFILE_BY_PROJECT_ID` 中人工标记为标准观测。

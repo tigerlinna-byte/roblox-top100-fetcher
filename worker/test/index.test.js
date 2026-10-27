@@ -430,32 +430,7 @@ test("deduplicates repeated event ids with persistent store", async () => {
   assert.equal(calls.length, 3);
 });
 
-test("dispatches scheduled top_trending_sheet workflow to configured chats", async () => {
-  const calls = [];
-  const ctx = buildCtx();
-  const fetchImpl = async (url, init = {}) => {
-    calls.push({ url, init });
-    if (String(url).includes("/dispatches")) {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`Unexpected fetch ${url}`);
-  };
-
-  await handleScheduled(
-    { cron: "0 1 * * *" },
-    buildEnv({ SCHEDULE_CHAT_IDS: "oc_chat_a,oc_chat_b" }),
-    ctx,
-    fetchImpl,
-  );
-
-  assert.equal(calls.length, 1);
-  const dispatchBody = JSON.parse(calls[0].init.body);
-  assert.equal(dispatchBody.inputs.report_mode, "top_trending_sheet");
-  assert.equal(dispatchBody.inputs.trigger_source, "cloudflare_cron");
-  assert.equal(dispatchBody.inputs.chat_id, "oc_chat_a,oc_chat_b");
-});
-
-test("dispatches scheduled project metrics workflow", async () => {
+test("dispatches scheduled daily brief workflow to schedule chats with full group ids", async () => {
   const calls = [];
   const ctx = buildCtx();
   const fetchImpl = async (url, init = {}) => {
@@ -470,7 +445,7 @@ test("dispatches scheduled project metrics workflow", async () => {
     { cron: "10 1 * * *" },
     buildEnv({
       SCHEDULE_CHAT_IDS: "oc_chat_a,oc_chat_b",
-      ROBLOX_MONEY_TEST_CHAT_IDS: "oc_test_chat",
+      ROBLOX_MONEY_TEST_CHAT_IDS: "oc_chat_a",
     }),
     ctx,
     fetchImpl,
@@ -478,56 +453,13 @@ test("dispatches scheduled project metrics workflow", async () => {
 
   assert.equal(calls.length, 1);
   const dispatchBody = JSON.parse(calls[0].init.body);
-  assert.equal(dispatchBody.inputs.report_mode, "roblox_project_daily_metrics");
+  assert.equal(dispatchBody.inputs.report_mode, "daily_brief");
   assert.equal(dispatchBody.inputs.trigger_source, "cloudflare_cron");
   assert.equal(dispatchBody.inputs.chat_id, "oc_chat_a,oc_chat_b");
-  assert.equal(dispatchBody.inputs.project_metrics_primary_project_test_chat_ids, "oc_test_chat");
+  assert.equal(dispatchBody.inputs.project_metrics_primary_project_test_chat_ids, "oc_chat_a");
 });
 
-test("dispatches scheduled Roblox money workflow only to test chats", async () => {
-  const calls = [];
-  const ctx = buildCtx();
-  const fetchImpl = async (url, init = {}) => {
-    calls.push({ url, init });
-    if (String(url).includes("/dispatches")) {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`Unexpected fetch ${url}`);
-  };
-
-  await handleScheduled(
-    { cron: "20 1 * * *" },
-    buildEnv({
-      SCHEDULE_CHAT_IDS: "oc_formal_chat",
-      ROBLOX_MONEY_TEST_CHAT_IDS: "oc_test_chat",
-    }),
-    ctx,
-    fetchImpl,
-  );
-
-  assert.equal(calls.length, 1);
-  const dispatchBody = JSON.parse(calls[0].init.body);
-  assert.equal(dispatchBody.inputs.report_mode, "roblox_money");
-  assert.equal(dispatchBody.inputs.trigger_source, "cloudflare_cron");
-  assert.equal(dispatchBody.inputs.chat_id, "oc_test_chat");
-});
-
-test("skips scheduled top_trending dispatch when no schedule chats configured", async () => {
-  let called = false;
-  await handleScheduled(
-    { cron: "0 1 * * *" },
-    buildEnv({ SCHEDULE_CHAT_IDS: "" }),
-    buildCtx(),
-    async () => {
-      called = true;
-      return new Response(null, { status: 204 });
-    },
-  );
-
-  assert.equal(called, false);
-});
-
-test("skips scheduled project metrics dispatch when no schedule chats configured", async () => {
+test("skips scheduled daily brief dispatch when no schedule chats configured", async () => {
   let called = false;
   await handleScheduled(
     { cron: "10 1 * * *" },
@@ -542,17 +474,19 @@ test("skips scheduled project metrics dispatch when no schedule chats configured
   assert.equal(called, false);
 });
 
-test("skips scheduled Roblox money dispatch when no test chats configured", async () => {
+test("ignores retired 09:00 and 09:20 crons", async () => {
   let called = false;
-  await handleScheduled(
-    { cron: "20 1 * * *" },
-    buildEnv({ ROBLOX_MONEY_TEST_CHAT_IDS: "" }),
-    buildCtx(),
-    async () => {
-      called = true;
-      return new Response(null, { status: 204 });
-    },
-  );
+  for (const cron of ["0 1 * * *", "20 1 * * *"]) {
+    await handleScheduled(
+      { cron },
+      buildEnv({ SCHEDULE_CHAT_IDS: "oc_chat_a", ROBLOX_MONEY_TEST_CHAT_IDS: "oc_chat_a" }),
+      buildCtx(),
+      async () => {
+        called = true;
+        return new Response(null, { status: 204 });
+      },
+    );
+  }
 
   assert.equal(called, false);
 });
@@ -584,7 +518,7 @@ test("logs and rethrows when scheduled dispatch to GitHub fails", async () => {
   try {
     await assert.rejects(
       handleScheduled(
-        { cron: "0 1 * * *" },
+        { cron: "10 1 * * *" },
         buildEnv({ SCHEDULE_CHAT_IDS: "oc_chat_a,oc_chat_b" }),
         ctx,
         async (url) => {

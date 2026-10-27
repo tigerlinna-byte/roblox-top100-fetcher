@@ -153,10 +153,21 @@ export async function handleScheduled(controller, env, ctx, fetchImpl = fetch) {
   }
 }
 
+// 每日早报定时任务（北京时间 09:10），一次运行汇总行业趋势、自家项目与收入。
+const DAILY_BRIEF_CRON = "10 1 * * *";
+
 function resolveScheduledTrigger(env, cron) {
+  if (cron !== DAILY_BRIEF_CRON) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      action: "schedule_skipped_unknown_cron",
+      cron,
+    }));
+    return null;
+  }
+
   const chatIds = parseCsvList(env.SCHEDULE_CHAT_IDS);
-  const robloxMoneyChatIds = parseCsvList(env.ROBLOX_MONEY_TEST_CHAT_IDS);
-  if ((cron === "0 1 * * *" || cron === "10 1 * * *") && !chatIds.length) {
+  if (!chatIds.length) {
     console.warn(JSON.stringify({
       level: "warn",
       action: "schedule_skipped_missing_chat_ids",
@@ -165,48 +176,14 @@ function resolveScheduledTrigger(env, cron) {
     return null;
   }
 
-  if (cron === "0 1 * * *") {
-    return {
-      triggerSource: "cloudflare_cron",
-      triggerActor: "cloudflare-cron",
-      chatId: chatIds.join(","),
-      reportMode: "top_trending_sheet",
-    };
-  }
-
-  if (cron === "10 1 * * *") {
-    return {
-      triggerSource: "cloudflare_cron",
-      triggerActor: "cloudflare-cron",
-      chatId: chatIds.join(","),
-      reportMode: "roblox_project_daily_metrics",
-      projectMetricsPrimaryProjectTestChatIds: robloxMoneyChatIds.join(","),
-    };
-  }
-
-  if (cron === "20 1 * * *") {
-    if (!robloxMoneyChatIds.length) {
-      console.warn(JSON.stringify({
-        level: "warn",
-        action: "schedule_skipped_missing_roblox_money_test_chat_ids",
-        cron,
-      }));
-      return null;
-    }
-    return {
-      triggerSource: "cloudflare_cron",
-      triggerActor: "cloudflare-cron",
-      chatId: robloxMoneyChatIds.join(","),
-      reportMode: "roblox_money",
-    };
-  }
-
-  console.warn(JSON.stringify({
-    level: "warn",
-    action: "schedule_skipped_unknown_cron",
-    cron,
-  }));
-  return null;
+  // 全量群名单沿用收入日报的 test 群配置，Python 据此决定哪些群能看到受限项目和收入。
+  return {
+    triggerSource: "cloudflare_cron",
+    triggerActor: "cloudflare-cron",
+    chatId: chatIds.join(","),
+    reportMode: "daily_brief",
+    projectMetricsPrimaryProjectTestChatIds: parseCsvList(env.ROBLOX_MONEY_TEST_CHAT_IDS).join(","),
+  };
 }
 
 function safeParseJson(text) {

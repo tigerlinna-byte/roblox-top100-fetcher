@@ -18,11 +18,7 @@
 4. GitHub Actions 执行 `python -m app.main`
 5. Python 程序抓取 Roblox 数据，按运行模式更新飞书表格或发送飞书消息
 
-同时，Cloudflare Cron 还会每天自动触发三条任务：
-
-- `0 1 * * *` UTC：`top_trending_sheet`
-- `10 1 * * *` UTC：`roblox_project_daily_metrics`
-- `20 1 * * *` UTC：`roblox_money`，只发 test 群
+同时，Cloudflare Cron 每天 `10 1 * * *` UTC（北京时间 09:10）自动触发一次 `daily_brief` 每日早报：全量群（`ROBLOX_MONEY_TEST_CHAT_IDS` 内的群）收到含收入的完整版，其余群收到精简版。
 
 ## 2. 准备信息
 
@@ -353,23 +349,15 @@ npx wrangler deploy
 
 Worker 会按 [`worker/wrangler.toml`](../worker/wrangler.toml) 里的 cron 触发：
 
-- `0 1 * * *` UTC：Top Trending
-- `10 1 * * *` UTC：项目日报
-- `20 1 * * *` UTC：收入日报
+- `10 1 * * *` UTC：每日早报 `daily_brief`
 
-Top Trending 和项目日报复用同一个：
+早报发送到：
 
 - `SCHEDULE_CHAT_IDS`
 
-如果 `SCHEDULE_CHAT_IDS` 为空：
+其中属于 `ROBLOX_MONEY_TEST_CHAT_IDS` 的群为全量群（含收入与受限项目），其余为精简群。
 
-- Top Trending 和项目日报定时任务都会被 Worker 跳过
-
-收入日报只使用：
-
-- `ROBLOX_MONEY_TEST_CHAT_IDS`
-
-如果 `ROBLOX_MONEY_TEST_CHAT_IDS` 为空，收入日报定时任务会被 Worker 跳过。
+如果 `SCHEDULE_CHAT_IDS` 为空，早报定时任务会被 Worker 跳过；如果 `ROBLOX_MONEY_TEST_CHAT_IDS` 为空，所有群都只收到精简版。
 
 ## 9. 推荐的完整验收顺序
 
