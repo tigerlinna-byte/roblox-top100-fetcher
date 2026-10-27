@@ -400,6 +400,15 @@ TNT 使用第六槽位 `ROBLOX_CREATOR_OVERVIEW_URL_6`，表格名称为 `TNT`�
 
 当前项目日报主链路主要依赖 direct query，因此排查时优先看 `direct_query_attempts`，不要默认认为 HTML 片段一定有用。非核心指标缺失只会留空并写调试快照；核心字段缺失会让对应项目进入失败摘要，避免继续写入关键指标不完整的日期行。
 
+#### Cookie 失效（HTTP 401）
+
+普通接口错误会被各查询点记录到调试快照后按空数据处理，但 HTTP 401 例外：
+
+- Creator Analytics 任一请求返回 `401`（Roblox 返回 `code 9002 "User is not authenticated"`）时，`RobloxCreatorMetricsClient` 抛出 `RobloxCreatorAuthenticationError`，当前项目立即中止，不再继续请求其余指标，也不写 `creator_overview_debug_<project_id>.json`。
+- `app/main.py` 记住该异常后，项目日报中后续仍需抓取的项目、以及收入日报中后续所有项目都不再向 Roblox 发请求，直接以同一原因进入失败明细；项目日报中表格已完整、无需抓取的项目仍照常同步表格并发送链接。
+- 失败原因统一为 `Roblox 登录 Cookie 已失效（HTTP 401），请更新 GitHub Secret ROBLOX_CREATOR_COOKIE`，失败通知的格式和分群路由不变。
+- `403` 不视为 Cookie 失效：它可能是 CSRF token 需要刷新（客户端会自动刷新重试），也可能是账号没有该项目的权限。
+
 ### 3.4 `roblox_money`
 
 入口：
@@ -820,10 +829,9 @@ Worker 事件去重默认使用 Cloudflare KV：
 
 什么时候要做：
 
-- 项目日报全部失败
+- 项目日报或收入日报的失败明细显示 `Roblox 登录 Cookie 已失效（HTTP 401）`
 - 榜单里明显缺登录态内容
-- `creator_overview_debug_<project_id>.json` 里只剩未登录页面壳
-- GitHub Actions 日志出现 `401` / `403`
+- GitHub Actions 日志出现 `Roblox creator analytics rejected the cookie` 或 `401`
 
 处理步骤：
 
@@ -922,7 +930,7 @@ AI 自动代码审核不需要修改 Cloudflare Worker 或飞书配置。
 
 ### 9.5 项目日报列为空
 
-按这个顺序查：
+如果失败明细是 `Roblox 登录 Cookie 已失效（HTTP 401）`，直接按 8.1 轮换 Cookie，此时不会生成调试快照。其他情况按这个顺序查：
 
 1. `project-metrics-data` artifact
 2. `data/project_metrics_*.json`

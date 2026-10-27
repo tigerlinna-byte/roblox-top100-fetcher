@@ -43,6 +43,15 @@ class RobloxCreatorMetricsClientError(RuntimeError):
     """表示 Roblox Creator 后台指标抓取失败。"""
 
 
+class RobloxCreatorAuthenticationError(RuntimeError):
+    """表示 Roblox 登录 Cookie 已失效，Creator Analytics 接口拒绝所有请求。
+
+    该异常刻意不继承 RobloxCreatorMetricsClientError：客户端内部各查询点会把普通抓取错误
+    吞成空数据以允许部分指标缺失，而认证失效对所有指标和项目都成立，必须穿透这些吞错点，
+    让调用方立即中止后续注定失败的请求，并给出明确的 Cookie 失效原因。
+    """
+
+
 @dataclass(frozen=True)
 class MetricDefinition:
     """描述一个指标字段的别名集合。"""
@@ -126,6 +135,13 @@ PROJECT_METRICS_MAX_QUERY_WINDOW_DAYS = 14
 # Roblox 当前对 PeakConcurrentPlayers 只保留最近 28 个 UTC 日期。
 # 中国时区业务日起点会落到前一日 16:00Z，因此回查下限需要留出 1 天安全余量。
 PEAK_CONCURRENT_PLAYERS_RETENTION_DAYS = 28
+# Roblox 对未登录或 Cookie 失效的请求返回 401（code 9002 "User is not authenticated"）。
+# 403 另有 CSRF 刷新和无项目权限两种含义，不视为 Cookie 失效。
+HTTP_STATUS_UNAUTHORIZED = 401
+# Cookie 失效时写入飞书失败明细的原因，直接指明需要轮换的 GitHub Secret。
+ROBLOX_CREATOR_AUTHENTICATION_FAILURE_REASON = (
+    "Roblox 登录 Cookie 已失效（HTTP 401），请更新 GitHub Secret ROBLOX_CREATOR_COOKIE"
+)
 
 ANALYTICS_STATUS_CONFIG_URL_TEMPLATE = (
     "https://apis.roblox.com/analytics-query-gateway/v1/status-config?universeId={resource_id}"
@@ -1304,6 +1320,10 @@ class RobloxCreatorMetricsClient:
         except RobloxCreatorMetricsClientError:
             raise
         except RetryError as exc:
+            # with_retry 会把不可重试的异常也包成 RetryError，认证失效需要还原后原样上抛，
+            # 不能被包装成普通抓取错误，否则会被各查询点吞成空数据。
+            if isinstance(exc.__cause__, RobloxCreatorAuthenticationError):
+                raise exc.__cause__ from None
             detail = _format_exception_detail(exc)
             raise RobloxCreatorMetricsClientError(f"请求 analytics 接口失败: {url}: {detail}") from exc
         except Exception as exc:  # noqa: BLE001
@@ -1344,6 +1364,15 @@ class RobloxCreatorMetricsClient:
                     timeout=self.config.request_timeout_seconds,
                     allow_redirects=True,
                 )
+        if response.status_code == HTTP_STATUS_UNAUTHORIZED:
+            logging.error(
+                "Roblox creator analytics rejected the cookie: %s %s -> HTTP %s: %s",
+                method,
+                url,
+                response.status_code,
+                response.text[:400],
+            )
+            raise RobloxCreatorAuthenticationError(ROBLOX_CREATOR_AUTHENTICATION_FAILURE_REASON)
         if response.status_code >= 400:
             raise requests.HTTPError(
                 f"HTTP {response.status_code}: {response.text[:400]}",

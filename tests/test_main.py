@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 from app.config import Config
@@ -28,7 +29,11 @@ from app.roblox_money_models import (
     RobloxMoneyReportPayload,
 )
 from app.roblox_client import RobloxClientError
-from app.roblox_creator_metrics_client import RobloxCreatorMetricsClientError
+from app.roblox_creator_metrics_client import (
+    ROBLOX_CREATOR_AUTHENTICATION_FAILURE_REASON,
+    RobloxCreatorAuthenticationError,
+    RobloxCreatorMetricsClientError,
+)
 
 
 class MainTests(unittest.TestCase):
@@ -732,6 +737,45 @@ class MainTests(unittest.TestCase):
         self.assertEqual(["9682356542", "9707829514"], [failure.project_id for failure in report_payload.failures])
         self.assertIn("peak_ccu", report_payload.failures[0].reason)
 
+    @patch("app.main._build_project_metrics_query_plan_for_project")
+    @patch("app.main.RobloxCreatorMetricsClient")
+    def test_fetch_report_payload_skips_roblox_requests_after_cookie_rejected(
+        self,
+        client_cls,
+        build_query_plan,
+    ) -> None:
+        cfg = Config(
+            run_report_mode="roblox_project_daily_metrics",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
+            roblox_creator_overview_url_4="https://create.roblox.com/dashboard/creations/experiences/10304101434/overview",
+        )
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_project_daily_metrics.side_effect = RobloxCreatorAuthenticationError(
+            ROBLOX_CREATOR_AUTHENTICATION_FAILURE_REASON
+        )
+        pending_plan = {date(2026, 10, 26): ("peak_ccu",)}
+        query_plans = {
+            "9682356542": pending_plan,
+            "10170801715": {},
+            "10304101434": pending_plan,
+        }
+        build_query_plan.side_effect = lambda cfg, feishu_client, variables: query_plans[variables.project_id]
+
+        report_payload = _fetch_report_payload(cfg)
+
+        client.fetch_project_daily_metrics.assert_called_once()
+        self.assertEqual({"10170801715": []}, report_payload.records_by_project_id)
+        self.assertEqual(
+            ["9682356542", "10304101434"],
+            [failure.project_id for failure in report_payload.failures],
+        )
+        self.assertEqual(
+            {ROBLOX_CREATOR_AUTHENTICATION_FAILURE_REASON},
+            {failure.reason for failure in report_payload.failures},
+        )
+
     @patch("app.main._sync_project_metrics_sheet")
     @patch("app.main.FeishuClient")
     def test_project_metrics_all_failures_sends_failure_summary_without_sheet_sync(
@@ -962,6 +1006,36 @@ class MainTests(unittest.TestCase):
         self.assertEqual((), payload.project_revenues)
         self.assertEqual(1, len(payload.failures))
         self.assertIn("总收入", payload.failures[0].reason)
+
+    @patch("app.main.RobloxCreatorMetricsClient")
+    def test_roblox_money_payload_skips_roblox_requests_after_cookie_rejected(
+        self,
+        client_cls,
+    ) -> None:
+        cfg = Config(
+            run_report_mode="roblox_money",
+            roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+            roblox_creator_overview_url_3="https://create.roblox.com/dashboard/creations/experiences/10170801715/overview",
+            roblox_money_usd_per_100k_robux="350",
+        )
+        client = MagicMock()
+        client_cls.return_value = client
+        client.fetch_project_revenue_series.side_effect = RobloxCreatorAuthenticationError(
+            ROBLOX_CREATOR_AUTHENTICATION_FAILURE_REASON
+        )
+
+        payload = _fetch_report_payload(cfg)
+
+        client.fetch_project_revenue_series.assert_called_once()
+        self.assertEqual((), payload.project_revenues)
+        self.assertEqual(
+            ["9682356542", "10170801715"],
+            [failure.project_id for failure in payload.failures],
+        )
+        self.assertEqual(
+            {ROBLOX_CREATOR_AUTHENTICATION_FAILURE_REASON},
+            {failure.reason for failure in payload.failures},
+        )
 
     def test_roblox_money_payload_requires_usd_conversion_rate(self) -> None:
         cfg = Config(

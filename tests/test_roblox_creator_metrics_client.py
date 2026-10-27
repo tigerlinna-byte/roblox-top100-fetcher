@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from unittest.mock import Mock, patch
 from app.config import Config
 from app.project_metrics_models import get_project_required_fields
 from app.roblox_creator_metrics_client import (
+    RobloxCreatorAuthenticationError,
     RobloxCreatorMetricsClient,
     RobloxCreatorMetricsClientError,
     resolve_project_metrics_query_date_bounds,
@@ -836,6 +838,57 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
 
         self.assertEqual("5", records[0].peak_ccu)
         self.assertEqual("token-123", client._csrf_token)
+
+    def test_fetch_project_daily_metrics_stops_on_first_unauthenticated_response(self) -> None:
+        session = Mock()
+        session.request.return_value = _build_json_response(
+            {"errors": [{"code": 9002, "subcode": 1, "message": "User is not authenticated"}]},
+            status_code=401,
+        )
+        with tempfile.TemporaryDirectory() as output_dir:
+            client = RobloxCreatorMetricsClient(
+                Config(
+                    roblox_creator_overview_url="https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                    roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                    retry_max_attempts=3,
+                    retry_backoff_seconds=0,
+                    feishu_timezone="Asia/Shanghai",
+                    output_dir=output_dir,
+                ),
+                session=session,
+            )
+
+            with self.assertRaises(RobloxCreatorAuthenticationError) as context:
+                client.fetch_project_daily_metrics()
+
+            self.assertEqual([], list(Path(output_dir).iterdir()))
+
+        self.assertIn("ROBLOX_CREATOR_COOKIE", str(context.exception))
+        self.assertEqual(1, session.request.call_count)
+
+    def test_fetch_project_revenue_series_stops_on_first_unauthenticated_response(self) -> None:
+        session = Mock()
+        session.request.return_value = _build_json_response(
+            {"errors": [{"code": 9002, "subcode": 1, "message": "User is not authenticated"}]},
+            status_code=401,
+        )
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=3,
+                retry_backoff_seconds=0,
+                feishu_timezone="Asia/Shanghai",
+            ),
+            session=session,
+        )
+
+        with self.assertRaises(RobloxCreatorAuthenticationError):
+            client.fetch_project_revenue_series(
+                "https://create.roblox.com/dashboard/creations/experiences/9682356542/overview",
+                minimum_start_date=date(2026, 5, 1),
+            )
+
+        self.assertEqual(1, session.request.call_count)
 
     def test_fetch_project_daily_metrics_polls_async_query_results(self) -> None:
         session = Mock()

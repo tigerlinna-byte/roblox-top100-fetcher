@@ -38,6 +38,7 @@ from .roblox_money_models import (
 from .roblox_money_summary import build_roblox_money_card
 from .roblox_client import RobloxClient, RobloxClientError
 from .roblox_creator_metrics_client import (
+    RobloxCreatorAuthenticationError,
     RobloxCreatorMetricsClient,
     RobloxCreatorMetricsClientError,
     resolve_project_metrics_query_date_bounds,
@@ -169,6 +170,8 @@ def _fetch_report_payload(cfg: Config):
         feishu_client = FeishuClient(cfg)
         records_by_project_id: dict[str, list[ProjectDailyMetricsRecord]] = {}
         failures: list[ProjectMetricsFetchFailure] = []
+        # Cookie 由所有项目共用，一旦确认失效就记录下来，后续项目不再向 Roblox 发送注定 401 的请求。
+        authentication_error: RobloxCreatorAuthenticationError | None = None
         for variables in variables_list:
             try:
                 query_plan = _build_project_metrics_query_plan_for_project(
@@ -176,7 +179,15 @@ def _fetch_report_payload(cfg: Config):
                     feishu_client,
                     variables,
                 )
-                if query_plan:
+                if query_plan and authentication_error is not None:
+                    failures.append(
+                        ProjectMetricsFetchFailure(
+                            project_id=variables.project_id,
+                            overview_url=variables.overview_url,
+                            reason=str(authentication_error),
+                        )
+                    )
+                elif query_plan:
                     records_by_project_id[variables.project_id] = client.fetch_project_daily_metrics(
                         variables.overview_url,
                         report_dates=query_plan.keys(),
@@ -195,6 +206,20 @@ def _fetch_report_payload(cfg: Config):
                         project_id=variables.project_id,
                         overview_url=variables.overview_url,
                         reason=f"读取飞书项目日报表失败: {exc}",
+                    )
+                )
+            except RobloxCreatorAuthenticationError as exc:
+                logging.error(
+                    "Roblox creator cookie rejected while fetching project metrics for %s; "
+                    "remaining projects will skip Roblox requests.",
+                    variables.project_id,
+                )
+                authentication_error = exc
+                failures.append(
+                    ProjectMetricsFetchFailure(
+                        project_id=variables.project_id,
+                        overview_url=variables.overview_url,
+                        reason=str(exc),
                     )
                 )
             except RobloxCreatorMetricsClientError as exc:
@@ -270,8 +295,20 @@ def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
     client = RobloxCreatorMetricsClient(cfg)
     project_revenues: list[RobloxMoneyProjectRevenue] = []
     failures: list[RobloxMoneyFetchFailure] = []
+    # Cookie 由所有项目共用，一旦确认失效就记录下来，后续项目不再向 Roblox 发送注定 401 的请求。
+    authentication_error: RobloxCreatorAuthenticationError | None = None
     for variables in variables_list:
         project_name = variables.spreadsheet_title or f"项目 {variables.project_id}"
+        if authentication_error is not None:
+            failures.append(
+                RobloxMoneyFetchFailure(
+                    project_id=variables.project_id,
+                    project_name=project_name,
+                    overview_url=variables.overview_url,
+                    reason=str(authentication_error),
+                )
+            )
+            continue
         try:
             series = client.fetch_project_revenue_series(
                 variables.overview_url,
@@ -310,6 +347,21 @@ def _fetch_roblox_money_payload(cfg: Config) -> RobloxMoneyReportPayload:
                     month_to_date_robux=sum(month_values.values()),
                     usd_per_100k_robux=usd_per_100k_robux,
                     fetched_at=now_iso(),
+                )
+            )
+        except RobloxCreatorAuthenticationError as exc:
+            logging.error(
+                "Roblox creator cookie rejected while fetching Roblox money for %s; "
+                "remaining projects will skip Roblox requests.",
+                variables.project_id,
+            )
+            authentication_error = exc
+            failures.append(
+                RobloxMoneyFetchFailure(
+                    project_id=variables.project_id,
+                    project_name=project_name,
+                    overview_url=variables.overview_url,
+                    reason=str(exc),
                 )
             )
         except RobloxCreatorMetricsClientError as exc:
