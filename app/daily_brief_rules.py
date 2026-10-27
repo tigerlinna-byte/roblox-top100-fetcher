@@ -29,6 +29,10 @@ PROJECT_TREND_BASELINE_DAYS = 7
 # 基线最少有效天数：窗口内有值的天数不足时不做判断，避免新项目或缺数据时误报。
 PROJECT_TREND_MIN_BASELINE_DAYS = 4
 
+# 提醒的最低体量：统计日峰值 PCU 与前若干天峰值 PCU 均值都低于该值时，项目指标和收入都不提醒涨跌。
+# 体量太小时波动对业务影响小，且小数字天然波动大；冲上或跌破该值的变化仍会提醒。对所有档位生效。
+PROJECT_ALERT_MIN_PEAK_CCU = 100
+
 # 观测档位：默认“宽松”只在翻倍或腰斩时提醒；项目达到一定体量后人工改为“标准”。
 RELAXED_ALERT_PROFILE = "relaxed"
 STANDARD_ALERT_PROFILE = "standard"

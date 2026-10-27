@@ -457,6 +457,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 
 - 所有阈值、权重、展示条数都在 [`app/daily_brief_rules.py`](../app/daily_brief_rules.py)
 - 默认“宽松”档位：指标涨到 2 倍或跌到一半才提醒，崩溃率只看上涨
+- 体量门槛 `PROJECT_ALERT_MIN_PEAK_CCU`（当前 100）：统计日峰值 PCU 与前 7 天峰值 PCU 均值都低于门槛的项目，指标和收入都不提醒涨跌，只列核心数字；冲上或跌破门槛的变化仍会提醒；对所有档位生效
 - 项目达到一定体量后，在 `PROJECT_ALERT_PROFILE_BY_PROJECT_ID` 中把该项目 ID 标记为 `STANDARD_ALERT_PROFILE`，阈值改为 ±20%（崩溃率 +50%）
 
 #### 历史数据口径

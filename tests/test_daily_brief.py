@@ -158,6 +158,7 @@ class DailyBriefFlowTests(unittest.TestCase):
             money_failure="",
         )
         self.clients: list[MagicMock] = []
+        self.sheet_peak_ccu = "1,234"
 
         def build_client(cfg: Config) -> MagicMock:
             client = MagicMock()
@@ -172,7 +173,7 @@ class DailyBriefFlowTests(unittest.TestCase):
                 {
                     "side_effect": lambda cfg, records, client, variables: (
                         SimpleNamespace(url=f"https://feishu.cn/sheets/{variables.project_id}"),
-                        _sheet_rows("1,234"),
+                        _sheet_rows(self.sheet_peak_ccu),
                     )
                 },
             ),
@@ -211,6 +212,15 @@ class DailyBriefFlowTests(unittest.TestCase):
         self.assertNotIn("**收入**", limited_text)
         self.assertNotIn("Soccer", limited_text)
         self.assertIn("数据积累中（已记录 1 天）", limited_text)
+
+    def test_revenue_alert_is_skipped_for_project_below_peak_ccu_floor(self) -> None:
+        self.sheet_peak_ccu = "50"
+
+        _notify_success(self.cfg, self.payload)
+
+        full_text = _card_text(self._sent_cards()[FULL_CHAT])
+        self.assertIn("当日 $114.00", full_text)
+        self.assertNotIn("日收入（较", full_text)
 
     def test_full_group_send_never_falls_back_to_webhook(self) -> None:
         _notify_success(self.cfg, self.payload)

@@ -645,7 +645,10 @@ def _send_daily_brief(cfg: Config, payload: DailyBriefFetchPayload) -> None:
     failures: list[BriefFailure] = []
     market = _build_market_section(cfg, payload, brief_date, failures)
     projects = _build_project_brief_entries(cfg, payload, failures)
-    revenues = _build_revenue_brief_entries(payload, failures)
+    below_floor_project_ids = frozenset(
+        entry.project_id for entry in projects if entry.trend is not None and entry.trend.below_alert_floor
+    )
+    revenues = _build_revenue_brief_entries(payload, below_floor_project_ids, failures)
     content = DailyBriefContent(
         brief_date=brief_date.isoformat(),
         market=market,
@@ -817,9 +820,10 @@ def _build_project_brief_entries(
 
 def _build_revenue_brief_entries(
     payload: DailyBriefFetchPayload,
+    below_floor_project_ids: frozenset[str],
     failures: list[BriefFailure],
 ) -> tuple[RevenueBriefEntry, ...]:
-    """整理收入部分，并判断日收入相对基线是否超阈值。"""
+    """整理收入部分，并判断日收入相对基线是否超阈值；体量低于提醒门槛的项目不提醒收入涨跌。"""
 
     if payload.money is None:
         failures.append(BriefFailure("money", "", MONEY_SECTION_LABEL, payload.money_failure))
@@ -835,7 +839,10 @@ def _build_revenue_brief_entries(
             )
         )
     return tuple(
-        RevenueBriefEntry(revenue=revenue, alert=_evaluate_revenue_alert(revenue))
+        RevenueBriefEntry(
+            revenue=revenue,
+            alert=None if revenue.project_id in below_floor_project_ids else _evaluate_revenue_alert(revenue),
+        )
         for revenue in payload.money.project_revenues
     )
 

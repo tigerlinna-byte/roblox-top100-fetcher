@@ -94,6 +94,34 @@ class ProjectMetricsTrendTests(unittest.TestCase):
 
         self.assertEqual("2026-10-26", summary.report_date)
 
+    def test_small_project_below_peak_ccu_floor_reports_no_alerts(self) -> None:
+        rows = _rows_with_history(
+            {"peak_ccu": "90", "day1_retention": "2%"},
+            {"peak_ccu": "40", "day1_retention": "10%"},
+        )
+
+        summary = build_project_trend_summary(PROJECT_ID, rows)
+
+        self.assertTrue(summary.below_alert_floor)
+        self.assertEqual((), summary.alerts)
+        self.assertEqual((("峰值PCU", "90"), ("D1", "2%")), summary.summary_values)
+
+    def test_small_project_jumping_above_floor_still_alerts(self) -> None:
+        rows = _rows_with_history({"peak_ccu": "300"}, {"peak_ccu": "50"})
+
+        summary = build_project_trend_summary(PROJECT_ID, rows)
+
+        self.assertFalse(summary.below_alert_floor)
+        self.assertEqual([("peak_ccu", "rise")], [(alert.metric, alert.direction) for alert in summary.alerts])
+
+    def test_project_falling_below_floor_still_alerts(self) -> None:
+        rows = _rows_with_history({"peak_ccu": "60"}, {"peak_ccu": "300"})
+
+        summary = build_project_trend_summary(PROJECT_ID, rows)
+
+        self.assertFalse(summary.below_alert_floor)
+        self.assertEqual([("peak_ccu", "fall")], [(alert.metric, alert.direction) for alert in summary.alerts])
+
     def test_empty_sheet_returns_none(self) -> None:
         self.assertIsNone(build_project_trend_summary(PROJECT_ID, [PROJECT_METRICS_HEADERS.copy()]))
 

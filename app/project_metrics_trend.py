@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 from .daily_brief_rules import (
     PROJECT_ALERT_METRIC_LABELS,
+    PROJECT_ALERT_MIN_PEAK_CCU,
     PROJECT_SUMMARY_METRIC_LABELS,
     PROJECT_TREND_BASELINE_DAYS,
     PROJECT_TREND_MIN_BASELINE_DAYS,
@@ -24,6 +25,8 @@ from .project_metrics_sheet import PROJECT_METRICS_HEADER_TO_FIELD
 
 # 统计日判定依据：该字段有值的最新一天才算“已出数”的统计日。
 REPORT_DATE_ANCHOR_FIELD = "peak_ccu"
+# 判断项目体量是否达到提醒门槛所用的字段。
+ALERT_FLOOR_FIELD = "peak_ccu"
 # 时长文本格式，例如 “1h 2m”“10m 5s”“45s”，与项目日报写表格式保持一致。
 DURATION_PATTERN = re.compile(r"^(?:(?P<hours>\d+)h)?\s*(?:(?P<minutes>\d+)m)?\s*(?:(?P<seconds>\d+)s)?$")
 NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
@@ -39,6 +42,8 @@ class ProjectTrendSummary:
     report_date: str
     summary_values: tuple[tuple[str, str], ...]
     alerts: tuple[MetricAlert, ...]
+    # 体量低于提醒门槛时为 True；此时不提醒任何涨跌，收入提醒也据此跳过。
+    below_alert_floor: bool
 
 
 def build_project_trend_summary(project_id: str, rows: list[list[object]]) -> ProjectTrendSummary | None:
@@ -58,6 +63,23 @@ def build_project_trend_summary(project_id: str, rows: list[list[object]]) -> Pr
         for field_name, label in PROJECT_SUMMARY_METRIC_LABELS.items()
         if report_values.get(field_name)
     )
+    below_alert_floor = _is_below_alert_floor(report_date, values_by_date)
+    return ProjectTrendSummary(
+        project_id=project_id,
+        report_date=report_date.isoformat(),
+        summary_values=summary_values,
+        alerts=() if below_alert_floor else _collect_alerts(project_id, report_date, values_by_date),
+        below_alert_floor=below_alert_floor,
+    )
+
+
+def _collect_alerts(
+    project_id: str,
+    report_date: date,
+    values_by_date: dict[date, dict[str, str]],
+) -> tuple[MetricAlert, ...]:
+    """按项目观测档位逐个指标判断是否超阈值。"""
+
     thresholds = resolve_project_alert_thresholds(project_id)
     alerts: list[MetricAlert] = []
     for field_name, label in PROJECT_ALERT_METRIC_LABELS.items():
@@ -70,13 +92,24 @@ def build_project_trend_summary(project_id: str, rows: list[list[object]]) -> Pr
         )
         if alert is not None:
             alerts.append(alert)
+    return tuple(alerts)
 
-    return ProjectTrendSummary(
-        project_id=project_id,
-        report_date=report_date.isoformat(),
-        summary_values=summary_values,
-        alerts=tuple(alerts),
+
+def _is_below_alert_floor(report_date: date, values_by_date: dict[date, dict[str, str]]) -> bool:
+    """统计日峰值 PCU 与前若干天均值都低于门槛时视为体量过小。
+
+    两者都看，是为了让“小项目突然冲上门槛”和“大项目跌破门槛”这两类大变化仍然能被提醒；
+    基线天数不足时只看统计日。
+    """
+
+    current_value = parse_metric_number(values_by_date[report_date].get(ALERT_FLOOR_FIELD, ""))
+    if current_value is None or current_value >= PROJECT_ALERT_MIN_PEAK_CCU:
+        return False
+    baseline = average_baseline(
+        _collect_baseline_values(ALERT_FLOOR_FIELD, report_date, values_by_date),
+        min_count=PROJECT_TREND_MIN_BASELINE_DAYS,
     )
+    return baseline is None or baseline < PROJECT_ALERT_MIN_PEAK_CCU
 
 
 def parse_metric_number(text: str) -> float | None:
@@ -145,17 +178,10 @@ def _evaluate_field_alert(
     if current_value is None:
         return None
 
-    baseline_values = [
-        value
-        for offset in range(1, PROJECT_TREND_BASELINE_DAYS + 1)
-        for value in (
-            parse_metric_number(
-                values_by_date.get(report_date - timedelta(days=offset), {}).get(field_name, "")
-            ),
-        )
-        if value is not None
-    ]
-    baseline = average_baseline(baseline_values, min_count=PROJECT_TREND_MIN_BASELINE_DAYS)
+    baseline = average_baseline(
+        _collect_baseline_values(field_name, report_date, values_by_date),
+        min_count=PROJECT_TREND_MIN_BASELINE_DAYS,
+    )
     if baseline is None:
         return None
     return evaluate_metric_alert(
@@ -166,6 +192,25 @@ def _evaluate_field_alert(
         baseline_value=baseline,
         threshold=threshold,
     )
+
+
+def _collect_baseline_values(
+    field_name: str,
+    report_date: date,
+    values_by_date: dict[date, dict[str, str]],
+) -> list[float]:
+    """取统计日之前基线窗口内该字段的有效数值。"""
+
+    return [
+        value
+        for offset in range(1, PROJECT_TREND_BASELINE_DAYS + 1)
+        for value in (
+            parse_metric_number(
+                values_by_date.get(report_date - timedelta(days=offset), {}).get(field_name, "")
+            ),
+        )
+        if value is not None
+    ]
 
 
 def _parse_date(text: str) -> date | None:
