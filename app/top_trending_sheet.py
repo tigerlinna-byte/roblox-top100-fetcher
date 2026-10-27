@@ -5,7 +5,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-from .config import Config
+from .config import SCHEDULED_TRIGGER_SOURCE, Config
 from .github_client import GitHubClient
 from .models import GameRecord
 from .top_trending_briefing import collect_top_trending_focus_place_ids_by_sheet
@@ -36,6 +36,8 @@ TEST_TOP_EARNING_PREV_RANKS_VAR = "FEISHU_TOP_EARNING_TEST_PREV_RANKS"
 
 MIN_RENDER_ROWS = 140
 RECENT_NEW_ENTRY_LOOKBACK_DAYS = 7
+# 会读写榜单排名历史的运行模式：今日关注与每日早报。
+RANK_HISTORY_REPORT_MODES = frozenset({"top_trending_sheet", "daily_brief"})
 # GitHub Actions 单个 Variables value 上限为 48KB，历史排名写入前必须控制体积。
 GITHUB_VARIABLE_VALUE_MAX_BYTES = 48 * 1024
 
@@ -553,9 +555,11 @@ def _measure_text_units(text: str) -> float:
 
 
 def _should_use_formal_sheet(cfg: Config) -> bool:
-    if cfg.run_report_mode != "top_trending_sheet":
+    """今日关注与每日早报只有定时任务读写正式排名历史，手动运行使用测试历史，避免打乱每日对比。"""
+
+    if cfg.run_report_mode not in RANK_HISTORY_REPORT_MODES:
         return True
-    return cfg.run_trigger_source == "cloudflare_cron"
+    return cfg.run_trigger_source == SCHEDULED_TRIGGER_SOURCE
 
 
 def _get_sheet_id_from_config(cfg: Config, variable_name: str) -> str:

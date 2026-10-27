@@ -73,6 +73,23 @@ def write_json_output(
     return json_path
 
 
+def write_json_document(
+    output_dir: str,
+    document: dict[str, object],
+    *,
+    prefix: str,
+) -> Path:
+    """将任意可序列化的文档输出为 JSON 文件，用于早报等复合结果。"""
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    json_path = target / f"{prefix}_{date_str}.json"
+    json_path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+    return json_path
+
+
 def write_project_metrics_output(
     output_dir: str,
     records: list[ProjectDailyMetricsRecord],

@@ -22,6 +22,7 @@ description: Restore project context for roblox-top100-fetcher before handling n
 - 榜单摘要：`top100_message`（已下线，入口已移除、代码保留）
 - Top Trending 多 Sheet：`top_trending_sheet`
 - 项目日报：`roblox_project_daily_metrics`
+- 每日早报：`daily_brief`（行业趋势、自家项目结论、收入汇总）
 - Worker / Cron / GitHub Actions 触发桥接
 - 飞书、Cloudflare、GitHub 外部平台配置
 - Roblox Explore 接口数据完整性、漏游戏、排序异常或榜单返回不足

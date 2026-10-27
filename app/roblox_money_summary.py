@@ -27,13 +27,13 @@ def build_roblox_money_card(cfg: Config, payload: RobloxMoneyReportPayload) -> d
                     f"- **{_color_text(revenue.project_name, MONEY_PROJECT_NAME_COLOR)}**",
                     (
                         f"  - 当日收入（{revenue.report_date}）: "
-                        f"**{_color_text(_format_usd(revenue.daily_usd), MONEY_DAILY_VALUE_COLOR)}**"
-                        f"（{_format_robux(revenue.daily_robux)} Robux）"
+                        f"**{_color_text(format_usd(revenue.daily_usd), MONEY_DAILY_VALUE_COLOR)}**"
+                        f"（{format_robux(revenue.daily_robux)} Robux）"
                     ),
                     (
                         f"  - 月累计（{revenue.month_start_date} 至 {revenue.month_end_date}）: "
-                        f"**{_color_text(_format_usd(revenue.month_to_date_usd), MONEY_MONTH_VALUE_COLOR)}**"
-                        f"（{_format_robux(revenue.month_to_date_robux)} Robux）"
+                        f"**{_color_text(format_usd(revenue.month_to_date_usd), MONEY_MONTH_VALUE_COLOR)}**"
+                        f"（{format_robux(revenue.month_to_date_robux)} Robux）"
                     ),
                 ]
             )
@@ -74,11 +74,15 @@ def _build_money_title(payload: RobloxMoneyReportPayload) -> str:
     return "Roblox 收入日报"
 
 
-def _format_usd(value: float) -> str:
+def format_usd(value: float) -> str:
+    """格式化美元金额，保留两位小数并带千分位。"""
+
     return f"${value:,.2f}"
 
 
-def _format_robux(value: float) -> str:
+def format_robux(value: float) -> str:
+    """格式化 Robux 数量，取整并带千分位。"""
+
     return f"{int(round(value)):,}"
 
 

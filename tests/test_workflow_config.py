@@ -20,10 +20,16 @@ class WorkflowConfigTests(unittest.TestCase):
         workflow_content = workflow_path.read_text(encoding="utf-8")
 
         self.assertIn("type: choice", workflow_content)
-        for report_mode in ("top_trending_sheet", "roblox_project_daily_metrics", "roblox_money"):
+        for report_mode in ("top_trending_sheet", "roblox_project_daily_metrics", "roblox_money", "daily_brief"):
             self.assertIn(f"          - {report_mode}", workflow_content)
         self.assertNotIn("          - top100_message", workflow_content)
         self.assertNotIn("'top100_message'", workflow_content)
+
+    def test_market_ccu_history_variable_is_injected(self) -> None:
+        workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/roblox_rank_sync.yml"
+        workflow_content = workflow_path.read_text(encoding="utf-8")
+
+        self.assertIn("MARKET_CCU_HISTORY: ${{ vars.MARKET_CCU_HISTORY }}", workflow_content)
 
     def test_removed_project_slots_are_not_injected(self) -> None:
         workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/roblox_rank_sync.yml"

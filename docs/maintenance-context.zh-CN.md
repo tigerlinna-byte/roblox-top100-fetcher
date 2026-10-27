@@ -436,6 +436,37 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 - 定时消息也只发到 `ROBLOX_MONEY_TEST_CHAT_IDS`
 - 它不复用 `SCHEDULE_CHAT_IDS`
 
+### 3.5 `daily_brief`（每日早报，试运行中）
+
+入口：
+
+- 飞书命令 `/roblox-brief`
+- 尚未接入 Cloudflare Cron；在测试群确认卡片样式后，计划把现有三个定时任务合并为 `10 1 * * *` 一个早报任务
+
+执行路径：
+
+1. 抓取阶段依次抓榜单（与 `top_trending_sheet` 相同的四个榜单）、项目指标（与项目日报相同）、收入（与收入日报相同）；任一部分失败只记录原因，不影响其余部分
+2. 行业趋势：
+   - 大盘涨跌：在玩榜前 10 / 前 100 的 CCU 合计，与昨天、上周同日比较，超过 ±10% 记为明显涨跌
+   - 值得关注项目：各榜单前 100 名的游戏按信号打分（新游、新进收入榜前 20、新上榜、排名飙升、多榜），总分最高且达到门槛的标为“今日最突出”；只靠多榜加分的常驻头部游戏不入选
+   - 品类风向：新上榜游戏的集中品类、热门榜前 20 名的主流品类
+3. 自家项目：先把指标写入各项目飞书表格，再从写入后的整表计算统计日核心数字，并与前 7 天均值比较（有效天数不足 4 天不判断）
+4. 收入：日收入同样与前 7 天均值比较
+5. 按群发送：全量群收到全部项目、收入和全部故障明细；精简群只看到 Troll ur friends 等非受限项目，不含收入，故障明细跟随数据可见性
+6. 输出 `data/daily_brief_YYYY-MM-DD.json`（原始抓取结果）与 `data/daily_brief_cards_YYYY-MM-DD.json`（各群实际卡片，先落盘再发送）
+
+#### 规则与人工标记
+
+- 所有阈值、权重、展示条数都在 [`app/daily_brief_rules.py`](../app/daily_brief_rules.py)
+- 默认“宽松”档位：指标涨到 2 倍或跌到一半才提醒，崩溃率只看上涨
+- 项目达到一定体量后，在 `PROJECT_ALERT_PROFILE_BY_PROJECT_ID` 中把该项目 ID 标记为 `STANDARD_ALERT_PROFILE`，阈值改为 ±20%（崩溃率 +50%）
+
+#### 历史数据口径
+
+- 大盘 CCU 历史存在 GitHub Variable `MARKET_CCU_HISTORY`，只由定时任务写入，同一天只保留第一次写入的快照，保留 30 天；手动运行只读不写
+- 早报与 `top_trending_sheet` 共用排名历史：定时任务读写正式历史，手动运行读写测试历史
+- “排名飙升”“新进收入榜前 20”与同一套历史里的上一次运行比较；正式历史只由定时任务写入，手动补跑不会改变定时任务的比较对象，但定时任务当天被重跑时，第二次会与第一次比较
+
 ## 4. 触发映射
 
 ### 4.1 飞书命令到运行模式
@@ -447,6 +478,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 | `/roblox-top-day` | `top_trending_sheet` |
 | `/roblox-project-metrics` | `roblox_project_daily_metrics` |
 | `/roblox-money` | `roblox_money` |
+| `/roblox-brief` | `daily_brief` |
 
 当前是严格全字匹配，不支持模糊匹配。`/roblox-top100` 已下线，Worker 收到后按 `command_mismatch` 忽略。
 
@@ -455,6 +487,7 @@ Worker 允许通过环境变量改命令文本：
 - `TOP_DAY_COMMAND_TEXT`
 - `PROJECT_METRICS_COMMAND_TEXT`
 - `ROBLOX_MONEY_COMMAND_TEXT`
+- `DAILY_BRIEF_COMMAND_TEXT`
 
 ### 4.2 Cloudflare Cron 到运行模式
 
@@ -571,6 +604,10 @@ Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作�
 - `FEISHU_TOP_PLAYING_NOW_TEST_PREV_RANKS`
 - `FEISHU_TOP_EARNING_TEST_PREV_RANKS`
 - `FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TITLE`
+
+### 每日早报相关
+
+- `MARKET_CCU_HISTORY`：大盘 CCU 每日快照历史，由早报定时任务自动创建和维护，无需手动配置
 
 ### 项目日报相关
 
@@ -763,6 +800,23 @@ Worker 事件去重默认使用 Cloudflare KV：
 - [`app/project_metrics_sheet.py`](../app/project_metrics_sheet.py)
   - 项目日报表头
   - 合并与整表重建逻辑
+
+### 每日早报链路
+
+- [`app/daily_brief_rules.py`](../app/daily_brief_rules.py)
+  - 阈值、打分权重、项目观测档位等业务规则数据
+- [`app/market_pulse.py`](../app/market_pulse.py)
+  - 大盘 CCU 快照、历史维护与涨跌对比
+- [`app/market_spotlight.py`](../app/market_spotlight.py)
+  - 值得关注项目打分、今日最突出、品类风向
+- [`app/project_metrics_trend.py`](../app/project_metrics_trend.py)
+  - 从项目表格内容计算统计日核心数字与超阈值提醒
+- [`app/metric_baseline.py`](../app/metric_baseline.py)
+  - 基线均值与阈值判断（项目指标、收入共用）
+- [`app/daily_brief_audience.py`](../app/daily_brief_audience.py)
+  - 全量群 / 精简群划分与内容裁剪
+- [`app/daily_brief_card.py`](../app/daily_brief_card.py)
+  - 早报飞书卡片组装
 
 ### 收入日报链路
 

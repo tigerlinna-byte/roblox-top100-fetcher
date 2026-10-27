@@ -131,7 +131,7 @@ def collect_top_trending_briefing_entries(
         recent_place_ids_by_sheet,
     )
 
-    reference_date = _resolve_reference_date(records_by_sheet)
+    reference_date = resolve_reference_date(records_by_sheet)
     if reference_date is None:
         return []
 
@@ -144,7 +144,7 @@ def collect_top_trending_briefing_entries(
             if record.place_id is None:
                 continue
 
-            launch_date = _resolve_launch_date(record)
+            launch_date = resolve_launch_date(record)
             if launch_date is None or launch_date < launch_deadline:
                 continue
 
@@ -194,7 +194,7 @@ def collect_top_trending_briefing_entries(
         entries.append(
             TrendingBriefingEntry(
                 place_id=place_id,
-                name=_build_briefing_display_name(record),
+                name=build_briefing_display_name(record),
                 genre=record.genre.strip(),
                 ccu=record.playing,
                 launch_date=payload["launch_date"],
@@ -223,7 +223,7 @@ def collect_top_trending_focus_place_ids_by_sheet(
 ) -> dict[str, set[int]]:
     """收集每个榜单中今天刚上榜且需要高亮的游戏。"""
 
-    reference_date = _resolve_reference_date(records_by_sheet)
+    reference_date = resolve_reference_date(records_by_sheet)
     if reference_date is None:
         return {}
 
@@ -236,7 +236,7 @@ def collect_top_trending_focus_place_ids_by_sheet(
             if record.place_id is None:
                 continue
 
-            launch_date = _resolve_launch_date(record)
+            launch_date = resolve_launch_date(record)
             if launch_date is None or launch_date < launch_deadline:
                 continue
 
@@ -307,7 +307,9 @@ def _get_sheet_rank_label_priority(sheet_rank_label: str) -> int:
     return BRIEFING_SHEET_LABEL_PRIORITY.get(label_name, len(BRIEFING_SHEET_LABEL_PRIORITY))
 
 
-def _resolve_reference_date(records_by_sheet: dict[str, list[GameRecord]]) -> date | None:
+def resolve_reference_date(records_by_sheet: dict[str, list[GameRecord]]) -> date | None:
+    """返回所有榜单记录中最新的抓取日期，作为“今天”的参照。"""
+
     latest_date: date | None = None
     for records in records_by_sheet.values():
         for record in records:
@@ -324,13 +326,15 @@ def _build_briefing_title(
 ) -> str:
     """根据榜单抓取日期构建简报标题。"""
 
-    reference_date = _resolve_reference_date(records_by_sheet)
+    reference_date = resolve_reference_date(records_by_sheet)
     if reference_date is None:
         return f"{heading_prefix}今日关注"
     return f"{heading_prefix}今日关注（{reference_date.isoformat()}）"
 
 
-def _resolve_launch_date(record: GameRecord) -> date | None:
+def resolve_launch_date(record: GameRecord) -> date | None:
+    """返回游戏首次上线日期，缺失时依次回退到更新时间、抓取时间。"""
+
     for raw in (record.created_at, record.updated_at, record.fetched_at):
         parsed = _parse_iso_date(raw)
         if parsed is not None:
@@ -356,7 +360,9 @@ def _prefer_better_rank_record(current: GameRecord, candidate: GameRecord) -> Ga
     return current
 
 
-def _build_briefing_display_name(record: GameRecord) -> str:
+def build_briefing_display_name(record: GameRecord) -> str:
+    """返回卡片展示用游戏名：英文名与本地化名不同时两者都显示。"""
+
     english_name = record.name.strip()
     localized_name = record.localized_name.strip()
     if english_name and localized_name and english_name != localized_name:

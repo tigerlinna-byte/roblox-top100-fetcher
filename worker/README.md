@@ -23,6 +23,9 @@
 | `/roblox-top-day` | `top_trending_sheet` |
 | `/roblox-project-metrics` | `roblox_project_daily_metrics` |
 | `/roblox-money` | `roblox_money` |
+| `/roblox-brief` | `daily_brief` |
+
+`/roblox-brief` 与 `/roblox-project-metrics` 一样，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 作为全量群名单传给 workflow，Python 据此决定发送全量版还是精简版早报。
 
 `/roblox-top100`（`top100_message`）已下线：Worker 不再响应该命令，Python 侧的 Top100 抓取与摘要代码保留，恢复时在 `resolveCommand()` 中加回命令映射，并把该模式加回 workflow 的 `report_mode` 选项。
 
@@ -31,6 +34,7 @@
 - `TOP_DAY_COMMAND_TEXT`
 - `PROJECT_METRICS_COMMAND_TEXT`
 - `ROBLOX_MONEY_COMMAND_TEXT`
+- `DAILY_BRIEF_COMMAND_TEXT`
 
 ## 必需配置
 

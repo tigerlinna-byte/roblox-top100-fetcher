@@ -28,6 +28,8 @@ class RobloxMoneyProjectRevenue:
     month_to_date_robux: float
     usd_per_100k_robux: float
     fetched_at: str
+    # 统计日之前若干天的日收入（Robux），作为早报收入涨跌提醒的基线；单项收入日报不使用。
+    baseline_daily_robux: tuple[float, ...] = ()
 
     @property
     def daily_usd(self) -> float:

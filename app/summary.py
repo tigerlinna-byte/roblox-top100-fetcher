@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Config
@@ -70,11 +70,21 @@ def _format_trigger(cfg: Config) -> str:
 
 
 def _format_now(tz_name: str) -> str:
+    return datetime.now(_resolve_timezone(tz_name)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def resolve_local_today(tz_name: str) -> date:
+    """返回业务时区下的今天，作为早报日期与大盘快照日期。"""
+
+    return datetime.now(_resolve_timezone(tz_name)).date()
+
+
+def _resolve_timezone(tz_name: str):
+    """解析时区；系统缺少时区库时，上海时区回退为固定 UTC+8，其余回退为 UTC。"""
+
     try:
-        tz = ZoneInfo(tz_name)
+        return ZoneInfo(tz_name)
     except ZoneInfoNotFoundError:
         if tz_name == "Asia/Shanghai":
-            tz = timezone(timedelta(hours=8))
-        else:
-            tz = UTC
-    return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+            return timezone(timedelta(hours=8))
+        return UTC

@@ -1,6 +1,9 @@
 const DEFAULT_TOP_DAY_COMMAND = "/roblox-top-day";
 const DEFAULT_PROJECT_METRICS_COMMAND = "/roblox-project-metrics";
 const DEFAULT_ROBLOX_MONEY_COMMAND = "/roblox-money";
+const DEFAULT_DAILY_BRIEF_COMMAND = "/roblox-brief";
+// 这些模式需要知道哪些群是全量群，才能把受限项目和收入只发给全量群。
+const FULL_GROUP_AWARE_REPORT_MODES = new Set(["roblox_project_daily_metrics", "daily_brief"]);
 const processedEvents = new Map();
 const DEFAULT_DEDUP_KV_BINDING = "EVENT_DEDUP_KV";
 
@@ -95,7 +98,7 @@ export async function handleRequest(request, env, ctx, fetchImpl = fetch) {
       triggerActor: message.openId || message.userId || "feishu-user",
       reportMode: command.reportMode,
       projectMetricsPrimaryProjectTestChatIds:
-        command.reportMode === "roblox_project_daily_metrics" ? env.ROBLOX_MONEY_TEST_CHAT_IDS || "" : "",
+        FULL_GROUP_AWARE_REPORT_MODES.has(command.reportMode) ? env.ROBLOX_MONEY_TEST_CHAT_IDS || "" : "",
     }),
   );
 
@@ -471,6 +474,10 @@ function resolveCommand(env, text) {
     {
       text: env.ROBLOX_MONEY_COMMAND_TEXT || DEFAULT_ROBLOX_MONEY_COMMAND,
       reportMode: "roblox_money",
+    },
+    {
+      text: env.DAILY_BRIEF_COMMAND_TEXT || DEFAULT_DAILY_BRIEF_COMMAND,
+      reportMode: "daily_brief",
     },
   ];
 

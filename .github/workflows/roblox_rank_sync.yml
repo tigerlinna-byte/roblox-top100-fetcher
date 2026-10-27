@@ -12,6 +12,7 @@ on:
           - top_trending_sheet
           - roblox_project_daily_metrics
           - roblox_money
+          - daily_brief
       trigger_source:
         description: Trigger source label shown in Feishu notification
         required: false
@@ -79,6 +80,7 @@ jobs:
           FEISHU_UP_AND_COMING_PREV_RANKS: ${{ vars.FEISHU_UP_AND_COMING_PREV_RANKS }}
           FEISHU_TOP_PLAYING_NOW_PREV_RANKS: ${{ vars.FEISHU_TOP_PLAYING_NOW_PREV_RANKS }}
           FEISHU_TOP_EARNING_PREV_RANKS: ${{ vars.FEISHU_TOP_EARNING_PREV_RANKS }}
+          MARKET_CCU_HISTORY: ${{ vars.MARKET_CCU_HISTORY }}
           FEISHU_TOP_TRENDING_SPREADSHEET_TITLE: ${{ vars.FEISHU_TOP_TRENDING_SPREADSHEET_TITLE }}
           FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN: ${{ vars.FEISHU_TOP_TRENDING_TEST_SPREADSHEET_TOKEN }}
           FEISHU_TOP_TRENDING_TEST_SHEET_ID: ${{ vars.FEISHU_TOP_TRENDING_TEST_SHEET_ID }}

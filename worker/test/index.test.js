@@ -153,6 +153,59 @@ test("dispatches project metrics workflow for /roblox-project-metrics", async ()
   );
 });
 
+test("dispatches daily brief workflow for /roblox-brief with full group chats", async () => {
+  const calls = [];
+  const ctx = buildCtx();
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, init });
+
+    if (String(url).includes("/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+
+    if (String(url).includes("/tenant_access_token/internal")) {
+      return Response.json({ code: 0, tenant_access_token: "tenant-token" });
+    }
+
+    if (String(url).includes("/im/v1/messages")) {
+      return Response.json({ code: 0, data: { message_id: "om_test" } });
+    }
+
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+
+  const response = await handleRequest(
+    buildRequest({
+      header: { token: "verify-me", event_id: "evt_daily_brief" },
+      event: {
+        sender: {
+          sender_id: {
+            open_id: "ou_test_user",
+          },
+        },
+        message: {
+          message_id: "om_message_daily_brief",
+          chat_id: "oc_test_chat",
+          message_type: "text",
+          content: JSON.stringify({ text: "/roblox-brief" }),
+        },
+      },
+    }),
+    buildEnv({ ROBLOX_MONEY_TEST_CHAT_IDS: "oc_full_chat" }),
+    ctx,
+    fetchImpl,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, dispatched: true });
+  await Promise.all(ctx.tasks);
+
+  const dispatchBody = JSON.parse(calls[0].init.body);
+  assert.equal(dispatchBody.inputs.report_mode, "daily_brief");
+  assert.equal(dispatchBody.inputs.chat_id, "oc_test_chat");
+  assert.equal(dispatchBody.inputs.project_metrics_primary_project_test_chat_ids, "oc_full_chat");
+});
+
 test("dispatches Top Trending workflow for /roblox-top-day", async () => {
   const calls = [];
   const ctx = buildCtx();

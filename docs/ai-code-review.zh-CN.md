@@ -2,6 +2,9 @@
 
 本文说明 GitHub push 后的 AI 自动代码审核机制。
 
+> **当前状态：已停用（2026-10-27）。** 仓库未配置 `OPENAI_API_KEY`，每次 push 触发都会失败，因此已在 GitHub 上手动停用该工作流，工作流文件、审核脚本与本文档均保留。
+> 恢复方法：先按第 3 节补齐 `OPENAI_API_KEY`，再在 GitHub Actions 页面启用 “AI Code Review”，或执行 `gh workflow enable "AI Code Review"`。
+
 ## 1. 触发方式
 
 工作流文件：

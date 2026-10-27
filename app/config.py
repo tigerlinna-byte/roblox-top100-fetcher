@@ -4,6 +4,9 @@ import os
 from dataclasses import dataclass
 
 
+# Cloudflare 定时任务触发时的来源标识；正式历史数据（排名、大盘 CCU）只由定时任务写入。
+SCHEDULED_TRIGGER_SOURCE = "cloudflare_cron"
+
 @dataclass(frozen=True)
 class Config:
     output_dir: str = "./data"
@@ -41,6 +44,8 @@ class Config:
     feishu_up_and_coming_prev_ranks: str = ""
     feishu_top_playing_now_prev_ranks: str = ""
     feishu_top_earning_prev_ranks: str = ""
+    # 大盘 CCU 每日快照历史（JSON），由每日早报定时任务维护。
+    market_ccu_history: str = ""
     feishu_top_trending_spreadsheet_title: str = "Roblox Top 100"
     feishu_top_trending_test_spreadsheet_token: str = ""
     feishu_top_trending_test_sheet_id: str = ""
@@ -141,6 +146,7 @@ def load_config() -> Config:
         feishu_up_and_coming_prev_ranks=os.getenv("FEISHU_UP_AND_COMING_PREV_RANKS", ""),
         feishu_top_playing_now_prev_ranks=os.getenv("FEISHU_TOP_PLAYING_NOW_PREV_RANKS", ""),
         feishu_top_earning_prev_ranks=os.getenv("FEISHU_TOP_EARNING_PREV_RANKS", ""),
+        market_ccu_history=os.getenv("MARKET_CCU_HISTORY", ""),
         feishu_top_trending_spreadsheet_title=os.getenv(
             "FEISHU_TOP_TRENDING_SPREADSHEET_TITLE",
             "Roblox Top 100",

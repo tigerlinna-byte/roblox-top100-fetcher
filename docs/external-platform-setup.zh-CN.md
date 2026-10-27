@@ -203,6 +203,7 @@ cp .dev.vars.example .dev.vars
 - `TOP_DAY_COMMAND_TEXT`
 - `PROJECT_METRICS_COMMAND_TEXT`
 - `ROBLOX_MONEY_COMMAND_TEXT`
+- `DAILY_BRIEF_COMMAND_TEXT`
 
 ### 方式 A：逐条执行
 
@@ -318,12 +319,13 @@ npx wrangler deploy
 
 ## 7. 联调命令
 
-当前默认支持 3 条命令（`/roblox-top100` 已下线，Worker 收到后忽略）：
+当前默认支持 4 条命令（`/roblox-top100` 已下线，Worker 收到后忽略）：
 
 ```text
 /roblox-top-day
 /roblox-project-metrics
 /roblox-money
+/roblox-brief
 ```
 
 它们分别对应：
@@ -331,6 +333,7 @@ npx wrangler deploy
 - `/roblox-top-day` -> `top_trending_sheet`
 - `/roblox-project-metrics` -> `roblox_project_daily_metrics`
 - `/roblox-money` -> `roblox_money`
+- `/roblox-brief` -> `daily_brief`
 
 联调时建议按这个顺序：
 

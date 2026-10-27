@@ -10,6 +10,7 @@
 | `top_trending_sheet` | 飞书 `/roblox-top-day`、Cloudflare Cron | 抓取 `Top_Trending_V4`、`Up_And_Coming_V4`、`top-playing-now`、`top-earning`，更新飞书多 Sheet 表格并发送 `今日关注` 卡片 | `data/top_trending_YYYY-MM-DD.json/csv` + 飞书卡片 + 飞书表格链接 |
 | `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics`、Cloudflare Cron | 抓取 Roblox Creator Analytics 项目日报，更新每个项目各自的飞书表格 | `data/project_metrics_YYYY-MM-DD.json/csv` + 每个项目的飞书表格链接 |
 | `roblox_money` | test 群 `/roblox-money`、Cloudflare Cron | 抓取两个 Roblox 项目的总收入，按配置汇率换算美元并发送卡片日报 | `data/roblox_money_YYYY-MM-DD.json/csv` + 飞书收入卡片 |
+| `daily_brief` | 飞书 `/roblox-brief`（试运行阶段，尚未接入 Cron） | 一次运行汇总行业趋势（大盘涨跌、值得关注项目、品类风向）、自家项目结论与收入，全量群与精简群各发一张早报卡片 | `data/daily_brief_YYYY-MM-DD.json` + `data/daily_brief_cards_YYYY-MM-DD.json` + 飞书早报卡片 |
 
 ## 系统结构
 
@@ -29,6 +30,7 @@
 - `/roblox-money` 默认按顺序发送第一项目、`Troll ur friends`（`10170801715`）、`Soccer RNG`（`10304101434`）和 `soccer大亨版`（`10403337696`）的收入日报；手动和定时都只允许 `ROBLOX_MONEY_TEST_CHAT_IDS` 中的 test 群触发和接收。
 - 收入日报展示 Roblox Analytics 当前最新可用收入日期的一天收入；月累计按该统计日所在自然月从 1 日累计到该统计日，2026 年 5 月从 `2026-05-01` 开始。
 - 收入日报不使用 ARPPU 推算总收入；如果 Roblox 返回 Robux 总收入，必须配置 `ROBLOX_MONEY_USD_PER_100K_ROBUX` 才能换算美元。
+- 每日早报的阈值、打分权重与项目观测档位统一放在 [app/daily_brief_rules.py](./app/daily_brief_rules.py)；所有项目默认只在指标翻倍或腰斩时提醒，需要细看的项目在 `PROJECT_ALERT_PROFILE_BY_PROJECT_ID` 中人工标记为标准观测。
 - `ROBLOX_CREATOR_COOKIE` 对项目日报是必需项；对榜单链路虽然不是硬性必需，但没有它时容易漏掉需要登录态才能看到的游戏。
 
 ## 本地快速开始
