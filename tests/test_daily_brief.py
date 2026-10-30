@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
@@ -16,8 +17,10 @@ from app.main import (
     _notify_success,
 )
 from app.market_pulse import MARKET_CCU_HISTORY_VAR
+from app.metric_baseline import MetricAlert
 from app.models import GameRecord
 from app.project_metrics_sheet import PROJECT_METRICS_FIELD_TO_HEADER, PROJECT_METRICS_HEADERS
+from app.project_metrics_trend import ProjectTrendSummary
 from app.roblox_money_models import RobloxMoneyFetchFailure, RobloxMoneyProjectRevenue, RobloxMoneyReportPayload
 
 
@@ -29,7 +32,23 @@ RESTRICTED_PROJECT_ID = "10304101434"
 
 
 def _card_text(card: dict[str, object]) -> str:
-    return "\n".join(str(element.get("content", "")) for element in card["elements"])
+    """递归收集卡片里所有文本，覆盖分栏、备注等嵌套组件。"""
+
+    texts: list[str] = []
+
+    def collect(node: object) -> None:
+        if isinstance(node, dict):
+            if isinstance(node.get("content"), str):
+                texts.append(node["content"])
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    collect(value)
+        elif isinstance(node, list):
+            for item in node:
+                collect(item)
+
+    collect(card["elements"])
+    return "\n".join(texts)
 
 
 def _sheet_rows(peak_ccu: str) -> list[list[str]]:
@@ -106,7 +125,43 @@ class DailyBriefCardTests(unittest.TestCase):
         text = _card_text(build_daily_brief_card(Config(), content, show_revenue=False))
 
         self.assertIn("A、B</font>：Cookie 失效", text)
-        self.assertNotIn("**收入**", text)
+        self.assertNotIn("💰 收入", text)
+
+    def test_header_turns_orange_only_when_failures_exist(self) -> None:
+        content = DailyBriefContent(brief_date="2026-10-27", market=None, projects=(), revenues=(), failures=())
+        self.assertEqual("blue", build_daily_brief_card(Config(), content, show_revenue=False)["header"]["template"])
+
+        with_failure = replace(content, failures=(BriefFailure("market", "", "行业趋势", "榜单失败"),))
+        self.assertEqual(
+            "orange", build_daily_brief_card(Config(), with_failure, show_revenue=False)["header"]["template"]
+        )
+
+    def test_projects_with_alerts_are_listed_first_with_marks(self) -> None:
+        def trend(project_id: str, alerts: tuple[MetricAlert, ...]) -> ProjectTrendSummary:
+            return ProjectTrendSummary(
+                project_id=project_id,
+                report_date="2026-10-26",
+                summary_values=(("峰值PCU", "1,000"),),
+                alerts=alerts,
+                below_alert_floor=False,
+            )
+
+        fall = MetricAlert("peak_ccu", "峰值PCU", "400", 400, 1000, -0.6, "fall")
+        content = DailyBriefContent(
+            brief_date="2026-10-27",
+            market=None,
+            projects=(
+                ProjectBriefEntry("1", "Steady", "", trend("1", ())),
+                ProjectBriefEntry("2", "Dropping", "", trend("2", (fall,))),
+            ),
+            revenues=(),
+            failures=(),
+        )
+
+        text = _card_text(build_daily_brief_card(Config(), content, show_revenue=False))
+
+        self.assertLess(text.index("🟢 **Dropping**"), text.index("⚪ **Steady**"))
+        self.assertIn("<font color='grey'>峰值PCU 1,000</font>", text)
 
 
 class DailyBriefFlowTests(unittest.TestCase):
@@ -203,13 +258,13 @@ class DailyBriefFlowTests(unittest.TestCase):
         limited_text = _card_text(cards[LIMITED_CHAT])
 
         self.assertIn("[Shoot or Shot](https://feishu.cn/sheets/9682356542)", full_text)
-        self.assertIn("**收入**", full_text)
+        self.assertIn("💰 收入", full_text)
         self.assertIn("↑ 日收入（较 7 日均 +200%）", full_text)
         self.assertIn("Soccer RNG、Soccer RNG 收入", full_text)
 
         self.assertIn("[Troll ur friends](https://feishu.cn/sheets/10170801715)", limited_text)
         self.assertNotIn("Shoot or Shot", limited_text)
-        self.assertNotIn("**收入**", limited_text)
+        self.assertNotIn("💰 收入", limited_text)
         self.assertNotIn("Soccer", limited_text)
         self.assertIn("数据积累中（已记录 1 天）", limited_text)
 
@@ -219,7 +274,7 @@ class DailyBriefFlowTests(unittest.TestCase):
         _notify_success(self.cfg, self.payload)
 
         full_text = _card_text(self._sent_cards()[FULL_CHAT])
-        self.assertIn("当日 $114.00", full_text)
+        self.assertIn("当日 **$114.00**", full_text)
         self.assertNotIn("日收入（较", full_text)
 
     def test_full_group_send_never_falls_back_to_webhook(self) -> None:
