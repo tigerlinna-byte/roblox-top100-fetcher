@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import unittest
 
+from app.game_trend_history import GameDailySnapshot
 from app.market_spotlight import build_genre_wind_lines, build_market_spotlight
 from app.models import GameRecord
 
 
 FETCHED_AT = "2026-10-27T01:00:00Z"
+
+
+def _snapshot(day: str, ccu: int, visits: int = 0, up: int = 0, down: int = 0) -> GameDailySnapshot:
+    return GameDailySnapshot(snapshot_date=day, ccu=ccu, visits=visits, up_votes=up, down_votes=down)
 
 
 def _record(rank: int, place_id: int, *, created_at: str, playing: int = 1000, genre: str = "Simulation") -> GameRecord:
@@ -75,6 +80,81 @@ class MarketSpotlightTests(unittest.TestCase):
 
         self.assertIsNone(spotlight.standout)
         self.assertEqual((), spotlight.entries)
+
+    def test_long_term_pick_is_scored_with_reasons_and_not_repeated(self) -> None:
+        records_by_sheet = {
+            "top_trending_v4": [
+                _record(1, 1, created_at="2026-10-20T00:00:00Z", playing=90000),
+                _record(10, 2, created_at="2026-10-05T00:00:00Z", playing=26000),
+            ],
+            "top_earning": [
+                _record(15, 1, created_at="2026-10-20T00:00:00Z", playing=90000),
+                _record(50, 2, created_at="2026-10-05T00:00:00Z", playing=26000),
+            ],
+        }
+        snapshots = {
+            1: _snapshot("2026-10-27", 90000, 50_000_000, 1000, 500),
+            2: _snapshot("2026-10-27", 26000, 10_000_000, 9700, 300),
+        }
+        history = {
+            1: [_snapshot("2026-10-26", 30000, 20_000_000, 600, 300), _snapshot("2026-10-25", 3000, 1_000_000, 50, 20)],
+            2: [
+                _snapshot("2026-10-26", 20000, 9_000_000, 9000, 280),
+                _snapshot("2026-10-25", 22000, 8_000_000, 8000, 260),
+                _snapshot("2026-10-24", 28000, 7_000_000, 6000, 500),
+            ],
+        }
+
+        spotlight = build_market_spotlight(records_by_sheet, {}, {}, snapshots, history)
+
+        self.assertEqual(1, spotlight.standout.place_id)
+        self.assertEqual([2], [entry.place_id for entry in spotlight.long_term])
+        self.assertEqual((), spotlight.entries)
+        long_term = spotlight.long_term[0]
+        self.assertEqual(
+            [
+                "在线较前 3 日 +11%",
+                "较 14 日峰值 -7%",
+                "估算时长 33 分钟",
+                "新增好评 97%",
+                "好评率较 3 日前 +4.7 个点",
+                "收入榜 #50",
+            ],
+            [signal.reason for signal in long_term.long_term_signals],
+        )
+        # 趋势 1 + 峰值 2 + 时长 2 + 好评 1 + 好评走势 1 + 收入榜 1
+        self.assertEqual(8, long_term.long_term_score)
+        # 爆发的游戏同样计算长线指标，卡片里用来区分昙花一现：单局只有约 3 分钟。
+        self.assertEqual(4, spotlight.long_term_recorded_days)
+        self.assertIn("估算时长 3 分钟", [signal.reason for signal in spotlight.standout.long_term_signals])
+
+    def test_long_term_requires_enough_recorded_days(self) -> None:
+        records_by_sheet = {"top_trending_v4": [_record(3, 5, created_at="2026-10-20T00:00:00Z", playing=8000)]}
+        snapshots = {5: _snapshot("2026-10-27", 8000)}
+        history = {5: [_snapshot("2026-10-26", 7000)]}
+
+        spotlight = build_market_spotlight(records_by_sheet, {}, {}, snapshots, history)
+
+        self.assertEqual((), spotlight.long_term)
+        self.assertEqual(2, spotlight.long_term_recorded_days)
+        self.assertEqual((), spotlight.standout.long_term_signals)
+
+    def test_afk_sessions_and_collapsing_ccu_are_not_rewarded(self) -> None:
+        records_by_sheet = {"top_trending_v4": [_record(3, 6, created_at="2026-10-20T00:00:00Z", playing=4000)]}
+        snapshots = {6: _snapshot("2026-10-27", 4000, 1_010_000, 0, 0)}
+        history = {
+            6: [
+                _snapshot("2026-10-26", 10000, 1_000_000),
+                _snapshot("2026-10-25", 12000, 990_000),
+            ]
+        }
+
+        spotlight = build_market_spotlight(records_by_sheet, {}, {}, snapshots, history)
+
+        signals = {signal.kind: signal for signal in spotlight.standout.long_term_signals}
+        self.assertEqual((-3, "在线较前 3 日 -64%"), (signals["ccu_trend"].score, signals["ccu_trend"].reason))
+        self.assertEqual(-2, signals["peak_hold"].score)
+        self.assertEqual((0, "疑似挂机，时长不计分"), (signals["session"].score, signals["session"].reason))
 
     def test_genre_wind_lines_describe_new_entries_and_trending_head(self) -> None:
         records_by_sheet = {

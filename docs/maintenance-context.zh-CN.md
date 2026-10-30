@@ -446,12 +446,27 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 1. 抓取阶段依次抓榜单（与 `top_trending_sheet` 相同的四个榜单）、项目指标（与项目日报相同）、收入（与收入日报相同）；任一部分失败只记录原因，不影响其余部分
 2. 行业趋势：
    - 大盘涨跌：在玩榜前 10 / 前 100 的 CCU 合计，与昨天、上周同日比较，超过 ±10% 记为明显涨跌
-   - 值得关注项目：各榜单前 100 名的游戏按信号打分（新游、新进收入榜前 20、新上榜、排名飙升、多榜），总分最高且达到门槛的标为“今日最突出”；只靠多榜加分的常驻头部游戏不入选
+   - 值得关注项目：各榜单前 100 名的游戏按信号打分（新游、新进收入榜前 20、新上榜、排名飙升、多榜），爆发分最高且达到门槛的标为“今日最突出（爆发）”；只靠多榜加分的常驻头部游戏不入选
+   - 长线潜力：同一批入选游戏再按每日快照历史计算长线分（在线趋势、较峰值回撤、连续在榜、估算单局时长、口碑与口碑走势、收入榜前 100），长线分最高的至多 3 款单列一栏，不与“今日最突出”和“值得关注”重复；规则见下文“长线潜力规则”
    - 品类风向：新上榜游戏的集中品类、热门榜前 20 名的主流品类
 3. 自家项目：先把指标写入各项目飞书表格，再从写入后的整表计算统计日核心数字，并与前 7 天均值比较（有效天数不足 4 天不判断）
 4. 收入：日收入同样与前 7 天均值比较
 5. 按群发送：全量群收到全部项目、收入和全部故障明细；精简群只看到 Troll ur friends 等非受限项目，不含收入，故障明细跟随数据可见性
-6. 输出 `data/daily_brief_YYYY-MM-DD.json`（原始抓取结果）与 `data/daily_brief_cards_YYYY-MM-DD.json`（各群实际卡片，先落盘再发送）
+6. 输出 `data/daily_brief_YYYY-MM-DD.json`（原始抓取结果）、`data/daily_brief_spotlight_YYYY-MM-DD.json`（今日最突出、长线潜力、值得关注的爆发分与长线分明细，便于调阈值）与 `data/daily_brief_cards_YYYY-MM-DD.json`（各群实际卡片，先落盘再发送）
+
+#### 长线潜力规则
+
+- 数据来源：早报每天抓到的榜单记录本身带有 CCU、累计访问、点赞、点踩。定时任务把各榜单前 100 名中上线不超过 180 天的游戏按天存一份快照（约 110 款，每天约 7KB），保留 14 天
+- 存储位置：仓库数据分支 `data-history` 上的 `game_trend_history.json`（可用环境变量 `GAME_TREND_HISTORY_BRANCH` / `GAME_TREND_HISTORY_PATH` 覆盖）。体积超出单个 GitHub Variable 的 48KB 上限，且现有 Variables 总量已较大，所以不放 Variables
+  - 读写使用 `GH_TOKEN`（fine-grained token `roblox-top100-vars`），需要 **Contents: Read and write** 权限；2026-10-30 已添加
+  - 只有定时任务写入，手动运行只读；同一天只保留第一次写入的快照，与大盘历史口径一致
+  - 读取失败时当天不写入，避免用只有当天的数据覆盖历史；写入失败只记日志（提示检查 Contents 权限和分支是否存在），早报照常发送
+  - 该分支只放数据文件，不含代码；AI 代码审核只监听 `main`，向数据分支提交不会触发审核
+- 至少有 3 天快照（含当天）才计算长线分；不足时卡片显示“数据积累中（已记录 N 天，还需 M 天）”
+- 估算单局时长 = 相邻两次快照的平均 CCU × 1440 ÷ 日均新增访问。每天只在 09:10 取一次 CCU，只适合同一游戏跨天比较；超过 120 分钟视为挂机类，不计分
+- 好评率优先用相邻两天新增投票计算（新增投票不足 50 票时退回累计好评率）；好评走势用累计好评率与 3 天前比较
+- 所有阈值、分值与展示条数都在 [`app/daily_brief_rules.py`](../app/daily_brief_rules.py) 的“长线潜力”段；指标计算在 [`app/game_trend_history.py`](../app/game_trend_history.py)，打分在 [`app/market_spotlight.py`](../app/market_spotlight.py)
+- “今日最突出（爆发）”面板也附带该游戏的长线分与依据，用来区分昙花一现与能留住人的爆款
 
 #### 卡片样式
 
@@ -476,6 +491,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 #### 历史数据口径
 
 - 大盘 CCU 历史存在 GitHub Variable `MARKET_CCU_HISTORY`，只由定时任务写入，同一天只保留第一次写入的快照，保留 30 天；手动运行只读不写
+- 长线潜力用的游戏每日快照存在数据分支 `data-history` 的 `game_trend_history.json`，写入规则同上，保留 14 天
 - 早报与 `top_trending_sheet` 共用排名历史：定时任务读写正式历史，手动运行读写测试历史
 - “排名飙升”“新进收入榜前 20”与同一套历史里的上一次运行比较；正式历史只由定时任务写入，手动补跑不会改变定时任务的比较对象，但定时任务当天被重跑时，第二次会与第一次比较
 
@@ -585,7 +601,8 @@ Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作�
 说明：
 
 - `GH_TOKEN` 在工作流里会映射成 Python 侧的 `GITHUB_VARIABLES_TOKEN`
-- 它的职责不是 dispatch workflow，而是给 Python 更新 GitHub Variables
+- 它的职责不是 dispatch workflow，而是给 Python 更新 GitHub Variables，以及读写数据分支 `data-history` 上的长线潜力快照文件
+- 当前对应 fine-grained token `roblox-top100-vars`，只授权本仓库，权限为 Metadata 只读、Variables 读写、Contents 读写；更换 token 时三项缺一不可
 - `OPENAI_API_KEY` 只供 [`/.github/workflows/ai_code_review.yml`](../.github/workflows/ai_code_review.yml) 调用 OpenAI Responses API，不应在业务同步工作流中注入
 
 ### 5.2 GitHub Actions Variables
@@ -714,6 +731,7 @@ Worker 当前必需配置：
 - `project_metrics_YYYY-MM-DD.json/csv`
 - `roblox_money_YYYY-MM-DD.json/csv`
 - `creator_overview_debug_<project_id>.json`（仅项目日报缺关键指标时）
+- `daily_brief_YYYY-MM-DD.json`、`daily_brief_spotlight_YYYY-MM-DD.json`、`daily_brief_cards_YYYY-MM-DD.json`（每日早报）
 
 GitHub Actions 会上传：
 
@@ -756,7 +774,22 @@ Top Trending 历史排名保存在 GitHub Variables 中，当前结构是一个 
 - 如果删了 GitHub Variables 但没删飞书表，就会创建新的表并切换指向
 - Top Trending 当前不再创建或更新飞书表格
 
-### 6.4 Worker 事件去重
+### 6.4 长线潜力每日快照
+
+每日早报的“长线潜力”依赖数据分支 `data-history` 上的 `game_trend_history.json`，结构为：
+
+```json
+{
+  "version": 1,
+  "games": {
+    "<place_id>": [["2026-10-30", 86514, 91630805, 54680, 7456]]
+  }
+}
+```
+
+每条快照依次为日期、CCU、累计访问、累计点赞、累计点踩，按日期从新到旧。该分支是孤立分支，只放数据文件；删除文件后长线分会重新从“数据积累中”开始。
+
+### 6.5 Worker 事件去重
 
 Worker 事件去重默认使用 Cloudflare KV：
 

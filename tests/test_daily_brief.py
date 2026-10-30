@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import date
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
@@ -16,6 +17,7 @@ from app.main import (
     ProjectMetricsReportPayload,
     _notify_success,
 )
+from app.github_client import GitHubClientError, RepositoryFile
 from app.market_pulse import MARKET_CCU_HISTORY_VAR
 from app.metric_baseline import MetricAlert
 from app.models import GameRecord
@@ -241,6 +243,8 @@ class DailyBriefFlowTests(unittest.TestCase):
         github_patcher = patch("app.main.GitHubClient")
         self.github_client_cls = github_patcher.start()
         self.addCleanup(github_patcher.stop)
+        # 默认数据分支上还没有快照文件。
+        self.github_client_cls.return_value.get_repository_file.return_value = None
 
     def _sent_cards(self) -> dict[str, dict[str, object]]:
         return {
@@ -297,6 +301,47 @@ class DailyBriefFlowTests(unittest.TestCase):
         _notify_success(cfg, self.payload)
 
         self.github_client_cls.return_value.upsert_repository_variable.assert_not_called()
+        self.github_client_cls.return_value.put_repository_file.assert_not_called()
+
+    def test_scheduled_run_writes_game_trend_history_to_data_branch(self) -> None:
+        self.github_client_cls.return_value.get_repository_file.return_value = RepositoryFile(
+            content='{"version":1,"games":{"1":[["2026-10-25",40000,900,90,10]]}}',
+            sha="abc",
+        )
+
+        with patch("app.main.resolve_local_today", return_value=date(2026, 10, 27)):
+            _notify_success(self.cfg, self.payload)
+
+        put = self.github_client_cls.return_value.put_repository_file
+        path, content = put.call_args.args
+        self.assertEqual("game_trend_history.json", path)
+        self.assertEqual("data-history", put.call_args.kwargs["branch"])
+        self.assertEqual("abc", put.call_args.kwargs["sha"])
+        snapshots = json.loads(content)["games"]["1"]
+        self.assertEqual([["2026-10-27", 50000, 0, 0, 0], ["2026-10-25", 40000, 900, 90, 10]], snapshots)
+
+    def test_history_read_failure_skips_write_and_still_sends_cards(self) -> None:
+        self.github_client_cls.return_value.get_repository_file.side_effect = GitHubClientError("boom")
+
+        with self.assertLogs(level="ERROR"):
+            _notify_success(self.cfg, self.payload)
+
+        self.github_client_cls.return_value.put_repository_file.assert_not_called()
+        self.assertEqual({FULL_CHAT, LIMITED_CHAT}, set(self._sent_cards()))
+
+    def test_history_write_failure_still_sends_cards(self) -> None:
+        self.github_client_cls.return_value.put_repository_file.side_effect = GitHubClientError("403")
+
+        with self.assertLogs(level="ERROR") as logs:
+            _notify_success(self.cfg, self.payload)
+
+        self.assertIn("Contents read-and-write", "\n".join(logs.output))
+        self.assertEqual({FULL_CHAT, LIMITED_CHAT}, set(self._sent_cards()))
+
+    def test_card_shows_long_term_accumulation_hint(self) -> None:
+        _notify_success(self.cfg, self.payload)
+
+        self.assertIn("还需 2 天", _card_text(self._sent_cards()[LIMITED_CHAT]))
 
 
 if __name__ == "__main__":

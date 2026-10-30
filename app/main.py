@@ -24,6 +24,14 @@ from .daily_brief_rules import (
     REVENUE_ALERT_METRIC_LABEL,
 )
 from .feishu_client import FeishuClient, FeishuClientError
+from .game_trend_history import (
+    GameDailySnapshot,
+    GameTrendHistory,
+    build_game_daily_snapshots,
+    merge_game_trend_history,
+    parse_game_trend_history,
+    serialize_game_trend_history,
+)
 from .github_client import GitHubClient, GitHubClientError
 from .market_pulse import (
     MARKET_CCU_HISTORY_VAR,
@@ -112,6 +120,8 @@ ROBLOX_MONEY_REPORT_MODE = "roblox_money"
 DAILY_BRIEF_REPORT_MODE = "daily_brief"
 # 早报卡片落盘文件前缀，便于在 artifacts 中查看各群实际收到的内容。
 DAILY_BRIEF_CARDS_OUTPUT_PREFIX = "daily_brief_cards"
+# 值得关注打分明细落盘文件前缀，包含爆发分、长线分及其依据，便于调整阈值。
+DAILY_BRIEF_SPOTLIGHT_OUTPUT_PREFIX = "daily_brief_spotlight"
 # 早报各部分整体失败时，在“数据异常”中展示的名称。
 MARKET_SECTION_LABEL = "行业趋势"
 PROJECT_SECTION_LABEL = "自家项目"
@@ -724,16 +734,66 @@ def _build_market_section(
     variables = resolve_spreadsheet_variables(cfg)
     previous_ranks_by_sheet = get_previous_ranks(cfg, variables)
     recent_place_ids_by_sheet = get_recent_place_ids_by_sheet(cfg, variables)
+    trend_snapshots = build_game_daily_snapshots(records_by_sheet, brief_date)
+    trend_history = _load_game_trend_history(cfg, trend_snapshots, brief_date)
     section = MarketSection(
         pulse=_build_market_pulse(cfg, records_by_sheet, brief_date),
-        spotlight=build_market_spotlight(records_by_sheet, previous_ranks_by_sheet, recent_place_ids_by_sheet),
+        spotlight=build_market_spotlight(
+            records_by_sheet,
+            previous_ranks_by_sheet,
+            recent_place_ids_by_sheet,
+            trend_snapshots,
+            trend_history,
+        ),
         genre_lines=build_genre_wind_lines(records_by_sheet, recent_place_ids_by_sheet),
     )
+    write_json_document(cfg.output_dir, asdict(section.spotlight), prefix=DAILY_BRIEF_SPOTLIGHT_OUTPUT_PREFIX)
     try:
         _persist_top_trending_previous_ranks(cfg, records_by_sheet)
     except GitHubClientError:
         logging.exception("Failed to persist previous ranks for daily brief.")
     return section
+
+
+def _load_game_trend_history(
+    cfg: Config,
+    snapshots: dict[int, GameDailySnapshot],
+    brief_date: date,
+) -> GameTrendHistory:
+    """读取游戏每日快照历史；定时任务再把当天快照写回数据分支。
+
+    读取失败时不写入，避免用只有当天的数据覆盖已有历史；写入失败只记录日志，不影响早报发送。
+    """
+
+    client = GitHubClient(cfg)
+    branch = cfg.game_trend_history_branch
+    path = cfg.game_trend_history_path
+    try:
+        existing = client.get_repository_file(path, branch=branch)
+    except GitHubClientError:
+        logging.exception("Failed to read game trend history from branch %s; long-term metrics skipped today.", branch)
+        return {}
+    history = parse_game_trend_history(existing.content if existing else "")
+    if cfg.run_trigger_source != SCHEDULED_TRIGGER_SOURCE:
+        return history
+
+    history = merge_game_trend_history(history, snapshots, brief_date)
+    try:
+        if not client.put_repository_file(
+            path,
+            serialize_game_trend_history(history),
+            branch=branch,
+            sha=existing.sha if existing else "",
+            message=f"chore(data): 更新游戏每日快照 {brief_date.isoformat()}",
+        ):
+            logging.warning("Game trend history was not persisted: GitHub repository or token is not configured.")
+    except GitHubClientError:
+        logging.exception(
+            "Failed to persist game trend history to branch %s; today's snapshot is lost. "
+            "Check that GH_TOKEN has Contents read-and-write permission and the branch exists.",
+            branch,
+        )
+    return history
 
 
 def _build_market_pulse(

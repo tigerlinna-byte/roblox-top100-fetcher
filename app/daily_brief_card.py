@@ -5,6 +5,7 @@ from __future__ import annotations
 from .config import Config
 from .daily_brief_models import DailyBriefContent, MarketSection, ProjectBriefEntry, RevenueBriefEntry
 from .daily_brief_rules import (
+    LONG_TERM_MIN_RECORDED_DAYS,
     MARKET_PULSE_BROAD_SIZE,
     MARKET_PULSE_HEAD_SIZE,
     PROJECT_TITLE_SUFFIXES_TO_STRIP,
@@ -29,6 +30,7 @@ SECONDARY_COLOR = "grey"
 HEADER_TEMPLATE = "blue"
 HEADER_TEMPLATE_WITH_FAILURES = "orange"
 STANDOUT_MARK = "🔥"
+LONG_TERM_MARK = "🌱"
 # 自家项目的状态标记：全部上涨、全部下跌、涨跌都有、没有提醒。
 PROJECT_RISE_MARK = "🔴"
 PROJECT_FALL_MARK = "🟢"
@@ -179,12 +181,15 @@ def _format_market_change(change: MarketChange) -> str:
 
 
 def _build_spotlight_elements(spotlight: MarketSpotlight) -> list[CardElement]:
-    if spotlight.standout is None and not spotlight.entries:
-        return [_markdown(_color("今天没有发现值得特别关注的项目。", SECONDARY_COLOR))]
-
     elements: list[CardElement] = []
+    if spotlight.standout is None and not spotlight.entries and not spotlight.long_term:
+        elements.append(_markdown(_color("今天没有发现值得特别关注的项目。", SECONDARY_COLOR)))
+        elements.append(_build_long_term_element(spotlight))
+        return elements
+
     if spotlight.standout is not None:
         elements.append(_build_standout_panel(spotlight.standout))
+    elements.append(_build_long_term_element(spotlight))
     if spotlight.entries:
         lines = ["**👀 值得关注**"]
         for entry in spotlight.entries:
@@ -202,18 +207,42 @@ def _build_standout_panel(standout: SpotlightEntry) -> CardElement:
     sheet_ranks = _format_sheet_ranks(standout)
     if sheet_ranks:
         details += f"｜{sheet_ranks}"
-    content = "\n".join(
-        [
-            f"{STANDOUT_MARK} **今日最突出：{_color(standout.name, HIGHLIGHT_NAME_COLOR)}**",
-            _format_spotlight_reasons(standout),
-            _color(details, SECONDARY_COLOR),
-        ]
-    )
-    return _panel([_column([_markdown(content)])], flex_mode="none")
+    lines = [
+        f"{STANDOUT_MARK} **今日最突出（爆发）：{_color(standout.name, HIGHLIGHT_NAME_COLOR)}**",
+        _format_spotlight_reasons(standout),
+    ]
+    # 爆发的游戏也附上长线指标，便于判断是昙花一现还是能留住人。
+    if standout.long_term_signals:
+        lines.append(f"长线 {standout.long_term_score} 分：{_format_long_term_reasons(standout)}")
+    lines.append(_color(details, SECONDARY_COLOR))
+    return _panel([_column([_markdown("\n".join(lines))])], flex_mode="none")
+
+
+def _build_long_term_element(spotlight: MarketSpotlight) -> CardElement:
+    """长线潜力：列出长线分最高的游戏及依据；历史快照不足时提示还要积累几天。"""
+
+    title = f"**{LONG_TERM_MARK} 长线潜力**"
+    if spotlight.long_term:
+        lines = [title]
+        for entry in spotlight.long_term:
+            name = f"**{_color(entry.name, HIGHLIGHT_NAME_COLOR)}**"
+            details = _color(f"｜{entry.genre or '-'}｜CCU {entry.ccu:,}", SECONDARY_COLOR)
+            lines.append(f"- {name}：长线 {entry.long_term_score} 分｜{_format_long_term_reasons(entry)} {details}")
+        return _markdown("\n".join(lines))
+    if spotlight.long_term_recorded_days < LONG_TERM_MIN_RECORDED_DAYS:
+        remaining_days = LONG_TERM_MIN_RECORDED_DAYS - spotlight.long_term_recorded_days
+        hint = f"数据积累中（已记录 {spotlight.long_term_recorded_days} 天，还需 {remaining_days} 天）"
+    else:
+        hint = "今天没有长线分达到门槛的项目。"
+    return _markdown(f"{title}\n{_color(hint, SECONDARY_COLOR)}")
 
 
 def _format_spotlight_reasons(entry: SpotlightEntry) -> str:
     return "，".join(signal.reason for signal in entry.signals)
+
+
+def _format_long_term_reasons(entry: SpotlightEntry) -> str:
+    return "，".join(signal.reason for signal in entry.long_term_signals)
 
 
 def _format_sheet_ranks(entry: SpotlightEntry) -> str:

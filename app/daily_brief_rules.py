@@ -133,6 +133,54 @@ SPOTLIGHT_MAX_ENTRIES = 8
 SPOTLIGHT_STANDOUT_MIN_SCORE = 3
 
 # ---------------------------------------------------------------------------
+# 长线潜力（基于每日历史快照）
+# ---------------------------------------------------------------------------
+
+# 每日快照的记录范围：各榜单前 N 名中首次上线不超过该天数的游戏，老游戏不需要看长线潜力。
+TREND_HISTORY_MAX_GAME_AGE_DAYS = 180
+# 每日快照保留天数；同时决定“较峰值”的峰值窗口。
+TREND_HISTORY_KEEP_DAYS = 14
+# 至少有这么多天快照（含当天）才计算长线指标，不足时卡片显示“数据积累中”。
+LONG_TERM_MIN_RECORDED_DAYS = 3
+# 在线趋势：当天 CCU 与之前若干天均值比较；窗口内至少要有 2 天数据。
+LONG_TERM_TREND_COMPARE_DAYS = 3
+LONG_TERM_TREND_MIN_BASELINE_DAYS = 2
+# 在线趋势分档：(涨跌比例下限, 得分)，从高到低匹配第一档；都不满足时为平稳 0 分。
+LONG_TERM_TREND_RISE_TIERS: tuple[tuple[float, int], ...] = ((0.30, 3), (0.10, 1))
+LONG_TERM_TREND_FALL_TIERS: tuple[tuple[float, int], ...] = ((-0.30, -3), (-0.10, -1))
+# 可持续性：当天 CCU 占窗口内峰值的比例。
+LONG_TERM_PEAK_HOLD_RATIO = 0.8
+LONG_TERM_PEAK_HOLD_SCORE = 2
+LONG_TERM_PEAK_COLLAPSE_RATIO = 0.5
+LONG_TERM_PEAK_COLLAPSE_SCORE = -2
+# 可持续性：连续在榜（每天都有快照）达到该天数加分。
+LONG_TERM_BOARD_STREAK_DAYS = 7
+LONG_TERM_BOARD_STREAK_SCORE = 1
+# 估算单局时长（分钟）= 区间平均 CCU × 1440 ÷ 日均新增访问；只有每天一次快照，只适合跨天比较。
+LONG_TERM_SESSION_LONG_MINUTES = 20
+LONG_TERM_SESSION_LONG_SCORE = 2
+LONG_TERM_SESSION_SHORT_MINUTES = 10
+LONG_TERM_SESSION_SHORT_SCORE = -1
+# 超过该时长视为挂机类游戏，估算值失真，不加分。
+LONG_TERM_SESSION_AFK_MINUTES = 120
+# 新增投票好评率：区间内新增投票少于该数时改用累计好评率，避免小样本波动。
+LONG_TERM_RATING_MIN_NEW_VOTES = 50
+LONG_TERM_RATING_HIGH = 0.90
+LONG_TERM_RATING_HIGH_SCORE = 1
+LONG_TERM_RATING_LOW = 0.75
+LONG_TERM_RATING_LOW_SCORE = -2
+# 口碑走势：累计好评率较若干天前上升达到该值（百分点）加分。
+LONG_TERM_RATING_TREND_DAYS = 3
+LONG_TERM_RATING_TREND_MIN_POINTS = 0.03
+LONG_TERM_RATING_TREND_SCORE = 1
+# 变现：在收入榜前 N 名加分。
+LONG_TERM_EARNING_RANK_LIMIT = 100
+LONG_TERM_EARNING_SCORE = 1
+# “长线潜力”最多展示条数与最低长线分，没有游戏达到时不硬凑。
+LONG_TERM_MAX_ENTRIES = 3
+LONG_TERM_MIN_SCORE = 3
+
+# ---------------------------------------------------------------------------
 # 品类风向
 # ---------------------------------------------------------------------------
 
