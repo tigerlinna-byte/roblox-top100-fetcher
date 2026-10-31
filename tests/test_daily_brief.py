@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 from app.config import Config
 from app.daily_brief_audience import BriefAudience, filter_brief_for_audience, resolve_brief_audiences
 from app.daily_brief_card import build_daily_brief_card, strip_project_title
-from app.daily_brief_models import BriefFailure, DailyBriefContent, ProjectBriefEntry
+from app.daily_brief_models import BriefFailure, DailyBriefContent, MarketSection, ProjectBriefEntry
 from app.main import (
     DailyBriefFetchPayload,
     ProjectMetricsFetchFailure,
@@ -19,6 +19,7 @@ from app.main import (
 )
 from app.github_client import GitHubClientError, RepositoryFile
 from app.market_pulse import MARKET_CCU_HISTORY_VAR
+from app.market_spotlight import EarningMovement, MarketSpotlight, SpotlightEntry, SpotlightSignal
 from app.metric_baseline import MetricAlert
 from app.models import GameRecord
 from app.project_metrics_sheet import PROJECT_METRICS_FIELD_TO_HEADER, PROJECT_METRICS_HEADERS
@@ -108,6 +109,46 @@ class DailyBriefAudienceTests(unittest.TestCase):
 
 
 class DailyBriefCardTests(unittest.TestCase):
+    def test_spotlight_lines_show_earning_rank_and_changes(self) -> None:
+        standout = SpotlightEntry(
+            place_id=1,
+            name="DONT SPLASH",
+            genre="Runner",
+            ccu=86967,
+            sheet_ranks=(("热门榜", 1), ("收入榜", 76)),
+            signals=(SpotlightSignal("earning_surge", 6, "收入榜较上次 ↑48"),),
+            earning=EarningMovement(rank=76, change=48, week_change=225, entered_this_week=True),
+        )
+        entry = SpotlightEntry(
+            place_id=2,
+            name="Pixel Lineage",
+            genre="RPG",
+            ccu=2778,
+            sheet_ranks=(("收入榜", 149),),
+            signals=(SpotlightSignal("new_game", 3, "上线 25 天"),),
+            earning=EarningMovement(rank=149, change=-37, week_change=-74, entered_this_week=False),
+        )
+        content = DailyBriefContent(
+            brief_date="2026-10-30",
+            market=MarketSection(
+                pulse=None,
+                spotlight=MarketSpotlight(standout=standout, entries=(entry,), long_term_recorded_days=3),
+                genre_lines=(),
+            ),
+            projects=(),
+            revenues=(),
+            failures=(),
+        )
+
+        text = _card_text(build_daily_brief_card(Config(), content, show_revenue=False))
+
+        self.assertIn("热门榜 #1</font>｜收入榜 #76（较上次 <font color='red'>↑48</font>，一周前不在榜）", text)
+        self.assertIn(
+            "｜收入榜 #149（较上次 <font color='green'>↓37</font>，一周 <font color='green'>↓74</font>）",
+            text,
+        )
+        self.assertIn("今天没有长线分达到门槛的项目。", text)
+
     def test_strip_project_title_removes_sheet_suffix(self) -> None:
         self.assertEqual("Shoot or Shot", strip_project_title("Shoot or Shot 每日数据"))
         self.assertEqual("Troll ur friends", strip_project_title("Troll ur friends"))

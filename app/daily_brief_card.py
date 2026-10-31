@@ -12,10 +12,11 @@ from .daily_brief_rules import (
     PROJECT_TREND_BASELINE_DAYS,
 )
 from .market_pulse import MarketChange, MarketPulse
-from .market_spotlight import MarketSpotlight, SpotlightEntry
+from .market_spotlight import TOP_EARNING_SHEET_KEY, MarketSpotlight, SpotlightEntry
 from .metric_baseline import MetricAlert
 from .roblox_money_summary import format_robux, format_usd
 from .summary import _format_now, _format_trigger
+from .top_trending_briefing import SHEET_LABELS
 
 
 # 涨跌颜色沿用国内习惯：上涨红、下跌绿，与榜单排名变化配色一致。
@@ -42,6 +43,8 @@ KPI_VALUE_TEXT_SIZE = "heading-2"
 KPI_LABEL_TEXT_SIZE = "notation"
 # 灰底面板，用于大盘数字和“今日最突出”。
 PANEL_BACKGROUND = "grey"
+# 收入榜涨幅类信号：信息行已展示较上次、一周的变化，理由里不再重复。
+EARNING_CHANGE_SIGNAL_KINDS = frozenset({"earning_surge", "earning_weekly_climb"})
 # CCU 达到一万时改用“万”为单位展示，便于中文阅读。
 TEN_THOUSAND = 10_000
 
@@ -195,7 +198,7 @@ def _build_spotlight_elements(spotlight: MarketSpotlight) -> list[CardElement]:
         for entry in spotlight.entries:
             name = f"**{_color(entry.name, HIGHLIGHT_NAME_COLOR)}**"
             details = _color(f"｜{entry.genre or '-'}｜CCU {entry.ccu:,}", SECONDARY_COLOR)
-            lines.append(f"- {name}：{_format_spotlight_reasons(entry)} {details}")
+            lines.append(f"- {name}：{_format_spotlight_reasons(entry)} {details}{_format_earning_detail(entry)}")
         elements.append(_markdown("\n".join(lines)))
     return elements
 
@@ -207,6 +210,7 @@ def _build_standout_panel(standout: SpotlightEntry) -> CardElement:
     sheet_ranks = _format_sheet_ranks(standout)
     if sheet_ranks:
         details += f"｜{sheet_ranks}"
+    details = _color(details, SECONDARY_COLOR) + _format_earning_detail(standout)
     lines = [
         f"{STANDOUT_MARK} **今日最突出（爆发）：{_color(standout.name, HIGHLIGHT_NAME_COLOR)}**",
         _format_spotlight_reasons(standout),
@@ -214,7 +218,7 @@ def _build_standout_panel(standout: SpotlightEntry) -> CardElement:
     # 爆发的游戏也附上长线指标，便于判断是昙花一现还是能留住人。
     if standout.long_term_signals:
         lines.append(f"长线 {standout.long_term_score} 分：{_format_long_term_reasons(standout)}")
-    lines.append(_color(details, SECONDARY_COLOR))
+    lines.append(details)
     return _panel([_column([_markdown("\n".join(lines))])], flex_mode="none")
 
 
@@ -227,7 +231,10 @@ def _build_long_term_element(spotlight: MarketSpotlight) -> CardElement:
         for entry in spotlight.long_term:
             name = f"**{_color(entry.name, HIGHLIGHT_NAME_COLOR)}**"
             details = _color(f"｜{entry.genre or '-'}｜CCU {entry.ccu:,}", SECONDARY_COLOR)
-            lines.append(f"- {name}：长线 {entry.long_term_score} 分｜{_format_long_term_reasons(entry)} {details}")
+            lines.append(
+                f"- {name}：长线 {entry.long_term_score} 分｜{_format_long_term_reasons(entry)} "
+                f"{details}{_format_earning_detail(entry)}"
+            )
         return _markdown("\n".join(lines))
     if spotlight.long_term_recorded_days < LONG_TERM_MIN_RECORDED_DAYS:
         remaining_days = LONG_TERM_MIN_RECORDED_DAYS - spotlight.long_term_recorded_days
@@ -238,7 +245,10 @@ def _build_long_term_element(spotlight: MarketSpotlight) -> CardElement:
 
 
 def _format_spotlight_reasons(entry: SpotlightEntry) -> str:
-    return "，".join(signal.reason for signal in entry.signals)
+    """入选理由；收入榜的涨幅已在信息行统一展示，这里省略以免重复（仍计分，明细见落盘 JSON）。"""
+
+    reasons = [signal.reason for signal in entry.signals if signal.kind not in EARNING_CHANGE_SIGNAL_KINDS]
+    return "，".join(reasons or [signal.reason for signal in entry.signals])
 
 
 def _format_long_term_reasons(entry: SpotlightEntry) -> str:
@@ -246,7 +256,34 @@ def _format_long_term_reasons(entry: SpotlightEntry) -> str:
 
 
 def _format_sheet_ranks(entry: SpotlightEntry) -> str:
-    return "、".join(f"{label} #{rank}" for label, rank in entry.sheet_ranks)
+    """各榜单排名；收入榜单独由 _format_earning_detail 展示变化，这里不重复。"""
+
+    return "、".join(
+        f"{label} #{rank}" for label, rank in entry.sheet_ranks if label != SHEET_LABELS[TOP_EARNING_SHEET_KEY]
+    )
+
+
+def _format_earning_detail(entry: SpotlightEntry) -> str:
+    """收入榜位置与变化，跟在灰色信息后面；上升红、下降绿，与其他涨跌配色一致。"""
+
+    earning = entry.earning
+    if earning is None:
+        return ""
+    changes: list[str] = []
+    if earning.change:
+        changes.append(f"较上次 {_format_rank_change(earning.change)}")
+    if earning.entered_this_week:
+        changes.append("一周前不在榜")
+    elif earning.week_change:
+        changes.append(f"一周 {_format_rank_change(earning.week_change)}")
+    suffix = f"（{'，'.join(changes)}）" if changes else ""
+    return f"｜{SHEET_LABELS[TOP_EARNING_SHEET_KEY]} #{earning.rank}{suffix}"
+
+
+def _format_rank_change(change: int) -> str:
+    if change > 0:
+        return _color(f"↑{change}", RISE_COLOR)
+    return _color(f"↓{-change}", FALL_COLOR)
 
 
 def _build_projects_section(projects: tuple[ProjectBriefEntry, ...]) -> list[CardElement]:

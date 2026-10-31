@@ -12,6 +12,7 @@ from .daily_brief_rules import (
     LONG_TERM_RATING_TREND_DAYS,
     LONG_TERM_TREND_COMPARE_DAYS,
     LONG_TERM_TREND_MIN_BASELINE_DAYS,
+    SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK,
     SPOTLIGHT_MAX_CONSIDERED_RANK,
     TREND_HISTORY_KEEP_DAYS,
     TREND_HISTORY_MAX_GAME_AGE_DAYS,
@@ -22,6 +23,8 @@ from .top_trending_briefing import resolve_launch_date
 
 # 估算单局时长时，相邻两次快照最多相隔的天数；间隔太久时日均访问不再可信。
 MAX_SNAPSHOT_GAP_DAYS = 3
+# 收入榜键，与榜单抓取结果中的键一致。
+TOP_EARNING_SHEET_KEY = "top_earning"
 MINUTES_PER_DAY = 1440
 HISTORY_FORMAT_VERSION = 1
 
@@ -63,12 +66,18 @@ def build_game_daily_snapshots(
     records_by_sheet: dict[str, list[GameRecord]],
     snapshot_date: date,
 ) -> dict[int, GameDailySnapshot]:
-    """汇总各榜单前列中较新的游戏；同一游戏出现在多个榜单时取各字段最大值（同一时刻抓取，差异很小）。"""
+    """汇总各榜单前列中较新的游戏；同一游戏出现在多个榜单时取各字段最大值（同一时刻抓取，差异很小）。
+
+    收入榜与值得关注的考察范围一致，看到更靠后的名次，保证正在爬收入榜的新游也有长线指标。
+    """
 
     snapshots: dict[int, GameDailySnapshot] = {}
-    for records in records_by_sheet.values():
+    for sheet_key, records in records_by_sheet.items():
+        rank_limit = (
+            SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK if sheet_key == TOP_EARNING_SHEET_KEY else SPOTLIGHT_MAX_CONSIDERED_RANK
+        )
         for record in records:
-            if record.place_id is None or record.rank > SPOTLIGHT_MAX_CONSIDERED_RANK:
+            if record.place_id is None or record.rank > rank_limit:
                 continue
             launch_date = resolve_launch_date(record)
             if launch_date is None or (snapshot_date - launch_date).days > TREND_HISTORY_MAX_GAME_AGE_DAYS:

@@ -105,6 +105,7 @@ from .top_trending_sheet import (
     build_rank_change_cells,
     build_thumbnail_cells,
     build_top_trending_values,
+    get_oldest_ranks,
     get_previous_ranks,
     get_recent_place_ids_by_sheet,
     get_saved_spreadsheet_target,
@@ -734,6 +735,7 @@ def _build_market_section(
     variables = resolve_spreadsheet_variables(cfg)
     previous_ranks_by_sheet = get_previous_ranks(cfg, variables)
     recent_place_ids_by_sheet = get_recent_place_ids_by_sheet(cfg, variables)
+    oldest_ranks_by_sheet = get_oldest_ranks(cfg, variables)
     trend_snapshots = build_game_daily_snapshots(records_by_sheet, brief_date)
     trend_history = _load_game_trend_history(cfg, trend_snapshots, brief_date)
     section = MarketSection(
@@ -744,6 +746,7 @@ def _build_market_section(
             recent_place_ids_by_sheet,
             trend_snapshots,
             trend_history,
+            oldest_ranks_by_sheet,
         ),
         genre_lines=build_genre_wind_lines(records_by_sheet, recent_place_ids_by_sheet),
     )

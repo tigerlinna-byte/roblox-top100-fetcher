@@ -42,9 +42,12 @@ class MarketSpotlightTests(unittest.TestCase):
 
         self.assertEqual(1, spotlight.standout.place_id)
         reasons = [signal.reason for signal in spotlight.standout.signals]
-        self.assertEqual(["上线 9 天", "新进收入榜前 20", "收入榜较上次 ↑43", "同时在 2 个榜单"], reasons)
-        # 新游 3 + 收入榜新进 3 + 飙升 (2 + 1 个额外步长) + 多榜 1
-        self.assertEqual(10, spotlight.standout.score)
+        self.assertEqual(
+            ["上线 9 天", "新进收入榜前 20", "收入榜较上次 ↑43", "热门榜较上次 ↑41", "同时在 2 个榜单"],
+            reasons,
+        )
+        # 新游 3 + 收入榜新进 3 + 收入榜飙升 (3 + 3 个额外步长) + 热门榜飙升 (2 + 1) + 多榜 1
+        self.assertEqual(16, spotlight.standout.score)
         self.assertEqual([2], [entry.place_id for entry in spotlight.entries])
         self.assertEqual(3, spotlight.entries[0].score)
 
@@ -155,6 +158,67 @@ class MarketSpotlightTests(unittest.TestCase):
         self.assertEqual((-3, "在线较前 3 日 -64%"), (signals["ccu_trend"].score, signals["ccu_trend"].reason))
         self.assertEqual(-2, signals["peak_hold"].score)
         self.assertEqual((0, "疑似挂机，时长不计分"), (signals["session"].score, signals["session"].reason))
+
+    def test_new_game_climbing_deep_earning_ranks_is_listed(self) -> None:
+        records_by_sheet = {
+            "top_earning": [
+                _record(121, 30, created_at="2026-10-03T00:00:00Z", playing=10000),
+                _record(223, 31, created_at="2026-10-06T00:00:00Z", playing=3800),
+                _record(150, 32, created_at="2024-01-01T00:00:00Z", playing=9000),
+            ],
+        }
+        previous_ranks = {"top_earning": {30: 197, 31: 230, 32: 200, 99: 1}}
+        oldest_ranks = {"top_earning": {31: 225, 32: 280, 99: 1}}
+
+        spotlight = build_market_spotlight(records_by_sheet, previous_ranks, {}, oldest_ranks_by_sheet=oldest_ranks)
+
+        # 31 只是小幅波动、32 是老游戏，都不入选；30 在收入榜 100 名以后快速爬升。
+        listed = [spotlight.standout] if spotlight.standout else []
+        listed.extend(spotlight.entries)
+        self.assertEqual([30], [entry.place_id for entry in listed])
+        entry = listed[0]
+        self.assertEqual(
+            ["收入榜较上次 ↑76", "收入榜一周内从 300 名外升至 #121"],
+            [signal.reason for signal in entry.signals if signal.kind.startswith("earning")],
+        )
+        self.assertEqual((121, 76, 180, True), (entry.earning.rank, entry.earning.change, entry.earning.week_change, entry.earning.entered_this_week))
+
+    def test_entering_earning_top100_and_ties_prefer_better_earning_rank(self) -> None:
+        records_by_sheet = {
+            "top_earning": [
+                _record(95, 40, created_at="2026-10-20T00:00:00Z", playing=500),
+                _record(98, 41, created_at="2026-10-20T00:00:00Z", playing=1000),
+            ],
+        }
+        previous_ranks = {"top_earning": {40: 102, 41: 105}}
+        recent_place_ids = {"top_earning": {40, 41}}
+
+        spotlight = build_market_spotlight(records_by_sheet, previous_ranks, recent_place_ids)
+
+        # 两款都是新游 3 + 冲进前 100 3 = 6，同分时收入榜排名靠前的优先，即使 CCU 更低。
+        self.assertEqual(40, spotlight.standout.place_id)
+        self.assertEqual("冲进收入榜前 100", spotlight.standout.signals[1].reason)
+        self.assertEqual(6, spotlight.standout.score)
+        self.assertEqual([41], [entry.place_id for entry in spotlight.entries])
+
+    def test_no_earning_history_does_not_mark_every_game_as_entering_top100(self) -> None:
+        records_by_sheet = {"top_earning": [_record(80, 42, created_at="2026-10-20T00:00:00Z")]}
+
+        spotlight = build_market_spotlight(records_by_sheet, {}, {})
+
+        self.assertNotIn("earning_top100_entry", [signal.kind for signal in spotlight.standout.signals])
+
+    def test_long_term_earning_follows_weekly_trend(self) -> None:
+        records_by_sheet = {"top_earning": [_record(149, 50, created_at="2026-10-01T00:00:00Z", playing=2800)]}
+        previous_ranks = {"top_earning": {50: 170}}
+        oldest_ranks = {"top_earning": {50: 75}}
+        snapshots = {50: _snapshot("2026-10-27", 2800)}
+        history = {50: [_snapshot("2026-10-26", 2800), _snapshot("2026-10-25", 2800)]}
+
+        spotlight = build_market_spotlight(records_by_sheet, previous_ranks, {}, snapshots, history, oldest_ranks)
+
+        earning_signal = next(signal for signal in spotlight.standout.long_term_signals if signal.kind == "earning")
+        self.assertEqual((-1, "收入榜 #149（一周 ↓74）"), (earning_signal.score, earning_signal.reason))
 
     def test_genre_wind_lines_describe_new_entries_and_trending_head(self) -> None:
         records_by_sheet = {

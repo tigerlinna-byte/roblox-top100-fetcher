@@ -35,13 +35,15 @@ class GameDailySnapshotTests(unittest.TestCase):
             "top_earning": [
                 _record(40, 1, created_at="2026-10-01T00:00:00Z", playing=30500, visits=400),
                 _record(150, 3, created_at="2026-10-20T00:00:00Z", playing=1000),
+                _record(280, 4, created_at="2026-10-20T00:00:00Z", playing=500),
             ],
+            "top_trending_v4": [_record(150, 5, created_at="2026-10-20T00:00:00Z", playing=800)],
         }
 
         snapshots = build_game_daily_snapshots(records_by_sheet, TODAY)
 
-        # 老游戏与收入榜 100 名以后的游戏不记录；同一游戏多榜取最大值。
-        self.assertEqual({1}, set(snapshots))
+        # 老游戏不记录；收入榜看到前 300 名，其他榜单只看前 100 名；同一游戏多榜取最大值。
+        self.assertEqual({1, 3, 4}, set(snapshots))
         self.assertEqual(_snapshot("2026-10-27", 30500, 500), snapshots[1])
 
 

@@ -332,6 +332,18 @@ def get_previous_ranks(cfg: Config, variables: SpreadsheetVariableSet | None = N
     return result
 
 
+def get_oldest_ranks(cfg: Config, variables: SpreadsheetVariableSet | None = None) -> dict[str, dict[int, int]]:
+    """返回已保存历史中最早一次运行的排名，用于计算约一周的排名走势；没有历史时为空字典。"""
+
+    resolved_variables = variables or resolve_spreadsheet_variables(cfg)
+    result: dict[str, dict[int, int]] = {}
+    for _, title, _, variable_name in resolved_variables.sort_sheets:
+        history = _parse_previous_ranks_history(resolved_variables.previous_ranks_by_var.get(variable_name, ""))
+        oldest_ranks = history[-1]["ranks"] if history else {}
+        result[title] = {int(key): int(value) for key, value in oldest_ranks.items()}
+    return result
+
+
 def get_recent_place_ids_by_sheet(
     cfg: Config,
     variables: SpreadsheetVariableSet | None = None,
