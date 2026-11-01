@@ -55,8 +55,10 @@ from .daily_brief_rules import (
     SPOTLIGHT_MAX_ENTRIES,
     SPOTLIGHT_MULTI_SHEET_SCORE_PER_EXTRA,
     SPOTLIGHT_NEW_ENTRY_SCORE,
+    SPOTLIGHT_NEW_GAME_FULL_SCORE_DAYS,
     SPOTLIGHT_NEW_GAME_MAX_AGE_DAYS,
     SPOTLIGHT_NEW_GAME_SCORE,
+    SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS,
     SPOTLIGHT_RANK_SURGE_BONUS_PER_STEP,
     SPOTLIGHT_RANK_SURGE_MAX_BONUS,
     SPOTLIGHT_RANK_SURGE_MIN_STEP,
@@ -84,6 +86,7 @@ TOP_TRENDING_SHEET_KEY = "top_trending_v4"
 
 SignalKind = Literal[
     "new_game",
+    "recent_game",
     "top_earning_entry",
     "new_entry",
     "rank_surge",
@@ -101,7 +104,8 @@ SignalKind = Literal[
 ]
 # 收入榜上升信号：收入榜 100 名以后的游戏只有具备其中之一才入选。
 EARNING_RISE_SIGNAL_KINDS: frozenset[str] = frozenset({"earning_surge", "earning_top100_entry", "earning_weekly_climb"})
-# 只有这些“新鲜”信号能让游戏入选；多榜只做加分，否则常驻头部的老游戏会占满名单。
+# 只有这些“新鲜”信号能让游戏入选；多榜和 recent_game（上线超过新游门槛天数的递减新游分）只做加分，
+# 否则常驻头部的老游戏会占满名单。
 FRESH_SIGNAL_KINDS: frozenset[str] = (
     frozenset({"new_game", "top_earning_entry", "new_entry", "rank_surge"}) | EARNING_RISE_SIGNAL_KINDS
 )
@@ -407,8 +411,10 @@ def _collect_signals(
     launch_date = resolve_launch_date(candidate.best_record)
     if launch_date is not None:
         age_days = (reference_date - launch_date).days
-        if 0 <= age_days <= SPOTLIGHT_NEW_GAME_MAX_AGE_DAYS:
-            signals.append(SpotlightSignal("new_game", SPOTLIGHT_NEW_GAME_SCORE, f"上线 {age_days} 天"))
+        new_game_score = _new_game_score(age_days)
+        if new_game_score > 0:
+            kind: SignalKind = "new_game" if age_days <= SPOTLIGHT_NEW_GAME_MAX_AGE_DAYS else "recent_game"
+            signals.append(SpotlightSignal(kind, new_game_score, f"上线 {age_days} 天"))
 
     signals.extend(_build_earning_signals(earning, bool(previous_ranks_by_sheet.get(TOP_EARNING_SHEET_KEY))))
 
@@ -438,6 +444,19 @@ def _collect_signals(
             )
         )
     return tuple(signals)
+
+
+def _new_game_score(age_days: int) -> int:
+    """新游分：满分天数内得满分，之后线性递减到归零天数为 0，四舍五入取整（不用 round 的银行家舍入）。"""
+
+    if age_days < 0 or age_days >= SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS:
+        return 0
+    if age_days <= SPOTLIGHT_NEW_GAME_FULL_SCORE_DAYS:
+        return SPOTLIGHT_NEW_GAME_SCORE
+    remaining_ratio = (SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS - age_days) / (
+        SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS - SPOTLIGHT_NEW_GAME_FULL_SCORE_DAYS
+    )
+    return int(SPOTLIGHT_NEW_GAME_SCORE * remaining_ratio + 0.5)
 
 
 def _build_earning_signals(

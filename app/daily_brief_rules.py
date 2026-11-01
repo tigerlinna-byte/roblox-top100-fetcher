@@ -112,9 +112,12 @@ MARKET_CCU_HISTORY_KEEP_DAYS = 30
 
 # 只考察各榜单前 N 名，避免收入榜 100 名以后的排名波动制造噪音。
 SPOTLIGHT_MAX_CONSIDERED_RANK = 100
-# 新游信号：首次上线不超过该天数且已上任一榜单。
-SPOTLIGHT_NEW_GAME_MAX_AGE_DAYS = 30
+# 新游信号：上线不超过满分天数得满分，之后按天线性递减（四舍五入取整），到归零天数为 0。
 SPOTLIGHT_NEW_GAME_SCORE = 3
+SPOTLIGHT_NEW_GAME_FULL_SCORE_DAYS = 14
+SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS = 90
+# 只有上线不超过该天数的新游信号能让游戏入选；更久的只加分，避免常驻多榜的次新游戏占满名单。
+SPOTLIGHT_NEW_GAME_MAX_AGE_DAYS = 30
 # 收入榜新进前 N 信号：本次在收入榜前 N，上次运行不在前 N。
 SPOTLIGHT_TOP_EARNING_RANK_LIMIT = 20
 SPOTLIGHT_TOP_EARNING_SCORE = 3

@@ -159,6 +159,65 @@ class MarketSpotlightTests(unittest.TestCase):
         self.assertEqual(-2, signals["peak_hold"].score)
         self.assertEqual((0, "疑似挂机，时长不计分"), (signals["session"].score, signals["session"].reason))
 
+    def test_new_game_score_decays_linearly_after_full_score_days(self) -> None:
+        # 参考日 10-27；每款都在热门榜飙升（较上次 ↑40），保证入选后比较新游分。
+        launch_dates = {
+            14: "2026-10-13",
+            15: "2026-10-12",
+            30: "2026-09-27",
+            31: "2026-09-26",
+            60: "2026-08-28",
+            89: "2026-07-30",
+            90: "2026-07-29",
+        }
+        records_by_sheet = {
+            "top_trending_v4": [
+                _record(index + 1, age, created_at=f"{launch}T00:00:00Z")
+                for index, (age, launch) in enumerate(launch_dates.items())
+            ]
+        }
+        previous_ranks = {"top_trending_v4": {age: index + 41 for index, age in enumerate(launch_dates)}}
+
+        spotlight = build_market_spotlight(records_by_sheet, previous_ranks, {})
+
+        listed = [spotlight.standout, *spotlight.entries]
+        new_game_signals = {
+            entry.place_id: next(
+                ((signal.kind, signal.score) for signal in entry.signals if signal.kind in ("new_game", "recent_game")),
+                None,
+            )
+            for entry in listed
+        }
+        # 14 天内满分 3；之后按 (90 - 天数) / 76 × 3 四舍五入；30 天以后改为只加分的 recent_game；90 天归零。
+        self.assertEqual(
+            {
+                14: ("new_game", 3),
+                15: ("new_game", 3),
+                30: ("new_game", 2),
+                31: ("recent_game", 2),
+                60: ("recent_game", 1),
+                89: None,
+                90: None,
+            },
+            new_game_signals,
+        )
+
+    def test_recent_game_score_alone_does_not_qualify(self) -> None:
+        # 上线 44 天、常驻三个榜单但没有新鲜信号：递减新游分只加分，不能让它入选。
+        steady = _record(10, 50, created_at="2026-09-13T00:00:00Z", playing=80000)
+        records_by_sheet = {
+            "top_trending_v4": [steady],
+            "top_playing_now": [steady],
+            "top_earning": [_record(60, 50, created_at="2026-09-13T00:00:00Z", playing=80000)],
+        }
+        previous_ranks = {"top_trending_v4": {50: 11}, "top_playing_now": {50: 10}, "top_earning": {50: 61}}
+        recent_place_ids = {"top_trending_v4": {50}, "top_playing_now": {50}, "top_earning": {50}}
+
+        spotlight = build_market_spotlight(records_by_sheet, previous_ranks, recent_place_ids)
+
+        self.assertIsNone(spotlight.standout)
+        self.assertEqual((), spotlight.entries)
+
     def test_new_game_climbing_deep_earning_ranks_is_listed(self) -> None:
         records_by_sheet = {
             "top_earning": [
