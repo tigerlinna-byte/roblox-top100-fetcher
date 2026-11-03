@@ -12,6 +12,7 @@ from app.main import (
     _notify_success,
     _persist_top_trending_previous_ranks,
     _sync_project_metrics_sheet,
+    _use_today_as_stale_rank_baseline,
     _write_report_outputs,
 )
 from app.models import GameRecord
@@ -150,9 +151,9 @@ class MainTests(unittest.TestCase):
         self.assertEqual(["top_trending_v4", "up_and_coming_v4", "top_playing_now", "top_earning"], list(report_payload))
         self.assertEqual(
             [
-                (("Top_Trending_V4",), {"include_thumbnails": False}),
-                (("Up_And_Coming_V4",), {"include_thumbnails": False}),
-                (("top-playing-now",), {"include_thumbnails": False}),
+                (("top-trending",), {"allow_fallbacks": False, "include_thumbnails": False}),
+                (("up-and-coming",), {"allow_fallbacks": False, "include_thumbnails": False}),
+                (("top-playing-now",), {"allow_fallbacks": False, "include_thumbnails": False}),
             ],
             [(call.args, call.kwargs) for call in client.fetch_games_by_sort_id.call_args_list],
         )
@@ -911,6 +912,25 @@ class MainTests(unittest.TestCase):
         self.assertIn("**<font color='blue'>$35.00</font>**（10,000 Robux）", message)
         self.assertIn("**抓取异常**", message)
         self.assertIn("**<font color='red'>项目 1234567890</font>**", message)
+
+    def test_stale_rank_history_uses_today_as_baseline(self) -> None:
+        records_by_sheet = {
+            "up_and_coming_v4": [GameRecord(rank=1, name="A", place_id=201), GameRecord(rank=2, name="B", place_id=202)],
+            "top_trending_v4": [GameRecord(rank=1, name="C", place_id=101)],
+        }
+        previous_ranks = {"up_and_coming_v4": {}, "top_trending_v4": {101: 5}}
+        recent_place_ids = {"up_and_coming_v4": set(), "top_trending_v4": {101}}
+
+        _use_today_as_stale_rank_baseline(
+            records_by_sheet,
+            {"up_and_coming_v4"},
+            previous_ranks_by_sheet=previous_ranks,
+            recent_place_ids_by_sheet=recent_place_ids,
+        )
+
+        self.assertEqual({201: 1, 202: 2}, previous_ranks["up_and_coming_v4"])
+        self.assertEqual({201, 202}, recent_place_ids["up_and_coming_v4"])
+        self.assertEqual({101: 5}, previous_ranks["top_trending_v4"])
 
 
 if __name__ == "__main__":

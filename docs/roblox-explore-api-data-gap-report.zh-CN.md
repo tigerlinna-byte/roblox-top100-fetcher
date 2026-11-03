@@ -2,6 +2,8 @@
 
 这份文档用于向 Roblox 官方说明当前通过 Explore 排行接口获取榜单时出现的“漏游戏”问题，便于官方复现、确认原因并给出修复建议或替代方案。
 
+> 2026-11-03 更新：文中的 `Top_Trending_V4`、`Up_And_Coming_V4` 已返回 404，主流程已改用 `top-trending`、`up-and-coming`。本文保留当时的排查记录。
+
 ## 问题摘要
 
 我们当前通过 Roblox Explore 排行接口获取以下榜单数据：

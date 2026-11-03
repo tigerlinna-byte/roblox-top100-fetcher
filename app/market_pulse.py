@@ -1,13 +1,16 @@
-"""大盘涨跌：在玩榜总 CCU 的每日快照、历史维护与对比。"""
+"""大盘涨跌：在玩榜总 CCU 与热门榜品类占比的每日快照、历史维护与对比。"""
 
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from collections import defaultdict
+from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from typing import Literal
 
 from .daily_brief_rules import (
+    GENRE_SHARE_MIN_STORED,
+    GENRE_SHARE_TOP_SIZE,
     MARKET_CCU_HISTORY_KEEP_DAYS,
     MARKET_PULSE_BROAD_SIZE,
     MARKET_PULSE_CHANGE_THRESHOLD,
@@ -26,12 +29,14 @@ MarketTrend = Literal["up", "down", "flat"]
 
 @dataclass(frozen=True)
 class MarketCcuSnapshot:
-    """某一天在玩榜的 CCU 合计快照。"""
+    """某一天在玩榜的 CCU 合计快照，附带热门榜各品类的 CCU 占比（千分比）。"""
 
     snapshot_date: str
     head_ccu: int
     broad_ccu: int
     game_count: int
+    # 2026-11-03 之前的快照没有品类占比，此时为空字典。
+    trending_genre_permille: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -53,9 +58,16 @@ class MarketPulse:
     broad_day_change: MarketChange | None
     broad_week_change: MarketChange | None
     recorded_days: int
+    # 昨天、上周同日的快照，供品类风向对比；缺失时为 None。
+    day_before: MarketCcuSnapshot | None = None
+    week_before: MarketCcuSnapshot | None = None
 
 
-def build_market_ccu_snapshot(records: list[GameRecord], snapshot_date: date) -> MarketCcuSnapshot:
+def build_market_ccu_snapshot(
+    records: list[GameRecord],
+    snapshot_date: date,
+    trending_records: list[GameRecord] | None = None,
+) -> MarketCcuSnapshot:
     """按排名汇总头部与大盘 CCU；榜单不足 N 名时按实际条数汇总并记录条数。"""
 
     ranked = sorted(records, key=lambda record: record.rank)
@@ -66,7 +78,27 @@ def build_market_ccu_snapshot(records: list[GameRecord], snapshot_date: date) ->
         head_ccu=sum(record.playing for record in head_records),
         broad_ccu=sum(record.playing for record in broad_records),
         game_count=len(broad_records),
+        trending_genre_permille={
+            genre: permille
+            for genre, permille in build_genre_ccu_permille(trending_records or []).items()
+            if permille >= GENRE_SHARE_MIN_STORED * 1000
+        },
     )
+
+
+def build_genre_ccu_permille(records: list[GameRecord]) -> dict[str, int]:
+    """热门榜前 N 名中各品类 CCU 占比（千分比）；分母含未标品类的游戏，总 CCU 为 0 时为空。"""
+
+    top_records = [record for record in records if record.rank <= GENRE_SHARE_TOP_SIZE]
+    total_ccu = sum(record.playing for record in top_records)
+    if total_ccu <= 0:
+        return {}
+    ccu_by_genre: dict[str, int] = defaultdict(int)
+    for record in top_records:
+        genre = record.genre.strip()
+        if genre:
+            ccu_by_genre[genre] += record.playing
+    return {genre: round(ccu * 1000 / total_ccu) for genre, ccu in ccu_by_genre.items()}
 
 
 def parse_market_ccu_history(raw: str) -> list[MarketCcuSnapshot]:
@@ -141,6 +173,8 @@ def build_market_pulse(snapshot: MarketCcuSnapshot, history: list[MarketCcuSnaps
         broad_day_change=_build_change(current.broad_ccu, day_before, "broad_ccu"),
         broad_week_change=_build_change(current.broad_ccu, week_before, "broad_ccu"),
         recorded_days=len(recorded_dates),
+        day_before=day_before,
+        week_before=week_before,
     )
 
 
@@ -180,6 +214,19 @@ def _parse_snapshot(entry: object) -> MarketCcuSnapshot | None:
             head_ccu=int(entry["head_ccu"]),
             broad_ccu=int(entry["broad_ccu"]),
             game_count=int(entry["game_count"]),
+            trending_genre_permille=_parse_genre_permille(entry.get("trending_genre_permille")),
         )
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _parse_genre_permille(raw: object) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, int] = {}
+    for genre, permille in raw.items():
+        try:
+            result[str(genre)] = int(permille)
+        except (TypeError, ValueError):
+            continue
+    return result

@@ -17,6 +17,7 @@ from .daily_brief_models import (
     RevenueBriefEntry,
 )
 from .daily_brief_rules import (
+    GENRE_SHARE_SHEET_KEY,
     MARKET_PULSE_SHEET_KEY,
     PROJECT_TREND_BASELINE_DAYS,
     PROJECT_TREND_MIN_BASELINE_DAYS,
@@ -109,6 +110,7 @@ from .top_trending_sheet import (
     get_previous_ranks,
     get_recent_place_ids_by_sheet,
     get_saved_spreadsheet_target,
+    get_stale_rank_history_titles,
     resolve_spreadsheet_variables,
     save_previous_ranks,
     save_spreadsheet_target,
@@ -238,20 +240,27 @@ def _fetch_report_payload(cfg: Config):
 
 
 def _fetch_top_trending_records(cfg: Config) -> dict[str, list[GameRecord]]:
-    """抓取今日关注所需的各榜单；收入榜失败时跳过，不影响其余榜单。"""
+    """抓取今日关注所需的各榜单；收入榜失败时跳过，不影响其余榜单。
+
+    各榜单不回退到其他 sortId：旧的 Up_And_Coming_V4 失效后曾被回退成热门榜数据，
+    导致新秀榜与热门榜完全相同而无人察觉，失败时应直接进入数据异常。
+    """
 
     client = RobloxClient(cfg)
     records_by_sheet = {
         "top_trending_v4": client.fetch_games_by_sort_id(
-            "Top_Trending_V4",
+            "top-trending",
+            allow_fallbacks=False,
             include_thumbnails=False,
         ),
         "up_and_coming_v4": client.fetch_games_by_sort_id(
-            "Up_And_Coming_V4",
+            "up-and-coming",
+            allow_fallbacks=False,
             include_thumbnails=False,
         ),
         "top_playing_now": client.fetch_games_by_sort_id(
             "top-playing-now",
+            allow_fallbacks=False,
             include_thumbnails=False,
         ),
     }
@@ -585,6 +594,11 @@ def _notify_success(cfg: Config, report_payload) -> None:
     if cfg.run_report_mode == "top_trending_sheet":
         feishu_client = FeishuClient(cfg)
         recent_place_ids_by_sheet = get_recent_place_ids_by_sheet(cfg)
+        _use_today_as_stale_rank_baseline(
+            report_payload,
+            get_stale_rank_history_titles(cfg),
+            recent_place_ids_by_sheet=recent_place_ids_by_sheet,
+        )
         _persist_top_trending_previous_ranks(cfg, report_payload)
         feishu_client.send_group_card(
             build_top_trending_briefing_card(
@@ -736,10 +750,17 @@ def _build_market_section(
     previous_ranks_by_sheet = get_previous_ranks(cfg, variables)
     recent_place_ids_by_sheet = get_recent_place_ids_by_sheet(cfg, variables)
     oldest_ranks_by_sheet = get_oldest_ranks(cfg, variables)
+    _use_today_as_stale_rank_baseline(
+        records_by_sheet,
+        get_stale_rank_history_titles(cfg, variables),
+        previous_ranks_by_sheet=previous_ranks_by_sheet,
+        recent_place_ids_by_sheet=recent_place_ids_by_sheet,
+    )
     trend_snapshots = build_game_daily_snapshots(records_by_sheet, brief_date)
     trend_history = _load_game_trend_history(cfg, trend_snapshots, brief_date)
+    pulse = _build_market_pulse(cfg, records_by_sheet, brief_date)
     section = MarketSection(
-        pulse=_build_market_pulse(cfg, records_by_sheet, brief_date),
+        pulse=pulse,
         spotlight=build_market_spotlight(
             records_by_sheet,
             previous_ranks_by_sheet,
@@ -748,7 +769,7 @@ def _build_market_section(
             trend_history,
             oldest_ranks_by_sheet,
         ),
-        genre_lines=build_genre_wind_lines(records_by_sheet, recent_place_ids_by_sheet),
+        genre_lines=build_genre_wind_lines(records_by_sheet, recent_place_ids_by_sheet, pulse),
     )
     write_json_document(cfg.output_dir, asdict(section.spotlight), prefix=DAILY_BRIEF_SPOTLIGHT_OUTPUT_PREFIX)
     try:
@@ -810,7 +831,11 @@ def _build_market_pulse(
     if not playing_records:
         return None
 
-    snapshot = build_market_ccu_snapshot(playing_records, brief_date)
+    snapshot = build_market_ccu_snapshot(
+        playing_records,
+        brief_date,
+        records_by_sheet.get(GENRE_SHARE_SHEET_KEY),
+    )
     history = parse_market_ccu_history(cfg.market_ccu_history)
     if cfg.run_trigger_source == SCHEDULED_TRIGGER_SOURCE:
         history = merge_market_ccu_history(history, snapshot)
@@ -926,6 +951,29 @@ def _evaluate_revenue_alert(revenue: RobloxMoneyProjectRevenue) -> MetricAlert |
     )
 
 
+def _use_today_as_stale_rank_baseline(
+    records_by_sheet: dict[str, list[GameRecord]],
+    stale_titles: set[str],
+    *,
+    previous_ranks_by_sheet: dict[str, dict[int, int]] | None = None,
+    recent_place_ids_by_sheet: dict[str, set[int]] | None = None,
+) -> None:
+    """历史与当前 sortId 不可比的榜单以今天自身为基线，当天不判断新上榜与排名变化。
+
+    直接当作没有历史会把整张榜都判成新上榜，所以改为“今天的排名就是上次的排名”。
+    """
+
+    for title in stale_titles:
+        if title not in records_by_sheet:
+            continue
+        logging.warning("Rank history for %s belongs to another sort id; using today as baseline.", title)
+        records = [record for record in records_by_sheet[title] if record.place_id]
+        if previous_ranks_by_sheet is not None:
+            previous_ranks_by_sheet[title] = {record.place_id: record.rank for record in records}
+        if recent_place_ids_by_sheet is not None:
+            recent_place_ids_by_sheet[title] = {record.place_id for record in records}
+
+
 def _persist_top_trending_previous_ranks(
     cfg: Config,
     records_by_sheet: dict[str, list[GameRecord]],
@@ -934,7 +982,7 @@ def _persist_top_trending_previous_ranks(
 
     variables = resolve_spreadsheet_variables(cfg)
     github_client = GitHubClient(cfg)
-    for _sort_id, title, variable_name, previous_ranks_variable_name in variables.sort_sheets:
+    for sort_id, title, variable_name, previous_ranks_variable_name in variables.sort_sheets:
         if title not in records_by_sheet:
             logging.warning(
                 "Skipping previous rank persistence for %s because its Roblox fetch did not complete.",
@@ -942,7 +990,7 @@ def _persist_top_trending_previous_ranks(
             )
             continue
         sheet = SheetTarget(
-            sort_id="",
+            sort_id=sort_id,
             title=title,
             variable_name=variable_name,
             previous_ranks_variable_name=previous_ranks_variable_name,
@@ -966,6 +1014,12 @@ def _sync_top_trending_sheet(
     variables = resolve_spreadsheet_variables(cfg)
     previous_ranks = get_previous_ranks(cfg, variables)
     recent_place_ids_by_sheet = get_recent_place_ids_by_sheet(cfg, variables)
+    _use_today_as_stale_rank_baseline(
+        records_by_sheet,
+        get_stale_rank_history_titles(cfg, variables),
+        previous_ranks_by_sheet=previous_ranks,
+        recent_place_ids_by_sheet=recent_place_ids_by_sheet,
+    )
     github_client = GitHubClient(cfg)
     target = get_saved_spreadsheet_target(cfg, variables)
     if target is None:

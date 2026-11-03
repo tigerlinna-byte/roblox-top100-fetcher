@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.game_trend_history import GameDailySnapshot
+from app.market_pulse import MarketCcuSnapshot, MarketPulse
 from app.market_spotlight import build_genre_wind_lines, build_market_spotlight
 from app.models import GameRecord
 
@@ -279,24 +280,24 @@ class MarketSpotlightTests(unittest.TestCase):
         earning_signal = next(signal for signal in spotlight.standout.long_term_signals if signal.kind == "earning")
         self.assertEqual((-1, "收入榜 #149（一周 ↓74）"), (earning_signal.score, earning_signal.reason))
 
-    def test_genre_wind_lines_describe_new_entries_and_trending_head(self) -> None:
+    def test_genre_wind_lines_describe_new_entries_and_trending_share(self) -> None:
         records_by_sheet = {
             "top_trending_v4": [
-                _record(1, 11, created_at="2026-09-01T00:00:00Z", genre="Simulation"),
-                _record(2, 12, created_at="2026-09-01T00:00:00Z", genre="Simulation"),
-                _record(3, 13, created_at="2026-09-01T00:00:00Z", genre="Obby"),
-                _record(25, 14, created_at="2026-09-01T00:00:00Z", genre="Obby"),
+                _record(1, 11, created_at="2026-09-01T00:00:00Z", genre="Simulation", playing=3000),
+                _record(2, 12, created_at="2026-09-01T00:00:00Z", genre="Simulation", playing=3000),
+                _record(3, 13, created_at="2026-09-01T00:00:00Z", genre="Obby", playing=2000),
+                _record(25, 14, created_at="2026-09-01T00:00:00Z", genre="Obby", playing=2000),
             ],
         }
 
         lines = build_genre_wind_lines(records_by_sheet, {"top_trending_v4": set()})
 
         self.assertEqual(
-            ("今日新上榜 4 款中 2 款是 Simulation", "热门榜前 20 名中 Simulation 占 2 款"),
+            ("今日新上榜 4 款中 2 款是 Simulation", "热门榜 CCU 占比前 2：Simulation 60%、Obby 40%"),
             lines,
         )
 
-    def test_genre_wind_skips_single_occurrences(self) -> None:
+    def test_genre_wind_skips_single_new_entry_genre(self) -> None:
         records_by_sheet = {
             "top_trending_v4": [
                 _record(1, 21, created_at="2020-01-01T00:00:00Z", genre="Obby"),
@@ -304,7 +305,74 @@ class MarketSpotlightTests(unittest.TestCase):
             ],
         }
 
-        self.assertEqual((), build_genre_wind_lines(records_by_sheet, {"top_trending_v4": {21, 22}}))
+        lines = build_genre_wind_lines(records_by_sheet, {"top_trending_v4": {21, 22}})
+
+        self.assertEqual(("热门榜 CCU 占比前 2：Obby 50%、RPG 50%",), lines)
+
+    def test_genre_wind_reports_biggest_share_changes_against_yesterday(self) -> None:
+        records_by_sheet = {
+            "top_trending_v4": [
+                _record(1, 31, created_at="2020-01-01T00:00:00Z", genre="Action RPG", playing=24000),
+                _record(2, 32, created_at="2020-01-01T00:00:00Z", genre="Tycoon", playing=13000),
+                _record(3, 33, created_at="2020-01-01T00:00:00Z", genre="Obby", playing=63000),
+            ],
+        }
+        pulse = _pulse(day_before={"Action RPG": 90, "Tycoon": 230, "Obby": 610})
+
+        lines = build_genre_wind_lines(records_by_sheet, {"top_trending_v4": {31, 32, 33}}, pulse)
+
+        self.assertEqual(
+            (
+                "热门榜 CCU 占比较昨天变化：Action RPG 9% → 24%（+15 个百分点，主要是 Game 31）、"
+                "Tycoon 23% → 13%（-10 个百分点）",
+            ),
+            lines,
+        )
+
+    def test_genre_wind_falls_back_to_week_then_stable_top(self) -> None:
+        records_by_sheet = {
+            "top_trending_v4": [
+                _record(1, 41, created_at="2020-01-01T00:00:00Z", genre="Tycoon", playing=6000),
+                _record(2, 42, created_at="2020-01-01T00:00:00Z", genre="Obby", playing=4000),
+            ],
+        }
+        recent = {"top_trending_v4": {41, 42}}
+
+        week_lines = build_genre_wind_lines(
+            records_by_sheet,
+            recent,
+            _pulse(day_before={"Tycoon": 590, "Obby": 410}, week_before={"Tycoon": 400, "Obby": 600}),
+        )
+        stable_lines = build_genre_wind_lines(records_by_sheet, recent, _pulse(day_before={"Tycoon": 590, "Obby": 410}))
+
+        self.assertEqual(
+            ("热门榜 CCU 占比较上周同日变化：Tycoon 40% → 60%（+20 个百分点，主要是 Game 41）、Obby 60% → 40%（-20 个百分点）",),
+            week_lines,
+        )
+        self.assertEqual(("格局稳定，热门榜 CCU 占比前 2：Tycoon 60%、Obby 40%",), stable_lines)
+
+
+def _pulse(
+    *,
+    day_before: dict[str, int] | None = None,
+    week_before: dict[str, int] | None = None,
+) -> MarketPulse:
+    def snapshot(day: str, permille: dict[str, int] | None) -> MarketCcuSnapshot | None:
+        if permille is None:
+            return None
+        return MarketCcuSnapshot(day, 0, 0, 0, trending_genre_permille=permille)
+
+    current = MarketCcuSnapshot("2026-10-27", 0, 0, 0)
+    return MarketPulse(
+        snapshot=current,
+        head_day_change=None,
+        head_week_change=None,
+        broad_day_change=None,
+        broad_week_change=None,
+        recorded_days=1,
+        day_before=snapshot("2026-10-26", day_before),
+        week_before=snapshot("2026-10-20", week_before),
+    )
 
 
 if __name__ == "__main__":

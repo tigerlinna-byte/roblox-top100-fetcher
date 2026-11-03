@@ -40,6 +40,10 @@ RECENT_NEW_ENTRY_LOOKBACK_DAYS = 7
 RANK_HISTORY_REPORT_MODES = frozenset({"top_trending_sheet", "daily_brief"})
 # GitHub Actions 单个 Variables value 上限为 48KB，历史排名写入前必须控制体积。
 GITHUB_VARIABLE_VALUE_MAX_BYTES = 48 * 1024
+# 历史排名会记录写入时的 sortId，sortId 不一致的历史不可比。
+# 2026-11-03 之前新秀榜请求的 Up_And_Coming_V4 已失效并被回退成热门榜数据，
+# 这些榜单没有 sortId 标记的旧历史同样视为不可比。
+UNTAGGED_RANK_HISTORY_STALE_SORT_IDS = frozenset({"up-and-coming"})
 
 
 @dataclass(frozen=True)
@@ -93,20 +97,20 @@ class SpreadsheetVariableSet:
 
 
 FORMAL_SORT_SHEETS = (
-    ("Top_Trending_V4", "top_trending_v4", TOP_TRENDING_SHEET_ID_VAR, TOP_TRENDING_PREV_RANKS_VAR),
-    ("Up_And_Coming_V4", "up_and_coming_v4", UP_AND_COMING_SHEET_ID_VAR, UP_AND_COMING_PREV_RANKS_VAR),
+    ("top-trending", "top_trending_v4", TOP_TRENDING_SHEET_ID_VAR, TOP_TRENDING_PREV_RANKS_VAR),
+    ("up-and-coming", "up_and_coming_v4", UP_AND_COMING_SHEET_ID_VAR, UP_AND_COMING_PREV_RANKS_VAR),
     ("top-playing-now", "top_playing_now", TOP_PLAYING_NOW_SHEET_ID_VAR, TOP_PLAYING_NOW_PREV_RANKS_VAR),
     ("top-earning", "top_earning", TOP_EARNING_SHEET_ID_VAR, TOP_EARNING_PREV_RANKS_VAR),
 )
 TEST_SORT_SHEETS = (
     (
-        "Top_Trending_V4",
+        "top-trending",
         "top_trending_v4",
         TEST_TOP_TRENDING_SHEET_ID_VAR,
         TEST_TOP_TRENDING_PREV_RANKS_VAR,
     ),
     (
-        "Up_And_Coming_V4",
+        "up-and-coming",
         "up_and_coming_v4",
         TEST_UP_AND_COMING_SHEET_ID_VAR,
         TEST_UP_AND_COMING_PREV_RANKS_VAR,
@@ -302,6 +306,8 @@ def save_previous_ranks(
     records: list[GameRecord],
     existing_raw: str = "",
 ) -> bool:
+    if is_stale_rank_history(existing_raw, sheet.sort_id):
+        existing_raw = ""
     existing_history = _parse_previous_ranks_history(existing_raw)
     today_payload = {
         "ranks": {
@@ -317,7 +323,7 @@ def save_previous_ranks(
             for entry in existing_history
         ],
     ]
-    payload_value = _serialize_previous_ranks_payload(history)
+    payload_value = _serialize_previous_ranks_payload(history, sheet.sort_id)
     return github_client.upsert_repository_variable(
         sheet.previous_ranks_variable_name,
         payload_value,
@@ -327,8 +333,8 @@ def save_previous_ranks(
 def get_previous_ranks(cfg: Config, variables: SpreadsheetVariableSet | None = None) -> dict[str, dict[int, int]]:
     resolved_variables = variables or resolve_spreadsheet_variables(cfg)
     result: dict[str, dict[int, int]] = {}
-    for _, title, _, variable_name in resolved_variables.sort_sheets:
-        result[title] = _parse_previous_ranks(resolved_variables.previous_ranks_by_var.get(variable_name, ""))
+    for sort_id, title, _, variable_name in resolved_variables.sort_sheets:
+        result[title] = _parse_previous_ranks(_comparable_history_raw(resolved_variables, sort_id, variable_name))
     return result
 
 
@@ -337,8 +343,8 @@ def get_oldest_ranks(cfg: Config, variables: SpreadsheetVariableSet | None = Non
 
     resolved_variables = variables or resolve_spreadsheet_variables(cfg)
     result: dict[str, dict[int, int]] = {}
-    for _, title, _, variable_name in resolved_variables.sort_sheets:
-        history = _parse_previous_ranks_history(resolved_variables.previous_ranks_by_var.get(variable_name, ""))
+    for sort_id, title, _, variable_name in resolved_variables.sort_sheets:
+        history = _parse_previous_ranks_history(_comparable_history_raw(resolved_variables, sort_id, variable_name))
         oldest_ranks = history[-1]["ranks"] if history else {}
         result[title] = {int(key): int(value) for key, value in oldest_ranks.items()}
     return result
@@ -350,9 +356,43 @@ def get_recent_place_ids_by_sheet(
 ) -> dict[str, set[int]]:
     resolved_variables = variables or resolve_spreadsheet_variables(cfg)
     result: dict[str, set[int]] = {}
-    for _, title, _, variable_name in resolved_variables.sort_sheets:
-        result[title] = _parse_recent_place_ids(resolved_variables.previous_ranks_by_var.get(variable_name, ""))
+    for sort_id, title, _, variable_name in resolved_variables.sort_sheets:
+        result[title] = _parse_recent_place_ids(_comparable_history_raw(resolved_variables, sort_id, variable_name))
     return result
+
+
+def get_stale_rank_history_titles(
+    cfg: Config,
+    variables: SpreadsheetVariableSet | None = None,
+) -> set[str]:
+    """返回已保存历史与当前 sortId 不可比的榜单，这些榜单当天应以自身为基线。"""
+
+    resolved_variables = variables or resolve_spreadsheet_variables(cfg)
+    return {
+        title
+        for sort_id, title, _, variable_name in resolved_variables.sort_sheets
+        if is_stale_rank_history(resolved_variables.previous_ranks_by_var.get(variable_name, ""), sort_id)
+    }
+
+
+def is_stale_rank_history(raw: str, sort_id: str) -> bool:
+    """已保存历史记录的 sortId 与当前不一致时视为不可比；没有历史时不算。"""
+
+    if not raw or not sort_id:
+        return False
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return False
+    saved_sort_id = payload.get("sort_id") if isinstance(payload, dict) else None
+    if saved_sort_id:
+        return saved_sort_id != sort_id
+    return sort_id in UNTAGGED_RANK_HISTORY_STALE_SORT_IDS
+
+
+def _comparable_history_raw(variables: SpreadsheetVariableSet, sort_id: str, variable_name: str) -> str:
+    raw = variables.previous_ranks_by_var.get(variable_name, "")
+    return "" if is_stale_rank_history(raw, sort_id) else raw
 
 
 def get_saved_spreadsheet_target(
@@ -537,11 +577,12 @@ def _parse_previous_ranks_history(raw: str) -> list[dict[str, object]]:
     return normalized
 
 
-def _serialize_previous_ranks_payload(history: list[dict[str, object]]) -> str:
+def _serialize_previous_ranks_payload(history: list[dict[str, object]], sort_id: str = "") -> str:
     trimmed_history = history[:RECENT_NEW_ENTRY_LOOKBACK_DAYS]
+    header = {"sort_id": sort_id} if sort_id else {}
     while trimmed_history:
         payload_value = json.dumps(
-            {"history": trimmed_history},
+            {**header, "history": trimmed_history},
             ensure_ascii=False,
             separators=(",", ":"),
         )

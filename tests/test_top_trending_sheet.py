@@ -22,6 +22,8 @@ from app.top_trending_sheet import (
     get_previous_ranks,
     get_recent_place_ids_by_sheet,
     get_saved_spreadsheet_target,
+    get_stale_rank_history_titles,
+    is_stale_rank_history,
     resolve_spreadsheet_variables,
     save_previous_ranks,
     save_spreadsheet_target,
@@ -333,14 +335,14 @@ class TopTrendingSheetTests(unittest.TestCase):
             [item["title"] for item in specs],
         )
         self.assertEqual(
-            ["Top_Trending_V4", "Up_And_Coming_V4", "top-playing-now", "top-earning"],
+            ["top-trending", "up-and-coming", "top-playing-now", "top-earning"],
             [item["sort_id"] for item in specs],
         )
 
     def test_get_previous_ranks_parses_each_sheet_variable(self) -> None:
         cfg = Config(
             feishu_top_trending_prev_ranks='{"101":1,"102":2}',
-            feishu_up_and_coming_prev_ranks='{"201":5}',
+            feishu_up_and_coming_prev_ranks='{"sort_id":"up-and-coming","history":[{"ranks":{"201":5}}]}',
             feishu_top_playing_now_prev_ranks='{"301":7}',
             feishu_top_earning_prev_ranks='{"401":9}',
         )
@@ -355,7 +357,7 @@ class TopTrendingSheetTests(unittest.TestCase):
     def test_get_recent_place_ids_by_sheet_supports_new_history_payload(self) -> None:
         cfg = Config(
             feishu_top_trending_prev_ranks='{"history":[{"place_ids":[101,102],"ranks":{"101":1,"102":2}},{"place_ids":[103],"ranks":{"103":5}}]}',
-            feishu_up_and_coming_prev_ranks='{"history":[{"place_ids":[201],"ranks":{"201":5}}]}',
+            feishu_up_and_coming_prev_ranks='{"sort_id":"up-and-coming","history":[{"place_ids":[201],"ranks":{"201":5}}]}',
             feishu_top_playing_now_prev_ranks='{"301":7}',
             feishu_top_earning_prev_ranks='{"history":[{"place_ids":[401],"ranks":{"401":9}}]}',
         )
@@ -501,7 +503,7 @@ class TopTrendingSheetTests(unittest.TestCase):
             run_report_mode="top_trending_sheet",
             run_trigger_source="manual",
             feishu_top_trending_test_prev_ranks='{"401":9}',
-            feishu_up_and_coming_test_prev_ranks='{"402":8}',
+            feishu_up_and_coming_test_prev_ranks='{"sort_id":"up-and-coming","history":[{"ranks":{"402":8}}]}',
             feishu_top_playing_now_test_prev_ranks='{"403":7}',
             feishu_top_earning_test_prev_ranks='{"404":6}',
         )
@@ -618,6 +620,48 @@ class TopTrendingSheetTests(unittest.TestCase):
         self.assertEqual({"101": 1, "102": 2}, payload["history"][0]["ranks"])
         self.assertNotIn("place_ids", payload["history"][1])
         self.assertEqual({"201": 5}, payload["history"][1]["ranks"])
+        self.assertEqual("top-trending", payload["sort_id"])
+
+    def test_save_previous_ranks_drops_history_from_another_sort(self) -> None:
+        github_client = Mock()
+        github_client.upsert_repository_variable.return_value = True
+        sheet = build_default_sheet_specs()[1]
+
+        from app.top_trending_sheet import SheetTarget
+
+        save_previous_ranks(
+            github_client,
+            SheetTarget(
+                sort_id=sheet["sort_id"],
+                title=sheet["title"],
+                variable_name=sheet["variable_name"],
+                previous_ranks_variable_name=sheet["previous_ranks_variable_name"],
+                sheet_id="sheet002",
+            ),
+            [GameRecord(rank=1, place_id=101, name="Game A")],
+            '{"history":[{"ranks":{"201":5}}]}',
+        )
+
+        payload = json.loads(github_client.upsert_repository_variable.call_args.args[1])
+        self.assertEqual("up-and-coming", payload["sort_id"])
+        self.assertEqual([{"ranks": {"101": 1}}], payload["history"])
+
+    def test_untagged_up_and_coming_history_is_stale(self) -> None:
+        untagged = '{"history":[{"ranks":{"201":5}}]}'
+        cfg = Config(
+            feishu_top_trending_prev_ranks=untagged,
+            feishu_up_and_coming_prev_ranks=untagged,
+        )
+
+        self.assertEqual({"up_and_coming_v4"}, get_stale_rank_history_titles(cfg))
+        self.assertEqual({}, get_previous_ranks(cfg)["up_and_coming_v4"])
+        self.assertEqual(set(), get_recent_place_ids_by_sheet(cfg)["up_and_coming_v4"])
+        self.assertEqual({201: 5}, get_previous_ranks(cfg)["top_trending_v4"])
+
+    def test_history_tagged_with_another_sort_is_stale(self) -> None:
+        self.assertTrue(is_stale_rank_history('{"sort_id":"top-trending","history":[]}', "top-playing-now"))
+        self.assertFalse(is_stale_rank_history('{"sort_id":"top-trending","history":[]}', "top-trending"))
+        self.assertFalse(is_stale_rank_history("", "up-and-coming"))
 
     def test_save_previous_ranks_trims_old_history_to_fit_github_variable_limit(self) -> None:
         github_client = Mock()

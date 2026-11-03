@@ -10,7 +10,10 @@ from typing import Literal
 
 from .daily_brief_rules import (
     GENRE_MIN_COUNT,
-    GENRE_TRENDING_TOP_SIZE,
+    GENRE_SHARE_CHANGE_THRESHOLD,
+    GENRE_SHARE_MAX_CHANGES,
+    GENRE_SHARE_STABLE_TOP,
+    GENRE_SHARE_TOP_SIZE,
     LONG_TERM_BOARD_STREAK_DAYS,
     LONG_TERM_BOARD_STREAK_SCORE,
     LONG_TERM_EARNING_RANK_LIMIT,
@@ -69,6 +72,7 @@ from .daily_brief_rules import (
     TREND_HISTORY_KEEP_DAYS,
 )
 from .game_trend_history import GameDailySnapshot, GameTrendHistory, GameTrendMetrics, build_game_trend_metrics
+from .market_pulse import MarketPulse, build_genre_ccu_permille
 from .models import GameRecord
 from .top_trending_briefing import (
     SHEET_LABELS,
@@ -287,8 +291,9 @@ def build_market_spotlight(
 def build_genre_wind_lines(
     records_by_sheet: dict[str, list[GameRecord]],
     recent_place_ids_by_sheet: dict[str, set[int]],
+    pulse: MarketPulse | None = None,
 ) -> tuple[str, ...]:
-    """生成品类风向描述：新上榜游戏的集中品类、热门榜前列的主流品类。"""
+    """生成品类风向描述：新上榜游戏的集中品类、热门榜品类 CCU 占比的变化。"""
 
     lines: list[str] = []
     focus_place_ids = {
@@ -310,18 +315,85 @@ def build_genre_wind_lines(
         genre, count = top_new_genre
         lines.append(f"今日新上榜 {len(new_entry_genres)} 款中 {count} 款是 {genre}")
 
-    trending_genres = [
-        record.genre.strip()
-        for record in records_by_sheet.get(TOP_TRENDING_SHEET_KEY, [])
-        if record.rank <= GENRE_TRENDING_TOP_SIZE
-    ]
-    top_trending_genre = _most_common_genre(trending_genres)
-    if top_trending_genre is not None:
-        genre, count = top_trending_genre
-        lines.append(
-            f"{SHEET_LABELS[TOP_TRENDING_SHEET_KEY]}前 {GENRE_TRENDING_TOP_SIZE} 名中 {genre} 占 {count} 款"
-        )
+    share_line = _build_genre_share_line(records_by_sheet.get(TOP_TRENDING_SHEET_KEY, []), pulse)
+    if share_line:
+        lines.append(share_line)
     return tuple(lines)
+
+
+def _build_genre_share_line(trending_records: list[GameRecord], pulse: MarketPulse | None) -> str:
+    """热门榜各品类 CCU 占比：优先写较昨天的明显变化，其次较上周同日，都没有时写占比前几名。
+
+    占比按当天榜单现算，对比日取大盘历史中保存的占比。
+    """
+
+    current = build_genre_ccu_permille(trending_records)
+    if not current:
+        return ""
+    label = f"{SHEET_LABELS[TOP_TRENDING_SHEET_KEY]} CCU 占比"
+    compare_snapshots = (
+        ("较昨天", pulse.day_before if pulse else None),
+        ("较上周同日", pulse.week_before if pulse else None),
+    )
+    has_comparison = False
+    for compare_label, compare_snapshot in compare_snapshots:
+        if compare_snapshot is None or not compare_snapshot.trending_genre_permille:
+            continue
+        has_comparison = True
+        previous = compare_snapshot.trending_genre_permille
+        changes = sorted(
+            (
+                (genre, previous.get(genre, 0), current.get(genre, 0))
+                for genre in set(current) | set(previous)
+            ),
+            # 幅度相同时上升的品类在前，更值得关注。
+            key=lambda item: (-abs(item[2] - item[1]), item[1] - item[2], item[0]),
+        )
+        significant = [
+            item for item in changes if abs(item[2] - item[1]) >= GENRE_SHARE_CHANGE_THRESHOLD * 1000
+        ][:GENRE_SHARE_MAX_CHANGES]
+        if significant:
+            parts = [
+                _format_genre_share_change(genre, before, after, trending_records)
+                for genre, before, after in significant
+            ]
+            return f"{label}{compare_label}变化：" + "、".join(parts)
+
+    top_genres = sorted(current.items(), key=lambda item: (-item[1], item[0]))[:GENRE_SHARE_STABLE_TOP]
+    prefix = "格局稳定，" if has_comparison else ""
+    return f"{prefix}{label}前 {len(top_genres)}：" + "、".join(
+        f"{genre} {_format_permille(permille)}" for genre, permille in top_genres
+    )
+
+
+def _format_genre_share_change(
+    genre: str,
+    before: int,
+    after: int,
+    trending_records: list[GameRecord],
+) -> str:
+    """例如“Action RPG 9% → 24%（+15 个百分点，主要是 Blox Fruits）”；上升时附上该品类 CCU 最高的游戏。"""
+
+    # 用展示出来的两个百分比相减，避免“3% → 24%（+20）”这类分别取整造成的对不上。
+    delta_points = round(after / 10) - round(before / 10)
+    detail = f"{delta_points:+d} 个百分点"
+    if after > before:
+        leader = max(
+            (
+                record
+                for record in trending_records
+                if record.rank <= GENRE_SHARE_TOP_SIZE and record.genre.strip() == genre
+            ),
+            key=lambda record: record.playing,
+            default=None,
+        )
+        if leader is not None:
+            detail += f"，主要是 {leader.name}"
+    return f"{genre} {_format_permille(before)} → {_format_permille(after)}（{detail}）"
+
+
+def _format_permille(permille: int) -> str:
+    return f"{round(permille / 10)}%"
 
 
 def _collect_candidates(

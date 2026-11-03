@@ -207,7 +207,17 @@ LONG_TERM_MIN_SCORE = 3
 # 品类风向
 # ---------------------------------------------------------------------------
 
-# 热门榜前 N 名用于统计主流品类。
-GENRE_TRENDING_TOP_SIZE = 20
-# 品类至少出现的款数，低于该值不写入风向，避免“1 款也算趋势”。
+# 品类至少出现的款数，低于该值不写入“新上榜集中品类”，避免“1 款也算趋势”。
 GENRE_MIN_COUNT = 2
+# 品类占比使用的榜单：热门榜反映当下玩家流向。
+GENRE_SHARE_SHEET_KEY = "top_trending_v4"
+# 热门榜前 N 名按 CCU 计算各品类占比；按 CCU 而不是款数，才能反映玩家实际流向。
+GENRE_SHARE_TOP_SIZE = 100
+# 占比较对比日变化超过该值（5 个百分点）才写入风向；日对比没有明显变化时再看周对比。
+GENRE_SHARE_CHANGE_THRESHOLD = 0.05
+# 风向最多列出的品类数，按变化幅度从大到小。
+GENRE_SHARE_MAX_CHANGES = 2
+# 没有明显变化时列出占比前 N 的品类。
+GENRE_SHARE_STABLE_TOP = 3
+# 写入大盘历史的最低占比，过滤长尾品类以控制 GitHub Variable 体积。
+GENRE_SHARE_MIN_STORED = 0.01
