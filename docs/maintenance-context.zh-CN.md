@@ -296,7 +296,14 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
 - `RFYPlayThroughRate` -> `PTR`
 - `RFYDeepEngagementRate` -> `DPTR`
 
-这些字段通过 Roblox Analytics Query Gateway 读取 Daily 序列；同类排名优先从 Daily 返回数据中的 benchmark percentile / `currentPercentile` 提取，对应 Explore URL 中的 `granularity=Daily` 和 `overlays=benchmark` 口径。若 Daily datapoint 暂未返回 percentile，则使用同名 Daily 指标请求 Overview `benchmark-scorecard` 接口作为排名兜底，仅补充排名列，不覆盖 Daily 数值列；兜底请求不使用 `L7Average...` 指标。`付费用户平均收入` 按 Roblox Daily 指标原始数值写入，不自动加美元符号。
+这些字段的数值通过 Roblox Analytics Query Gateway 读取 Daily 序列。`付费用户平均收入` 按 Roblox Daily 指标原始数值写入，不自动加美元符号。
+
+同类排名列的实际来源是 `benchmark-scorecard` 接口（按同名 Daily 指标请求，不使用 `L7Average...` 指标），只写排名列，不覆盖 Daily 数值列：
+
+- 依据（2026-11-03 用线上调试快照核对）：Daily datapoint 不返回任何 percentile 字段；scorecard 的 `currentValue` 与同一 `metricTime` 的 Daily 数值完全一致；`Troll ur friends` 的推荐基准百分位 18th 与 Creator Dashboard 页面默认显示一致。代码仍保留从 Daily datapoint 读取 percentile 的逻辑，接口日后返回时优先使用。
+- 只读取 `recommendedType` 对应 benchmark 的 `currentPercentile`。不同项目的推荐基准可能不同（例如 `Troll ur friends` 为相似体验，其余项目为品类），这与 Dashboard 页面一致。缺少推荐基准时留空，不改用其他基准。
+- scorecard 每次只返回最新一个 `metricTime`，漏跑的日期之后无法补回排名，保持留空。
+- 同一天的 Daily 数值已取到、但与 scorecard `currentValue` 格式化后不一致时，该排名留空，并在调试快照 `direct_query_attempts` 中记录 `rank_skipped`；缺少日期或推荐基准时记录 `rank_missing`。
 
 当前代码内临时开启了 `PROJECT_METRICS_FORCE_DAILY_CORE_REFRESH = True`，用于修正飞书表格中已经写入的旧口径核心字段。该开关只强制回查并覆盖上述 Daily 核心字段，不影响 `PeakConcurrentPlayers`、`ARPDAU`、五分钟留存、Home Recommendation、性能和崩溃类字段的“只补空”日常逻辑。表格历史数据修正完成后，应将该常量改回 `False` 并提交，恢复日常增量更新。
 

@@ -669,6 +669,7 @@ class RobloxCreatorMetricsClient:
             start_date,
             end_date,
             requested_fields_by_date,
+            metrics,
         )
         for field_name, rank_series in scorecard_ranks.items():
             if not rank_series:
@@ -764,8 +765,14 @@ class RobloxCreatorMetricsClient:
         start_date: date,
         end_date: date,
         requested_fields_by_date: Mapping[date, tuple[str, ...]] | None,
+        daily_metrics: Mapping[str, Mapping[str, str]],
     ) -> dict[str, dict[str, str]]:
-        """使用 Daily 指标名探测 scorecard 百分位，仅作为排名列兜底来源。"""
+        """读取 Daily scorecard 推荐基准的同类百分位，作为同类排名列的实际来源。
+
+        依据：Daily datapoint 实测不返回百分位；scorecard 的 currentValue 与同日 Daily 数值一致，
+        且推荐基准百分位与 Creator Dashboard 页面默认显示一致。同日 Daily 数值已取到但与
+        scorecard 当前值不一致时留空并记录，不写入可能错位的排名。
+        """
 
         metric_ranks: dict[str, dict[str, str]] = {}
         for spec in DAILY_SCORECARD_SPECS:
@@ -788,6 +795,18 @@ class RobloxCreatorMetricsClient:
             attempts.append(QueryAttempt(spec.metric, url, "GET", "ok", "", _truncate_json(payload)))
             rank_series = _extract_scorecard_rank_series(payload, business_timezone)
             if not rank_series:
+                attempts.append(
+                    QueryAttempt(spec.metric, url, "GET", "rank_missing: 缺少日期或推荐基准百分位", "", "")
+                )
+                continue
+            mismatch_reason = _describe_scorecard_value_mismatch(
+                payload,
+                rank_series,
+                daily_metrics.get(spec.field_name, {}),
+                _resolve_direct_query_value_type(spec.field_name),
+            )
+            if mismatch_reason:
+                attempts.append(QueryAttempt(spec.metric, url, "GET", f"rank_skipped: {mismatch_reason}", "", ""))
                 continue
             filtered_rank_series = _filter_scorecard_rank_series(
                 rank_series,
@@ -1457,33 +1476,58 @@ def _extract_scorecard_rank_series(
 
 
 def _extract_scorecard_rank(payload: object) -> str:
-    """优先读取顶层百分位，缺失时读取推荐 benchmark 的百分位。"""
+    """只读取 recommendedType 对应 benchmark 的百分位；缺失时返回空，不改用其他基准。"""
 
     if not isinstance(payload, dict):
         return ""
-    top_level_rank = _format_percentile_rank(payload.get("currentPercentile"))
-    if top_level_rank:
-        return top_level_rank
-
     recommended_type = str(payload.get("recommendedType", "")).strip()
     available_benchmarks = payload.get("availableBenchmarks")
-    if isinstance(available_benchmarks, list):
-        if recommended_type:
-            for benchmark in available_benchmarks:
-                if not isinstance(benchmark, dict):
-                    continue
-                if str(benchmark.get("benchmarkType", "")).strip() != recommended_type:
-                    continue
-                rank_text = _format_percentile_rank(benchmark.get("currentPercentile"))
-                if rank_text:
-                    return rank_text
-        for benchmark in available_benchmarks:
-            if not isinstance(benchmark, dict):
-                continue
-            rank_text = _format_percentile_rank(benchmark.get("currentPercentile"))
-            if rank_text:
-                return rank_text
-    return _extract_percentile_rank_from_payload(payload)
+    if not recommended_type or not isinstance(available_benchmarks, list):
+        return ""
+    for benchmark in available_benchmarks:
+        if not isinstance(benchmark, dict):
+            continue
+        if str(benchmark.get("benchmarkType", "")).strip() == recommended_type:
+            return _format_percentile_rank(benchmark.get("currentPercentile"))
+    return ""
+
+
+def _describe_scorecard_value_mismatch(
+    payload: object,
+    rank_series: Mapping[str, str],
+    daily_values: Mapping[str, str],
+    value_type: str,
+) -> str:
+    """同日 Daily 数值已取到时，校验 scorecard 当前值与其一致；不一致返回原因。"""
+
+    formatter = _resolve_latest_value_formatter(value_type)
+    current_value = _coerce_numeric(payload.get("currentValue")) if isinstance(payload, dict) else None
+    scorecard_value = formatter(current_value) if formatter is not None and current_value is not None else ""
+    for report_date in rank_series:
+        daily_value = daily_values.get(report_date, "")
+        if daily_value and scorecard_value != daily_value:
+            return f"{report_date} scorecard 当前值 {scorecard_value or '缺失'} 与 Daily 数值 {daily_value} 不一致"
+    return ""
+
+
+def _resolve_direct_query_value_type(field_name: str) -> str:
+    for spec in DIRECT_QUERY_SPECS:
+        if spec.field_name == field_name:
+            return spec.value_type
+    return ""
+
+
+def _resolve_latest_value_formatter(value_type: str):
+    """返回 Daily 单值指标的格式化函数，与 _extract_metric_series_from_query_result 保持一致。"""
+
+    return {
+        "integer": _format_count,
+        "ratio": _format_ratio,
+        "currency": _format_currency,
+        "number": _format_compact_number,
+        "minutes": _format_duration_from_minutes,
+        "seconds": _format_duration_from_seconds,
+    }.get(value_type)
 
 
 def _resolve_scorecard_report_date(

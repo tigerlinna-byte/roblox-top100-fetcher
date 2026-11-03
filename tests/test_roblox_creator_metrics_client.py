@@ -14,6 +14,7 @@ from app.roblox_creator_metrics_client import (
     RobloxCreatorAuthenticationError,
     RobloxCreatorMetricsClient,
     RobloxCreatorMetricsClientError,
+    _describe_scorecard_value_mismatch,
     resolve_project_metrics_query_date_bounds,
 )
 from app.roblox_money_models import ROBLOX_MONEY_REVENUE_METRIC_CANDIDATES
@@ -54,13 +55,29 @@ def _extract_metric_query(url: str) -> str:
     return query.get("metric", [""])[0]
 
 
-def _build_scorecard_payload(metric_time: str, current_percentile: int) -> dict:
-    return {
+def _build_scorecard_payload(
+    metric_time: str,
+    current_percentile: int,
+    *,
+    current_value: float | None = None,
+    recommended_type: str = "BENCHMARK_TYPE_GENRE",
+    benchmarks: list[tuple[str, int]] | None = None,
+) -> dict:
+    """按线上 scorecard 响应结构构造数据，默认只含推荐基准一项。"""
+
+    resolved_benchmarks = benchmarks if benchmarks is not None else [(recommended_type, current_percentile)]
+    payload: dict = {
         "metricTime": metric_time,
         "currentPercentile": current_percentile,
-        "availableBenchmarks": [],
-        "recommendedType": "",
+        "availableBenchmarks": [
+            {"benchmarkType": benchmark_type, "currentPercentile": percentile, "benchmarkTime": metric_time}
+            for benchmark_type, percentile in resolved_benchmarks
+        ],
+        "recommendedType": recommended_type,
     }
+    if current_value is not None:
+        payload["currentValue"] = current_value
+    return payload
 
 
 def _build_empty_scorecard_response(url: str) -> Mock:
@@ -646,7 +663,7 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual("1.2%", record_map["2026-03-10"].dptr)
 
     @_patch_relaxed_fixture_project
-    def test_fetch_project_daily_metrics_uses_daily_scorecard_as_rank_fallback(self) -> None:
+    def test_fetch_project_daily_metrics_uses_daily_scorecard_recommended_rank(self) -> None:
         session = Mock()
         scorecard_metrics: list[str] = []
 
@@ -659,8 +676,12 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
                 if metric.startswith("L7Average"):
                     raise AssertionError(f"L7 scorecard must not be queried: {metric}")
                 scorecards = {
-                    "AveragePlayTimeMinutesPerDAU": _build_scorecard_payload("2026-03-17T00:00:00Z", 42),
-                    "ForwardD1Retention": _build_scorecard_payload("2026-03-17T00:00:00Z", 73),
+                    "AveragePlayTimeMinutesPerDAU": _build_scorecard_payload(
+                        "2026-03-17T00:00:00Z", 42, current_value=12.5
+                    ),
+                    "ForwardD1Retention": _build_scorecard_payload(
+                        "2026-03-17T00:00:00Z", 73, current_value=0.0677
+                    ),
                 }
                 return _build_json_response(scorecards.get(metric, {}))
             if method == "POST" and "metrics/metadata" in url:
@@ -719,6 +740,106 @@ class RobloxCreatorMetricsClientTests(unittest.TestCase):
         self.assertEqual(
             ["AveragePlayTimeMinutesPerDAU", "ForwardD1Retention"],
             scorecard_metrics,
+        )
+
+    @_patch_relaxed_fixture_project
+    def _fetch_session_time_rank(self, scorecard_payload: dict, daily_value: float | None) -> str:
+        """只请求平均在线时长及其排名，返回写入的排名文本。"""
+
+        session = Mock()
+
+        def request(method: str, url: str, **kwargs):
+            if method == "GET" and ("feature-permissions" in url or "status-config" in url):
+                return _build_json_response({})
+            if method == "GET" and "benchmark-scorecard" in url:
+                return _build_json_response(scorecard_payload)
+            if method == "POST" and "metrics/metadata" in url:
+                return _build_json_response({
+                    "operation": {
+                        "done": True,
+                        "metricMetadataResult": {
+                            "metadata": [
+                                {"metric": "AveragePlayTimeMinutesPerDAU", "latestAvailableTime": "2026-03-17T00:00:00Z"},
+                            ]
+                        },
+                    }
+                })
+            if method == "POST" and "analytics-query-gateway" in url:
+                data_points = [] if daily_value is None else [{"time": "2026-03-17T00:00:00Z", "value": daily_value}]
+                return _build_json_response(_wrap_query_result({"breakdownValue": [], "dataPoints": data_points}))
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        session.request.side_effect = request
+        client = RobloxCreatorMetricsClient(
+            Config(
+                roblox_creator_overview_url=RELAXED_FIXTURE_OVERVIEW_URL,
+                roblox_creator_cookie="_|WARNING:-DO-NOT-SHARE-THIS.",
+                retry_max_attempts=1,
+                feishu_timezone="UTC",
+                output_dir=Path(tempfile.mkdtemp()),
+            ),
+            session=session,
+        )
+        records = client.fetch_project_daily_metrics(
+            report_dates=[date(2026, 3, 17)],
+            requested_fields_by_date={date(2026, 3, 17): ("average_session_time", "average_session_time_rank")},
+        )
+        return records[0].average_session_time_rank if records else ""
+
+    def test_scorecard_rank_uses_recommended_similarity_benchmark(self) -> None:
+        payload = _build_scorecard_payload(
+            "2026-03-17T00:00:00Z",
+            18,
+            current_value=12.5,
+            recommended_type="BENCHMARK_TYPE_SIMILARITY",
+            benchmarks=[("BENCHMARK_TYPE_SIMILARITY", 18), ("BENCHMARK_TYPE_GENRE", 44)],
+        )
+
+        self.assertEqual("18th", self._fetch_session_time_rank(payload, 12.5))
+
+    def test_scorecard_rank_uses_recommended_genre_benchmark(self) -> None:
+        payload = _build_scorecard_payload(
+            "2026-03-17T00:00:00Z",
+            44,
+            current_value=12.5,
+            recommended_type="BENCHMARK_TYPE_GENRE",
+            benchmarks=[("BENCHMARK_TYPE_SIMILARITY", 18), ("BENCHMARK_TYPE_GENRE", 44)],
+        )
+
+        self.assertEqual("44th", self._fetch_session_time_rank(payload, 12.5))
+
+    def test_scorecard_rank_is_empty_without_recommended_type(self) -> None:
+        payload = _build_scorecard_payload("2026-03-17T00:00:00Z", 44, current_value=12.5, recommended_type="")
+        payload["availableBenchmarks"] = [{"benchmarkType": "BENCHMARK_TYPE_GENRE", "currentPercentile": 44}]
+
+        self.assertEqual("", self._fetch_session_time_rank(payload, 12.5))
+
+    def test_scorecard_rank_never_falls_back_to_other_benchmark(self) -> None:
+        payload = _build_scorecard_payload(
+            "2026-03-17T00:00:00Z",
+            44,
+            current_value=12.5,
+            recommended_type="BENCHMARK_TYPE_SIMILARITY",
+            benchmarks=[("BENCHMARK_TYPE_GENRE", 44)],
+        )
+
+        self.assertEqual("", self._fetch_session_time_rank(payload, 12.5))
+
+    def test_scorecard_rank_is_empty_when_value_differs_from_daily(self) -> None:
+        payload = _build_scorecard_payload("2026-03-17T00:00:00Z", 44, current_value=9.0)
+
+        self.assertEqual("", self._fetch_session_time_rank(payload, 12.5))
+
+    def test_scorecard_value_check_skipped_when_daily_value_not_fetched(self) -> None:
+        payload = _build_scorecard_payload("2026-03-17T00:00:00Z", 44, current_value=9.0)
+
+        self.assertEqual(
+            "",
+            _describe_scorecard_value_mismatch(payload, {"2026-03-17": "44th"}, {}, "minutes"),
+        )
+        self.assertIn(
+            "不一致",
+            _describe_scorecard_value_mismatch(payload, {"2026-03-17": "44th"}, {"2026-03-17": "12m 30s"}, "minutes"),
         )
 
     def test_fetch_project_daily_metrics_does_not_query_l7_fallback_metrics(self) -> None:
