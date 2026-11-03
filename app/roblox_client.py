@@ -17,6 +17,7 @@ GET_SORT_CONTENT_URL = "https://apis.roblox.com/explore-api/v1/get-sort-content"
 GAMES_DETAIL_URL = "https://games.roblox.com/v1/games"
 THUMBNAILS_URL = "https://thumbnails.roblox.com/v1/games/icons"
 GAME_LOCALIZATION_URL_TEMPLATE = "https://gameinternationalization.roblox.com/v1/name-description/games/{universe_id}"
+# 只用于从 get-sorts 结果中识别热门榜；抓取失败时不会依次尝试这些 sortId。
 TOP_TRENDING_SORT_ID_CANDIDATES = (
     "top-trending",
     "trending",
@@ -71,39 +72,28 @@ class RobloxClient:
         sort_id: str,
         *,
         limit: int | None = None,
-        allow_fallbacks: bool = True,
         include_thumbnails: bool = True,
     ) -> list[GameRecord]:
-        candidate_sort_ids = [sort_id]
-        if allow_fallbacks:
-            candidate_sort_ids.extend(
-                sort_id
-                for sort_id in TOP_TRENDING_SORT_ID_CANDIDATES
-                if sort_id != candidate_sort_ids[0]
+        """抓取指定榜单；失败时直接报错，不改用其他 sortId 充数。
+
+        曾经的跨 sortId 回退让失效的 Up_And_Coming_V4 悄悄变成了热门榜数据。
+        """
+
+        try:
+            return self._fetch_games_for_sort(
+                sort_id,
+                limit=limit,
+                include_thumbnails=include_thumbnails,
             )
-
-        last_error: Exception | None = None
-        for candidate_sort_id in candidate_sort_ids:
-            try:
-                return self._fetch_games_for_sort(
-                    candidate_sort_id,
-                    limit=limit,
-                    include_thumbnails=include_thumbnails,
-                )
-            except RobloxClientError as exc:
-                last_error = exc
-                continue
-
-        detail = f": {last_error}" if last_error else ""
-        raise RobloxClientError(f"Unable to fetch games for sort {sort_id}{detail}.") from last_error
+        except RobloxClientError as exc:
+            raise RobloxClientError(f"Unable to fetch games for sort {sort_id}: {exc}.") from exc
 
     def fetch_top_earning_games(self, *, limit: int, include_thumbnails: bool = True) -> list[GameRecord]:
-        """抓取 Top Earning 收入榜，失败时不回退到其他榜单。"""
+        """抓取 Top Earning 收入榜。"""
 
         return self.fetch_games_by_sort_id(
             TOP_EARNING_SORT_ID,
             limit=limit,
-            allow_fallbacks=False,
             include_thumbnails=include_thumbnails,
         )
 

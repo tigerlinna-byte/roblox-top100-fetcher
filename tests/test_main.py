@@ -151,9 +151,9 @@ class MainTests(unittest.TestCase):
         self.assertEqual(["top_trending_v4", "up_and_coming_v4", "top_playing_now", "top_earning"], list(report_payload))
         self.assertEqual(
             [
-                (("top-trending",), {"allow_fallbacks": False, "include_thumbnails": False}),
-                (("up-and-coming",), {"allow_fallbacks": False, "include_thumbnails": False}),
-                (("top-playing-now",), {"allow_fallbacks": False, "include_thumbnails": False}),
+                (("top-trending",), {"include_thumbnails": False}),
+                (("up-and-coming",), {"include_thumbnails": False}),
+                (("top-playing-now",), {"include_thumbnails": False}),
             ],
             [(call.args, call.kwargs) for call in client.fetch_games_by_sort_id.call_args_list],
         )

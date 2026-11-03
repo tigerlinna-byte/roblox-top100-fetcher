@@ -225,7 +225,14 @@ class DailyBriefFlowTests(unittest.TestCase):
         self.payload = DailyBriefFetchPayload(
             records_by_sheet={
                 "top_playing_now": [
-                    GameRecord(rank=1, place_id=1, name="Big", playing=50000, fetched_at="2026-10-27T01:00:00Z"),
+                    GameRecord(
+                        rank=1,
+                        place_id=1,
+                        name="Big",
+                        playing=50000,
+                        fetched_at="2026-10-27T01:00:00Z",
+                        created_at="2026-10-20T00:00:00Z",
+                    ),
                 ],
             },
             market_failure="",

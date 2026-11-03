@@ -242,25 +242,22 @@ def _fetch_report_payload(cfg: Config):
 def _fetch_top_trending_records(cfg: Config) -> dict[str, list[GameRecord]]:
     """抓取今日关注所需的各榜单；收入榜失败时跳过，不影响其余榜单。
 
-    各榜单不回退到其他 sortId：旧的 Up_And_Coming_V4 失效后曾被回退成热门榜数据，
-    导致新秀榜与热门榜完全相同而无人察觉，失败时应直接进入数据异常。
+    任一榜单失败直接报错进入数据异常：旧的 Up_And_Coming_V4 失效后曾被回退成热门榜数据，
+    导致新秀榜与热门榜完全相同而无人察觉。
     """
 
     client = RobloxClient(cfg)
     records_by_sheet = {
         "top_trending_v4": client.fetch_games_by_sort_id(
             "top-trending",
-            allow_fallbacks=False,
             include_thumbnails=False,
         ),
         "up_and_coming_v4": client.fetch_games_by_sort_id(
             "up-and-coming",
-            allow_fallbacks=False,
             include_thumbnails=False,
         ),
         "top_playing_now": client.fetch_games_by_sort_id(
             "top-playing-now",
-            allow_fallbacks=False,
             include_thumbnails=False,
         ),
     }

@@ -130,7 +130,7 @@
 - 当前主流程没有使用 `ROBLOX_TOP_TRENDING_SORT_ID`
 - 即使工作流里注入了 `ROBLOX_TOP_TRENDING_SORT_ID`，也不会改变这里实际抓取的 sort id
 - 真正决定 sort id 的是 [`app/main.py`](../app/main.py) 里的硬编码分流
-- 各榜单都不回退到其他 sortId，接口失败时整个行业趋势进入“数据异常”。2026-11-03 之前请求的是 `Top_Trending_V4` / `Up_And_Coming_V4`，这两个 sortId 已返回 404，旧代码会自动回退到 `top-trending`，导致新秀榜（含飞书新秀榜表与历史排名）一直是热门榜的数据
+- `RobloxClient.fetch_games_by_sort_id` 只请求传入的 sortId，失败直接报错，已移除跨 sortId 回退（项目规则见 [`AGENTS.md`](../AGENTS.md)“数据真实性”）。各榜单失败时整个行业趋势进入“数据异常”。2026-11-03 之前请求的是 `Top_Trending_V4` / `Up_And_Coming_V4`，这两个 sortId 已返回 404，旧代码会自动回退到 `top-trending`，导致新秀榜（含飞书新秀榜表与历史排名）一直是热门榜的数据
 - 历史排名变量记录写入时的 sortId（`{"sort_id": ..., "history": [...]}`）。sortId 不一致的历史视为不可比；没有标记的旧新秀榜历史同样不可比（`UNTAGGED_RANK_HISTORY_STALE_SORT_IDS`）。不可比的榜单当天以自身为基线：不判断新上榜和排名变化，写入时丢弃旧历史，从第二天起恢复正常对比
 - `top-earning` 会通过 `pageToken` 尽量分页抓取前 300 名；如果 Roblox Explore 接口返回不足 300 条，则按实际返回记录；如果该榜单临时失败，本次会跳过收入榜历史排名更新，不阻断其他 3 个榜单和今日关注卡片
 - 这个模式不再创建、更新或发送飞书表格链接；旧表格 token、sheet id 变量仅作为历史遗留配置保留
@@ -186,6 +186,7 @@ Top Trending 维护了“正式”和“测试”两套历史排名变量。
 
 `今日关注` 卡片由 [`app/top_trending_briefing.py`](../app/top_trending_briefing.py) 构建，当前规则是：
 
+- 首次上线日期只取接口返回的 `created`；缺失时视为上线时间未知（不算新游、表格显示 `-`），不用更新时间或抓取时间代替，避免老游戏被当成新游
 - 只关注“最近 7 天未进入同一个榜单，且首次上线未满 180 天（约 6 个月）”的游戏；这里的“未上榜”按榜单维度分别判断，不是跨 4 个榜单全局排除
 - 聚合 4 个榜单后按游戏去重
 - 优先显示排名更高的记录

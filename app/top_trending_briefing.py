@@ -333,13 +333,12 @@ def _build_briefing_title(
 
 
 def resolve_launch_date(record: GameRecord) -> date | None:
-    """返回游戏首次上线日期，缺失时依次回退到更新时间、抓取时间。"""
+    """返回游戏首次上线日期；缺失或无法解析时为 None，调用方按“上线时间未知”处理。
 
-    for raw in (record.created_at, record.updated_at, record.fetched_at):
-        parsed = _parse_iso_date(raw)
-        if parsed is not None:
-            return parsed
-    return None
+    不用更新时间、抓取时间代替：那样老游戏会被当成刚上线的新游。
+    """
+
+    return _parse_iso_date(record.created_at)
 
 
 def _parse_iso_date(raw: str) -> date | None:

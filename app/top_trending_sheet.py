@@ -452,8 +452,8 @@ def build_default_sheet_specs(
 
 
 def _format_created_at(record: GameRecord) -> date | str:
-    raw = record.created_at or record.updated_at or record.fetched_at
-    return _short_datetime(raw)
+    # 上线时间缺失时显示“-”，不用更新时间、抓取时间代替。
+    return _short_datetime(record.created_at)
 
 
 def _resolve_launch_date_color(launch_date: date | str, record: GameRecord) -> str:

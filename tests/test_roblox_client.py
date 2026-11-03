@@ -261,7 +261,7 @@ class RobloxClientTests(unittest.TestCase):
             session=session,
         )
 
-        items = client.fetch_games_by_sort_id("top-earning", limit=3, allow_fallbacks=False)
+        items = client.fetch_games_by_sort_id("top-earning", limit=3)
 
         self.assertEqual(["A", "B", "C"], [item.name for item in items])
         self.assertEqual(3, items[-1].rank)
@@ -282,12 +282,29 @@ class RobloxClientTests(unittest.TestCase):
         )
 
         with self.assertRaises(RobloxClientError) as raised:
-            client.fetch_games_by_sort_id("top-earning", allow_fallbacks=False)
+            client.fetch_games_by_sort_id("top-earning")
 
         message = str(raised.exception)
         self.assertIn("Unable to fetch games for sort top-earning", message)
         self.assertIn("sortId=top-earning", message)
         self.assertIn("HTTP 500", message)
+
+    def test_fetch_games_by_sort_id_never_requests_another_sort(self) -> None:
+        response = Mock()
+        response.status_code = 404
+        response.text = "not found"
+        session = Mock()
+        session.request.return_value = response
+        client = RobloxClient(
+            config=Config(api_limit=100, retry_max_attempts=1),
+            session=session,
+        )
+
+        with self.assertRaises(RobloxClientError):
+            client.fetch_games_by_sort_id("up-and-coming")
+
+        requested_sort_ids = {call.kwargs["params"]["sortId"] for call in session.request.call_args_list}
+        self.assertEqual({"up-and-coming"}, requested_sort_ids)
 
     def test_fetch_top_trending_discovers_sort_by_name(self) -> None:
         session = Mock()

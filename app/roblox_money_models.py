@@ -6,6 +6,8 @@ from typing import Any
 
 
 DEFAULT_ROBLOX_MONEY_START_DATE = "2026-05-01"
+# 待确认：这三个指标名是否都表示“每日收入”。若 TotalRevenue 是累计收入，
+# 依次尝试就属于用别的数据充数，需要改为只用确认过的指标名（见 AGENTS.md“数据真实性”）。
 ROBLOX_MONEY_REVENUE_METRIC_CANDIDATES = (
     "Revenue",
     "TotalRevenue",

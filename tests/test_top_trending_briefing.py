@@ -10,6 +10,7 @@ from app.top_trending_briefing import (
     build_top_trending_briefing_markdown,
     collect_top_trending_briefing_entries,
     collect_top_trending_focus_place_ids_by_sheet,
+    resolve_launch_date,
 )
 
 
@@ -347,6 +348,22 @@ class TopTrendingBriefingTests(unittest.TestCase):
         )
 
         self.assertEqual([], entries)
+
+
+    def test_launch_date_is_unknown_without_created_at(self) -> None:
+        record = GameRecord(
+            rank=1,
+            place_id=1,
+            name="Old Game",
+            updated_at="2026-10-26T00:00:00Z",
+            fetched_at="2026-10-27T01:00:00Z",
+        )
+
+        self.assertIsNone(resolve_launch_date(record))
+        self.assertEqual(
+            date(2026, 10, 1),
+            resolve_launch_date(GameRecord(rank=1, name="New", created_at="2026-10-01T00:00:00Z")),
+        )
 
 
 if __name__ == "__main__":
