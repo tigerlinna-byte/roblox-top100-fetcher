@@ -155,8 +155,19 @@ export async function handleScheduled(controller, env, ctx, fetchImpl = fetch) {
 
 // 每日早报定时任务（北京时间 09:10），一次运行汇总行业趋势、自家项目与收入。
 const DAILY_BRIEF_CRON = "10 1 * * *";
+// CCU 采样定时任务：与早报自身的抓取合起来每 6 小时一次，只积累数据、不发群，所以不需要群 ID。
+const CCU_SAMPLE_CRONS = new Set(["10 7 * * *", "10 13 * * *", "10 19 * * *"]);
 
 function resolveScheduledTrigger(env, cron) {
+  if (CCU_SAMPLE_CRONS.has(cron)) {
+    return {
+      triggerSource: "cloudflare_cron",
+      triggerActor: "cloudflare-cron",
+      chatId: "",
+      reportMode: "ccu_sample",
+    };
+  }
+
   if (cron !== DAILY_BRIEF_CRON) {
     console.warn(JSON.stringify({
       level: "warn",

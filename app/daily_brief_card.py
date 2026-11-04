@@ -10,6 +10,7 @@ from .daily_brief_rules import (
     MARKET_PULSE_HEAD_SIZE,
     PROJECT_TITLE_SUFFIXES_TO_STRIP,
     PROJECT_TREND_BASELINE_DAYS,
+    SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY,
 )
 from .market_pulse import MarketChange, MarketPulse
 from .market_spotlight import TOP_EARNING_SHEET_KEY, MarketSpotlight, SpotlightEntry
@@ -32,6 +33,9 @@ HEADER_TEMPLATE = "blue"
 HEADER_TEMPLATE_WITH_FAILURES = "orange"
 STANDOUT_MARK = "🔥"
 LONG_TERM_MARK = "🌱"
+NEW_GAME_LEADER_MARK = "🆕"
+# 游戏名后的 Rotrends 详情页链接，方便点开看在线曲线；只放链接，不抓取也不展示它的数据。
+ROTRENDS_GAME_URL = "https://www.rotrends.com/game/{universe_id}"
 # 自家项目的状态标记：全部上涨、全部下跌、涨跌都有、没有提醒。
 PROJECT_RISE_MARK = "🔴"
 PROJECT_FALL_MARK = "🟢"
@@ -185,7 +189,12 @@ def _format_market_change(change: MarketChange) -> str:
 
 def _build_spotlight_elements(spotlight: MarketSpotlight) -> list[CardElement]:
     elements: list[CardElement] = []
-    if spotlight.standout is None and not spotlight.entries and not spotlight.long_term:
+    if (
+        spotlight.standout is None
+        and not spotlight.entries
+        and not spotlight.long_term
+        and not spotlight.new_game_leaders
+    ):
         elements.append(_markdown(_color("今天没有发现值得特别关注的项目。", SECONDARY_COLOR)))
         elements.append(_build_long_term_element(spotlight))
         return elements
@@ -193,26 +202,62 @@ def _build_spotlight_elements(spotlight: MarketSpotlight) -> list[CardElement]:
     if spotlight.standout is not None:
         elements.append(_build_standout_panel(spotlight.standout))
     elements.append(_build_long_term_element(spotlight))
+    if spotlight.new_game_leaders:
+        elements.append(_build_new_game_leaders_element(spotlight.new_game_leaders))
     if spotlight.entries:
         lines = ["**👀 值得关注**"]
         for entry in spotlight.entries:
-            name = f"**{_color(entry.name, HIGHLIGHT_NAME_COLOR)}**"
-            details = _color(f"｜{entry.genre or '-'}｜CCU {entry.ccu:,}", SECONDARY_COLOR)
+            name = _format_entry_name(entry)
+            details = _color(f"｜{entry.genre or '-'}｜{_format_entry_ccu(entry)}", SECONDARY_COLOR)
             lines.append(f"- {name}：{_format_spotlight_reasons(entry)} {details}{_format_earning_detail(entry)}")
         elements.append(_markdown("\n".join(lines)))
     return elements
 
 
+def _build_new_game_leaders_element(leaders: tuple[SpotlightEntry, ...]) -> CardElement:
+    """头部新游：排名稳定、爆发分不高，但已经站上在玩榜前列的新游。"""
+
+    label = SHEET_LABELS[SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY]
+    lines = [f"**{NEW_GAME_LEADER_MARK} 头部新游**"]
+    for entry in leaders:
+        age = next(signal.reason for signal in entry.signals if signal.kind == "new_game")
+        details = _color(f"｜{entry.genre or '-'}｜{_format_entry_ccu(entry)}", SECONDARY_COLOR)
+        lines.append(
+            f"- {_format_entry_name(entry)}：{label} #{dict(entry.sheet_ranks)[label]}，{age} "
+            f"{details}{_format_earning_detail(entry)}"
+        )
+    return _markdown("\n".join(lines))
+
+
+def _format_entry_name(entry: SpotlightEntry) -> str:
+    return f"**{_color(entry.name, HIGHLIGHT_NAME_COLOR)}**{_format_rotrends_link(entry)}"
+
+
+def _format_rotrends_link(entry: SpotlightEntry) -> str:
+    if not entry.universe_id:
+        return ""
+    return f" [Rotrends]({ROTRENDS_GAME_URL.format(universe_id=entry.universe_id)})"
+
+
+def _format_entry_ccu(entry: SpotlightEntry) -> str:
+    """采样足够时展示全天口径；否则只有抓取时刻的值，明确标为当次，避免被当成全天水平比较。"""
+
+    if entry.average_ccu is None or entry.peak_ccu is None:
+        return f"当次 CCU {entry.ccu:,}"
+    return f"日均 CCU {entry.average_ccu:,}｜近似峰值 {entry.peak_ccu:,}"
+
+
 def _build_standout_panel(standout: SpotlightEntry) -> CardElement:
     """“今日最突出”放进灰底面板，与其余条目拉开层级。"""
 
-    details = f"{standout.genre or '-'}｜CCU {standout.ccu:,}"
+    details = f"{standout.genre or '-'}｜{_format_entry_ccu(standout)}"
     sheet_ranks = _format_sheet_ranks(standout)
     if sheet_ranks:
         details += f"｜{sheet_ranks}"
     details = _color(details, SECONDARY_COLOR) + _format_earning_detail(standout)
     lines = [
-        f"{STANDOUT_MARK} **今日最突出（爆发）：{_color(standout.name, HIGHLIGHT_NAME_COLOR)}**",
+        f"{STANDOUT_MARK} **今日最突出（爆发）：{_color(standout.name, HIGHLIGHT_NAME_COLOR)}**"
+        f"{_format_rotrends_link(standout)}",
         _format_spotlight_reasons(standout),
     ]
     # 爆发的游戏也附上长线指标，便于判断是昙花一现还是能留住人。
@@ -229,8 +274,8 @@ def _build_long_term_element(spotlight: MarketSpotlight) -> CardElement:
     if spotlight.long_term:
         lines = [title]
         for entry in spotlight.long_term:
-            name = f"**{_color(entry.name, HIGHLIGHT_NAME_COLOR)}**"
-            details = _color(f"｜{entry.genre or '-'}｜CCU {entry.ccu:,}", SECONDARY_COLOR)
+            name = _format_entry_name(entry)
+            details = _color(f"｜{entry.genre or '-'}｜{_format_entry_ccu(entry)}", SECONDARY_COLOR)
             lines.append(
                 f"- {name}：长线 {entry.long_term_score} 分｜{_format_long_term_reasons(entry)} "
                 f"{details}{_format_earning_detail(entry)}"

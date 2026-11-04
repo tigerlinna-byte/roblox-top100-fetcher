@@ -474,6 +474,28 @@ test("skips scheduled daily brief dispatch when no schedule chats configured", a
   assert.equal(called, false);
 });
 
+test("dispatches ccu sample crons without requiring schedule chats", async () => {
+  for (const cron of ["10 7 * * *", "10 13 * * *", "10 19 * * *"]) {
+    const calls = [];
+    await handleScheduled(
+      { cron },
+      buildEnv({ SCHEDULE_CHAT_IDS: "", ROBLOX_MONEY_TEST_CHAT_IDS: "oc_chat_a" }),
+      buildCtx(),
+      async (url, init = {}) => {
+        calls.push({ url, init });
+        return new Response(null, { status: 204 });
+      },
+    );
+
+    assert.equal(calls.length, 1);
+    const dispatchBody = JSON.parse(calls[0].init.body);
+    assert.equal(dispatchBody.inputs.report_mode, "ccu_sample");
+    assert.equal(dispatchBody.inputs.trigger_source, "cloudflare_cron");
+    assert.equal(dispatchBody.inputs.chat_id, "");
+    assert.equal(dispatchBody.inputs.project_metrics_primary_project_test_chat_ids, "");
+  }
+});
+
 test("ignores retired 09:00 and 09:20 crons", async () => {
   let called = false;
   for (const cron of ["0 1 * * *", "20 1 * * *"]) {

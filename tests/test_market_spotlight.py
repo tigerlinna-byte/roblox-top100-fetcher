@@ -11,14 +11,31 @@ from app.models import GameRecord
 FETCHED_AT = "2026-10-27T01:00:00Z"
 
 
-def _snapshot(day: str, ccu: int, visits: int = 0, up: int = 0, down: int = 0) -> GameDailySnapshot:
-    return GameDailySnapshot(snapshot_date=day, ccu=ccu, visits=visits, up_votes=up, down_votes=down)
+def _snapshot(
+    day: str,
+    ccu: int,
+    visits: int = 0,
+    up: int = 0,
+    down: int = 0,
+    average_ccu: int | None = None,
+) -> GameDailySnapshot:
+    return GameDailySnapshot(
+        snapshot_date=day,
+        ccu=ccu,
+        visits=visits,
+        up_votes=up,
+        down_votes=down,
+        average_ccu=average_ccu,
+        peak_ccu=None if average_ccu is None else average_ccu * 2,
+        ccu_sample_count=0 if average_ccu is None else 4,
+    )
 
 
 def _record(rank: int, place_id: int, *, created_at: str, playing: int = 1000, genre: str = "Simulation") -> GameRecord:
     return GameRecord(
         rank=rank,
         place_id=place_id,
+        universe_id=place_id + 1000,
         name=f"Game {place_id}",
         genre=genre,
         playing=playing,
@@ -97,8 +114,8 @@ class MarketSpotlightTests(unittest.TestCase):
             ],
         }
         snapshots = {
-            1: _snapshot("2026-10-27", 90000, 50_000_000, 1000, 500),
-            2: _snapshot("2026-10-27", 26000, 10_000_000, 9700, 300),
+            1: _snapshot("2026-10-27", 90000, 50_000_000, 1000, 500, average_ccu=60000),
+            2: _snapshot("2026-10-27", 26000, 10_000_000, 9700, 300, average_ccu=23000),
         }
         history = {
             1: [_snapshot("2026-10-26", 30000, 20_000_000, 600, 300), _snapshot("2026-10-25", 3000, 1_000_000, 50, 20)],
@@ -131,6 +148,53 @@ class MarketSpotlightTests(unittest.TestCase):
         # 爆发的游戏同样计算长线指标，卡片里用来区分昙花一现：单局只有约 3 分钟。
         self.assertEqual(4, spotlight.long_term_recorded_days)
         self.assertIn("估算时长 3 分钟", [signal.reason for signal in spotlight.standout.long_term_signals])
+        self.assertEqual((1002, 23000, 46000, 4), (long_term.universe_id, long_term.average_ccu, long_term.peak_ccu, long_term.ccu_sample_count))
+
+    def test_missing_samples_show_a_hint_and_do_not_score_session(self) -> None:
+        records_by_sheet = {"top_trending_v4": [_record(3, 7, created_at="2026-10-20T00:00:00Z", playing=8000)]}
+        snapshots = {7: _snapshot("2026-10-27", 8000, 2_000_000)}
+        history = {7: [_snapshot("2026-10-26", 8000, 1_000_000), _snapshot("2026-10-25", 8000, 500_000)]}
+
+        spotlight = build_market_spotlight(records_by_sheet, {}, {}, snapshots, history)
+
+        signals = {signal.kind: signal for signal in spotlight.standout.long_term_signals}
+        self.assertEqual((0, "时长样本不足"), (signals["session"].score, signals["session"].reason))
+        self.assertIsNone(spotlight.standout.average_ccu)
+
+    def test_new_game_leaders_follow_playing_rank_without_repeating_other_sections(self) -> None:
+        new_games = [_record(rank, rank, created_at="2026-10-10T00:00:00Z") for rank in range(10, 16)]
+        records_by_sheet = {
+            "top_playing_now": [*new_games, _record(1, 1, created_at="2024-01-01T00:00:00Z", playing=900000)],
+            "top_trending_v4": [
+                # 榜单上升的新游占满其余栏，长期稳定的头部新游只能靠“头部新游”露面。
+                _record(rank, rank + 100, created_at="2026-10-10T00:00:00Z")
+                for rank in range(1, 9)
+            ],
+        }
+        previous_ranks = {
+            "top_trending_v4": {rank + 100: rank + 80 for rank in range(1, 9)},
+            "top_playing_now": {rank: rank for rank in range(10, 16)},
+        }
+
+        spotlight = build_market_spotlight(records_by_sheet, previous_ranks, {})
+
+        self.assertEqual([10, 11, 12], [entry.place_id for entry in spotlight.new_game_leaders])
+        shown = {spotlight.standout.place_id, *(entry.place_id for entry in spotlight.entries)}
+        self.assertFalse(shown & {entry.place_id for entry in spotlight.new_game_leaders})
+
+    def test_new_game_leaders_exclude_games_outside_playing_board_or_older_than_threshold(self) -> None:
+        records_by_sheet = {
+            "top_playing_now": [_record(5, 1, created_at="2026-08-01T00:00:00Z")],
+            "top_trending_v4": [
+                _record(1, 1, created_at="2026-08-01T00:00:00Z"),
+                _record(2, 2, created_at="2026-10-20T00:00:00Z"),
+            ],
+        }
+        previous_ranks = {"top_trending_v4": {1: 50, 2: 2}, "top_playing_now": {1: 40}}
+
+        spotlight = build_market_spotlight(records_by_sheet, previous_ranks, {})
+
+        self.assertEqual((), spotlight.new_game_leaders)
 
     def test_long_term_requires_enough_recorded_days(self) -> None:
         records_by_sheet = {"top_trending_v4": [_record(3, 5, created_at="2026-10-20T00:00:00Z", playing=8000)]}
@@ -145,7 +209,7 @@ class MarketSpotlightTests(unittest.TestCase):
 
     def test_afk_sessions_and_collapsing_ccu_are_not_rewarded(self) -> None:
         records_by_sheet = {"top_trending_v4": [_record(3, 6, created_at="2026-10-20T00:00:00Z", playing=4000)]}
-        snapshots = {6: _snapshot("2026-10-27", 4000, 1_010_000, 0, 0)}
+        snapshots = {6: _snapshot("2026-10-27", 4000, 1_010_000, 0, 0, average_ccu=7000)}
         history = {
             6: [
                 _snapshot("2026-10-26", 10000, 1_000_000),

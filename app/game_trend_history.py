@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 from .daily_brief_rules import (
@@ -31,13 +31,20 @@ HISTORY_FORMAT_VERSION = 1
 
 @dataclass(frozen=True)
 class GameDailySnapshot:
-    """某款游戏某一天的快照；访问与投票都是累计值，相邻两天相减得到当日增量。"""
+    """某款游戏某一天的快照；访问与投票都是累计值，相邻两天相减得到当日增量。
+
+    average_ccu、peak_ccu 来自一天多次采样（见 game_ccu_samples），采样不足或旧快照为 None；
+    peak_ccu 只是采样值中的最大值，通常低于真实峰值。
+    """
 
     snapshot_date: str
     ccu: int
     visits: int
     up_votes: int
     down_votes: int
+    average_ccu: int | None = None
+    peak_ccu: int | None = None
+    ccu_sample_count: int = 0
 
 
 # 键为 place_id，值按日期从新到旧排列。
@@ -49,6 +56,7 @@ class GameTrendMetrics:
     """由快照历史计算出的长线指标；无法计算的项为 None。
 
     like_ratio_is_recent 为 True 表示好评率来自区间内新增投票，False 表示新增投票太少、改用累计值。
+    session_samples_missing 为 True 表示有新增访问可以估算时长，但当天 CCU 采样不足。
     """
 
     recorded_days: int
@@ -60,6 +68,10 @@ class GameTrendMetrics:
     like_ratio: float | None
     like_ratio_is_recent: bool
     like_ratio_change: float | None
+    session_samples_missing: bool = False
+    average_ccu: int | None = None
+    peak_ccu: int | None = None
+    ccu_sample_count: int = 0
 
 
 def build_game_daily_snapshots(
@@ -145,15 +157,17 @@ def merge_game_trend_history(
 
 
 def serialize_game_trend_history(history: GameTrendHistory) -> str:
-    """序列化为紧凑 JSON；每条快照用数组 [日期, CCU, 访问, 点赞, 点踩] 控制文件体积。"""
+    """序列化为紧凑 JSON；每条快照用数组 [日期, CCU, 访问, 点赞, 点踩] 控制文件体积，有采样时再追加 [均值, 峰值, 次数]。"""
 
-    games = {
-        str(place_id): [
-            [item.snapshot_date, item.ccu, item.visits, item.up_votes, item.down_votes] for item in snapshots
-        ]
-        for place_id, snapshots in sorted(history.items())
-    }
+    games = {str(place_id): [_serialize_snapshot(item) for item in snapshots] for place_id, snapshots in sorted(history.items())}
     return json.dumps({"version": HISTORY_FORMAT_VERSION, "games": games}, separators=(",", ":"))
+
+
+def _serialize_snapshot(item: GameDailySnapshot) -> list[str | int]:
+    row: list[str | int] = [item.snapshot_date, item.ccu, item.visits, item.up_votes, item.down_votes]
+    if item.average_ccu is not None and item.peak_ccu is not None:
+        row += [item.average_ccu, item.peak_ccu, item.ccu_sample_count]
+    return row
 
 
 def build_game_trend_metrics(snapshot: GameDailySnapshot, history: list[GameDailySnapshot]) -> GameTrendMetrics:
@@ -187,6 +201,10 @@ def build_game_trend_metrics(snapshot: GameDailySnapshot, history: list[GameDail
         like_ratio=like_ratio,
         like_ratio_is_recent=like_ratio_is_recent,
         like_ratio_change=_like_ratio_change(current, earlier, current_date),
+        session_samples_missing=interval_previous is not None and current.average_ccu is None,
+        average_ccu=current.average_ccu,
+        peak_ccu=current.peak_ccu,
+        ccu_sample_count=current.ccu_sample_count,
     )
 
 
@@ -228,15 +246,17 @@ def _session_minutes(
     previous: GameDailySnapshot | None,
     gap_days: int,
 ) -> float | None:
-    """区间平均 CCU × 1440 ÷ 日均新增访问；访问没有增长时无法估算。"""
+    """全天平均 CCU × 1440 ÷ 日均新增访问；访问没有增长时无法估算。
 
-    if previous is None or gap_days <= 0:
+    采样不足时不估算，不用单次 CCU 代替：早报时刻的在线人数代表不了全天，会把部分游戏的时长估高近一倍。
+    """
+
+    if previous is None or gap_days <= 0 or current.average_ccu is None:
         return None
     daily_visits = (current.visits - previous.visits) / gap_days
     if daily_visits <= 0:
         return None
-    average_ccu = (current.ccu + previous.ccu) / 2
-    return average_ccu * MINUTES_PER_DAY / daily_visits
+    return current.average_ccu * MINUTES_PER_DAY / daily_visits
 
 
 def _resolve_like_ratio(
@@ -279,15 +299,19 @@ def _cumulative_like_ratio(snapshot: GameDailySnapshot) -> float | None:
 
 
 def _parse_snapshot(entry: object) -> GameDailySnapshot | None:
-    if not isinstance(entry, list) or len(entry) != 5:
+    # 5 个字段是没有采样的快照（含多次采样上线前的旧快照），8 个字段附带采样的均值、峰值与次数。
+    if not isinstance(entry, list) or len(entry) not in (5, 8):
         return None
     try:
-        return GameDailySnapshot(
+        snapshot = GameDailySnapshot(
             snapshot_date=date.fromisoformat(str(entry[0])).isoformat(),
             ccu=int(entry[1]),
             visits=int(entry[2]),
             up_votes=int(entry[3]),
             down_votes=int(entry[4]),
         )
+        if len(entry) == 8:
+            return replace(snapshot, average_ccu=int(entry[5]), peak_ccu=int(entry[6]), ccu_sample_count=int(entry[7]))
+        return snapshot
     except (TypeError, ValueError):
         return None

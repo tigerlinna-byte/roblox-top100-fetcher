@@ -49,6 +49,8 @@ class Config:
     # 榜单游戏每日快照历史（长线潜力用）存放的数据分支与文件；体积超出 Variable 上限，所以放仓库文件。
     game_trend_history_branch: str = "data-history"
     game_trend_history_path: str = "game_trend_history.json"
+    # 一天多次 CCU 采样的当前窗口，与快照放在同一数据分支。
+    game_ccu_samples_path: str = "game_ccu_samples.json"
     feishu_top_trending_spreadsheet_title: str = "Roblox Top 100"
     feishu_top_trending_test_spreadsheet_token: str = ""
     feishu_top_trending_test_sheet_id: str = ""
@@ -152,6 +154,7 @@ def load_config() -> Config:
         market_ccu_history=os.getenv("MARKET_CCU_HISTORY", ""),
         game_trend_history_branch=os.getenv("GAME_TREND_HISTORY_BRANCH", "") or "data-history",
         game_trend_history_path=os.getenv("GAME_TREND_HISTORY_PATH", "") or "game_trend_history.json",
+        game_ccu_samples_path=os.getenv("GAME_CCU_SAMPLES_PATH", "") or "game_ccu_samples.json",
         feishu_top_trending_spreadsheet_title=os.getenv(
             "FEISHU_TOP_TRENDING_SPREADSHEET_TITLE",
             "Roblox Top 100",

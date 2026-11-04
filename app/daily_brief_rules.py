@@ -150,6 +150,9 @@ SPOTLIGHT_EARNING_WEEKLY_CLIMB_SCORE = 2
 SPOTLIGHT_MAX_ENTRIES = 8
 # “今日最突出”的最低总分，没有游戏达到时不评选，避免硬凑。
 SPOTLIGHT_STANDOUT_MIN_SCORE = 3
+# 头部新游：爆发分偏爱榜单变化，排名稳定的头部新游容易落选，所以按在玩榜排名单列；不与其他栏重复。
+SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY = "top_playing_now"
+SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES = 3
 
 # ---------------------------------------------------------------------------
 # 长线潜力（基于每日历史快照）
@@ -175,7 +178,13 @@ LONG_TERM_PEAK_COLLAPSE_SCORE = -2
 # 可持续性：连续在榜（每天都有快照）达到该天数加分。
 LONG_TERM_BOARD_STREAK_DAYS = 7
 LONG_TERM_BOARD_STREAK_SCORE = 1
-# 估算单局时长（分钟）= 区间平均 CCU × 1440 ÷ 日均新增访问；只有每天一次快照，只适合跨天比较。
+# 一天多次采样 CCU：3 个定时采样（UTC 07:10、13:10、19:10）加早报自身，共 4 次。
+CCU_SAMPLE_EXPECTED_COUNT = 4
+# 少于该次数不算均值，单局时长不计分，也不用单次 CCU 代替。
+CCU_SAMPLE_MIN_COUNT = 3
+# 距上次采样不足该秒数时跳过，避免定时任务重复触发时同一时段被算两次。
+CCU_SAMPLE_MIN_INTERVAL_SECONDS = 3600
+# 估算单局时长（分钟）= 全天平均 CCU × 1440 ÷ 日均新增访问。
 LONG_TERM_SESSION_LONG_MINUTES = 20
 LONG_TERM_SESSION_LONG_SCORE = 2
 LONG_TERM_SESSION_SHORT_MINUTES = 10

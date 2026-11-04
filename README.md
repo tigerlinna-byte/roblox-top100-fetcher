@@ -10,7 +10,8 @@
 | `top_trending_sheet` | 飞书 `/roblox-top-day` | 抓取 `top-trending`、`up-and-coming`、`top-playing-now`、`top-earning`，更新飞书多 Sheet 表格并发送 `今日关注` 卡片 | `data/top_trending_YYYY-MM-DD.json/csv` + 飞书卡片 + 飞书表格链接 |
 | `roblox_project_daily_metrics` | 飞书 `/roblox-project-metrics` | 抓取 Roblox Creator Analytics 项目日报，更新每个项目各自的飞书表格 | `data/project_metrics_YYYY-MM-DD.json/csv` + 每个项目的飞书表格链接 |
 | `roblox_money` | test 群 `/roblox-money` | 抓取两个 Roblox 项目的总收入，按配置汇率换算美元并发送卡片日报 | `data/roblox_money_YYYY-MM-DD.json/csv` + 飞书收入卡片 |
-| `daily_brief` | 飞书 `/roblox-brief`、Cloudflare Cron（北京时间 09:10，唯一的定时任务） | 一次运行汇总行业趋势（大盘涨跌、值得关注项目、品类风向）、自家项目结论与收入，全量群与精简群各发一张早报卡片 | `data/daily_brief_YYYY-MM-DD.json` + `data/daily_brief_cards_YYYY-MM-DD.json` + 飞书早报卡片 |
+| `daily_brief` | 飞书 `/roblox-brief`、Cloudflare Cron（北京时间 09:10） | 一次运行汇总行业趋势（大盘涨跌、值得关注项目、品类风向）、自家项目结论与收入，全量群与精简群各发一张早报卡片 | `data/daily_brief_YYYY-MM-DD.json` + `data/daily_brief_cards_YYYY-MM-DD.json` + 飞书早报卡片 |
+| `ccu_sample` | Cloudflare Cron（UTC 07:10、13:10、19:10） | 为下一次早报采样 CCU，写入数据分支 `data-history`；不发飞书消息，手动运行不写数据 | `data/ccu_sample_YYYY-MM-DD.json` + 数据分支 `game_ccu_samples.json` |
 
 ## 系统结构
 

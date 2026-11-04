@@ -59,6 +59,8 @@ from .daily_brief_rules import (
     SPOTLIGHT_MULTI_SHEET_SCORE_PER_EXTRA,
     SPOTLIGHT_NEW_ENTRY_SCORE,
     SPOTLIGHT_NEW_GAME_FULL_SCORE_DAYS,
+    SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES,
+    SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY,
     SPOTLIGHT_NEW_GAME_MAX_AGE_DAYS,
     SPOTLIGHT_NEW_GAME_SCORE,
     SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS,
@@ -143,7 +145,7 @@ class SpotlightEntry:
     """一个值得关注的游戏。
 
     signals 衡量“爆发”，决定今日最突出与值得关注的排序；long_term_signals 衡量能否长线，
-    历史快照不足时为空。
+    历史快照不足时为空。average_ccu、peak_ccu 来自一天多次采样，采样不足时为 None。
     """
 
     place_id: int
@@ -154,6 +156,10 @@ class SpotlightEntry:
     signals: tuple[SpotlightSignal, ...]
     long_term_signals: tuple[SpotlightSignal, ...] = ()
     earning: EarningMovement | None = None
+    universe_id: int | None = None
+    average_ccu: int | None = None
+    peak_ccu: int | None = None
+    ccu_sample_count: int = 0
 
     @property
     def score(self) -> int:
@@ -173,14 +179,15 @@ class MarketSpotlight:
     """早报中的值得关注项目。
 
     standout 为“今日最突出（爆发）”，未达门槛时为 None；long_term 为“长线潜力”；
-    entries 为其余值得关注项目，三者互不重复。long_term_recorded_days 为候选游戏中最多的快照天数，
-    用于提示长线指标还在积累。
+    entries 为其余值得关注项目；new_game_leaders 为“头部新游”，四者互不重复。
+    long_term_recorded_days 为候选游戏中最多的快照天数，用于提示长线指标还在积累。
     """
 
     standout: SpotlightEntry | None
     entries: tuple[SpotlightEntry, ...]
     long_term: tuple[SpotlightEntry, ...] = ()
     long_term_recorded_days: int = 0
+    new_game_leaders: tuple[SpotlightEntry, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -241,6 +248,7 @@ def build_market_spotlight(
         ):
             continue
         long_term_signals: tuple[SpotlightSignal, ...] = ()
+        metrics: GameTrendMetrics | None = None
         snapshot = (trend_snapshots or {}).get(place_id)
         if snapshot is not None:
             metrics = build_game_trend_metrics(snapshot, (trend_history or {}).get(place_id, []))
@@ -261,6 +269,10 @@ def build_market_spotlight(
                 signals=signals,
                 long_term_signals=long_term_signals,
                 earning=earning,
+                universe_id=candidate.best_record.universe_id,
+                average_ccu=metrics.average_ccu if metrics else None,
+                peak_ccu=metrics.peak_ccu if metrics else None,
+                ccu_sample_count=metrics.ccu_sample_count if metrics else 0,
             )
         )
 
@@ -280,12 +292,33 @@ def build_market_spotlight(
     if standout is not None:
         shown_place_ids.add(standout.place_id)
     remaining_slots = SPOTLIGHT_MAX_ENTRIES - len(shown_place_ids)
+    entries = tuple(entry for entry in scored if entry.place_id not in shown_place_ids)[:remaining_slots]
+    shown_place_ids.update(entry.place_id for entry in entries)
     return MarketSpotlight(
         standout=standout,
-        entries=tuple(entry for entry in scored if entry.place_id not in shown_place_ids)[:remaining_slots],
+        entries=entries,
         long_term=tuple(long_term),
         long_term_recorded_days=long_term_recorded_days,
+        new_game_leaders=_select_new_game_leaders(scored, shown_place_ids),
     )
+
+
+def _select_new_game_leaders(
+    scored: list[SpotlightEntry],
+    shown_place_ids: set[int],
+) -> tuple[SpotlightEntry, ...]:
+    """按在玩榜排名选出其他栏没有展示的新游；上线天数沿用新游信号的门槛。"""
+
+    label = SHEET_LABELS[SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY]
+    leaders = [
+        entry
+        for entry in scored
+        if entry.place_id not in shown_place_ids
+        and label in dict(entry.sheet_ranks)
+        and any(signal.kind == "new_game" for signal in entry.signals)
+    ]
+    leaders.sort(key=lambda entry: dict(entry.sheet_ranks)[label])
+    return tuple(leaders[:SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES])
 
 
 def build_genre_wind_lines(
@@ -676,6 +709,8 @@ def _collect_long_term_signals(
             signals.append(
                 SpotlightSignal("session", session_score, f"估算时长 {metrics.session_minutes:.0f} 分钟")
             )
+    elif metrics.session_samples_missing:
+        signals.append(SpotlightSignal("session", 0, "时长样本不足"))
 
     if metrics.like_ratio is not None:
         if metrics.like_ratio >= LONG_TERM_RATING_HIGH:

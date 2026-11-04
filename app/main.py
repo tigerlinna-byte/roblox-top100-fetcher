@@ -25,6 +25,15 @@ from .daily_brief_rules import (
     REVENUE_ALERT_METRIC_LABEL,
 )
 from .feishu_client import FeishuClient, FeishuClientError
+from .game_ccu_samples import (
+    add_ccu_sample,
+    attach_ccu_summaries,
+    build_ccu_sample_window,
+    describe_ccu_sample_problem,
+    is_sampled_recently,
+    parse_ccu_sample_window,
+    serialize_ccu_sample_window,
+)
 from .game_trend_history import (
     GameDailySnapshot,
     GameTrendHistory,
@@ -121,6 +130,9 @@ PROJECT_METRICS_REPORT_MODE = "roblox_project_daily_metrics"
 ROBLOX_MONEY_REPORT_MODE = "roblox_money"
 # 每日早报：一次运行汇总行业趋势、自家项目与收入。
 DAILY_BRIEF_REPORT_MODE = "daily_brief"
+# CCU 采样：只为下一次早报积累全天均值，不发飞书消息。
+CCU_SAMPLE_REPORT_MODE = "ccu_sample"
+CCU_SAMPLE_OUTPUT_PREFIX = "ccu_sample"
 # 早报卡片落盘文件前缀，便于在 artifacts 中查看各群实际收到的内容。
 DAILY_BRIEF_CARDS_OUTPUT_PREFIX = "daily_brief_cards"
 # 值得关注打分明细落盘文件前缀，包含爆发分、长线分及其依据，便于调整阈值。
@@ -129,6 +141,7 @@ DAILY_BRIEF_SPOTLIGHT_OUTPUT_PREFIX = "daily_brief_spotlight"
 MARKET_SECTION_LABEL = "行业趋势"
 PROJECT_SECTION_LABEL = "自家项目"
 MONEY_SECTION_LABEL = "收入"
+CCU_SAMPLE_LABEL = "CCU 采样"
 PROJECT_METRICS_SHEET_MAX_ROWS = 365
 PROJECT_METRICS_SHEET_END_COLUMN = get_project_metrics_end_column_letter()
 # 以下项目的日报信息仅发送到现有全量群（test 群）名单。
@@ -178,6 +191,8 @@ def run_once() -> int:
     configure_logging()
     cfg = load_config()
     logging.info("Starting Roblox sync in mode %s.", cfg.run_report_mode)
+    if cfg.run_report_mode == CCU_SAMPLE_REPORT_MODE:
+        return _run_ccu_sample(cfg)
     start = time.time()
 
     try:
@@ -221,6 +236,58 @@ def _notify_failure(cfg: Config, reason: str) -> None:
         FeishuClient(cfg).send_group_markdown(build_failure_markdown(cfg, reason))
     except Exception:  # noqa: BLE001
         logging.exception("Failed to send failure notification.")
+
+
+def _run_ccu_sample(cfg: Config) -> int:
+    """按当前窗口的名单采样一次 CCU；只有定时任务写入数据分支，手动运行只输出结果。
+
+    不发飞书消息：采样失败只让本次运行失败，由下一次早报在“数据异常”里说明实际采样次数。
+    """
+
+    client = GitHubClient(cfg)
+    branch = cfg.game_trend_history_branch
+    path = cfg.game_ccu_samples_path
+    is_scheduled = cfg.run_trigger_source == SCHEDULED_TRIGGER_SOURCE
+    try:
+        existing = client.get_repository_file(path, branch=branch)
+    except GitHubClientError:
+        logging.exception("Failed to read CCU samples from branch %s.", branch)
+        return 1
+    window = parse_ccu_sample_window(existing.content) if existing else None
+    if existing is None or window is None:
+        logging.warning("No CCU sample window yet; the next scheduled daily brief opens one.")
+        return 0
+
+    sampled_at = now_iso()
+    if is_scheduled and is_sampled_recently(window, sampled_at):
+        logging.info("CCU was sampled less than an hour ago; skipping this run.")
+        return 0
+    try:
+        ccu_by_universe = RobloxClient(cfg).fetch_ccu_by_universe(list(window.place_ids_by_universe))
+    except RobloxClientError:
+        logging.exception("Failed to fetch CCU samples.")
+        return 1
+
+    write_json_document(
+        cfg.output_dir,
+        {"sampled_at": sampled_at, "ccu_by_universe": {str(key): value for key, value in ccu_by_universe.items()}},
+        prefix=CCU_SAMPLE_OUTPUT_PREFIX,
+    )
+    logging.info("Sampled CCU for %d of %d games.", len(ccu_by_universe), len(window.place_ids_by_universe))
+    if not is_scheduled:
+        return 0
+    try:
+        client.put_repository_file(
+            path,
+            serialize_ccu_sample_window(add_ccu_sample(window, ccu_by_universe, sampled_at)),
+            branch=branch,
+            sha=existing.sha,
+            message=f"chore(data): 更新 CCU 采样 {sampled_at}",
+        )
+    except GitHubClientError:
+        logging.exception("Failed to persist CCU samples to branch %s.", branch)
+        return 1
+    return 0
 
 
 
@@ -753,7 +820,13 @@ def _build_market_section(
         previous_ranks_by_sheet=previous_ranks_by_sheet,
         recent_place_ids_by_sheet=recent_place_ids_by_sheet,
     )
-    trend_snapshots = build_game_daily_snapshots(records_by_sheet, brief_date)
+    trend_snapshots = _sync_ccu_samples(
+        cfg,
+        records_by_sheet,
+        build_game_daily_snapshots(records_by_sheet, brief_date),
+        brief_date,
+        failures,
+    )
     trend_history = _load_game_trend_history(cfg, trend_snapshots, brief_date)
     pulse = _build_market_pulse(cfg, records_by_sheet, brief_date)
     section = MarketSection(
@@ -774,6 +847,51 @@ def _build_market_section(
     except GitHubClientError:
         logging.exception("Failed to persist previous ranks for daily brief.")
     return section
+
+
+def _sync_ccu_samples(
+    cfg: Config,
+    records_by_sheet: dict[str, list[GameRecord]],
+    snapshots: dict[int, GameDailySnapshot],
+    brief_date: date,
+    failures: list[BriefFailure],
+) -> dict[int, GameDailySnapshot]:
+    """把上一窗口的 CCU 采样汇总进当天快照；定时任务再开启下一窗口，同一天重跑时不重置。
+
+    采样有问题时如实进入“数据异常”，时长按样本不足处理；写入失败只记录日志，次日会显示窗口已过期。
+    """
+
+    client = GitHubClient(cfg)
+    branch = cfg.game_trend_history_branch
+    path = cfg.game_ccu_samples_path
+    try:
+        existing = client.get_repository_file(path, branch=branch)
+    except GitHubClientError:
+        logging.exception("Failed to read CCU samples from branch %s.", branch)
+        failures.append(BriefFailure("market", "", CCU_SAMPLE_LABEL, "读取采样数据失败，时长暂不计分"))
+        return snapshots
+
+    window = parse_ccu_sample_window(existing.content) if existing else None
+    problem = describe_ccu_sample_problem(window, brief_date)
+    if problem:
+        failures.append(BriefFailure("market", "", CCU_SAMPLE_LABEL, problem))
+    attached = attach_ccu_summaries(snapshots, window, brief_date)
+
+    is_window_open_today = window is not None and window.window_date == brief_date.isoformat()
+    if cfg.run_trigger_source != SCHEDULED_TRIGGER_SOURCE or is_window_open_today:
+        return attached
+    try:
+        if not client.put_repository_file(
+            path,
+            serialize_ccu_sample_window(build_ccu_sample_window(records_by_sheet, snapshots, brief_date)),
+            branch=branch,
+            sha=existing.sha if existing else "",
+            message=f"chore(data): 开启 CCU 采样窗口 {brief_date.isoformat()}",
+        ):
+            logging.warning("CCU sample window was not persisted: GitHub repository or token is not configured.")
+    except GitHubClientError:
+        logging.exception("Failed to persist CCU sample window to branch %s.", branch)
+    return attached
 
 
 def _load_game_trend_history(

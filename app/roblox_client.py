@@ -97,6 +97,19 @@ class RobloxClient:
             include_thumbnails=include_thumbnails,
         )
 
+    def fetch_ccu_by_universe(self, universe_ids: list[int]) -> dict[int, int]:
+        """抓取各游戏当前在线人数；接口没有返回 playing 的游戏不计入，不按 0 处理。"""
+
+        details = self._fetch_game_details([str(universe_id) for universe_id in universe_ids])
+        ccu_by_universe = {
+            universe_id: _as_int(item["playing"])
+            for universe_id, item in details.items()
+            if item.get("playing") is not None
+        }
+        if universe_ids and not ccu_by_universe:
+            raise RobloxClientError("Games API returned no playing counts.")
+        return ccu_by_universe
+
     def _fetch_games_for_sort(
         self,
         sort_id: str,

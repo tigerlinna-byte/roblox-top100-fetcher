@@ -17,8 +17,24 @@ from app.models import GameRecord
 TODAY = date(2026, 10, 27)
 
 
-def _snapshot(day: str, ccu: int, visits: int = 0, up: int = 0, down: int = 0) -> GameDailySnapshot:
-    return GameDailySnapshot(snapshot_date=day, ccu=ccu, visits=visits, up_votes=up, down_votes=down)
+def _snapshot(
+    day: str,
+    ccu: int,
+    visits: int = 0,
+    up: int = 0,
+    down: int = 0,
+    average_ccu: int | None = None,
+) -> GameDailySnapshot:
+    return GameDailySnapshot(
+        snapshot_date=day,
+        ccu=ccu,
+        visits=visits,
+        up_votes=up,
+        down_votes=down,
+        average_ccu=average_ccu,
+        peak_ccu=None if average_ccu is None else average_ccu * 2,
+        ccu_sample_count=0 if average_ccu is None else 4,
+    )
 
 
 def _record(rank: int, place_id: int, *, created_at: str, playing: int, visits: int = 0) -> GameRecord:
@@ -63,6 +79,14 @@ class GameTrendHistoryStorageTests(unittest.TestCase):
 
         self.assertEqual(history, parse_game_trend_history(serialize_game_trend_history(history)))
 
+    def test_samples_round_trip_alongside_old_snapshots(self) -> None:
+        history = {7: [_snapshot("2026-10-27", 10, 20, 3, 1, average_ccu=8), _snapshot("2026-10-26", 9, 15, 2, 1)]}
+
+        serialized = serialize_game_trend_history(history)
+
+        self.assertIn('[["2026-10-27",10,20,3,1,8,16,4],["2026-10-26",9,15,2,1]]', serialized)
+        self.assertEqual(history, parse_game_trend_history(serialized))
+
     def test_parse_ignores_malformed_content(self) -> None:
         self.assertEqual({}, parse_game_trend_history("not json"))
         self.assertEqual(
@@ -78,7 +102,7 @@ class GameTrendMetricsTests(unittest.TestCase):
             _snapshot("2026-10-25", 22000, 8_000_000, 8000, 260),
             _snapshot("2026-10-24", 28000, 7_000_000, 6000, 500),
         ]
-        today = _snapshot("2026-10-27", 26000, 10_000_000, 9700, 300)
+        today = _snapshot("2026-10-27", 26000, 10_000_000, 9700, 300, average_ccu=23000)
 
         metrics = build_game_trend_metrics(today, history)
 
@@ -86,11 +110,28 @@ class GameTrendMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(26000 / ((28000 + 22000 + 20000) / 3) - 1, metrics.ccu_change_ratio)
         self.assertAlmostEqual(26000 / 28000, metrics.peak_ratio)
         self.assertEqual(4, metrics.board_streak_days)
-        # 区间平均 CCU 23000 × 1440 ÷ 日新增访问 1,000,000
+        # 全天平均 CCU 23000 × 1440 ÷ 日新增访问 1,000,000
         self.assertAlmostEqual(33.12, metrics.session_minutes)
+        self.assertFalse(metrics.session_samples_missing)
+        self.assertEqual((23000, 46000, 4), (metrics.average_ccu, metrics.peak_ccu, metrics.ccu_sample_count))
         self.assertAlmostEqual(700 / 720, metrics.like_ratio)
         self.assertTrue(metrics.like_ratio_is_recent)
         self.assertAlmostEqual(0.97 - 6000 / 6500, metrics.like_ratio_change)
+
+    def test_missing_samples_skip_session_instead_of_using_single_ccu(self) -> None:
+        history = [_snapshot("2026-10-26", 20000, 9_000_000)]
+        today = _snapshot("2026-10-27", 26000, 10_000_000)
+
+        metrics = build_game_trend_metrics(today, history)
+
+        self.assertIsNone(metrics.session_minutes)
+        self.assertTrue(metrics.session_samples_missing)
+
+    def test_first_day_on_board_is_not_reported_as_missing_samples(self) -> None:
+        metrics = build_game_trend_metrics(_snapshot("2026-10-27", 26000, 10_000_000), [])
+
+        self.assertIsNone(metrics.session_minutes)
+        self.assertFalse(metrics.session_samples_missing)
 
     def test_long_gap_skips_session_and_falls_back_to_cumulative_rating(self) -> None:
         history = [_snapshot("2026-10-20", 5000, 1000, 100, 100)]

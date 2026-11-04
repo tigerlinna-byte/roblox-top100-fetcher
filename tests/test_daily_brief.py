@@ -149,6 +149,49 @@ class DailyBriefCardTests(unittest.TestCase):
         )
         self.assertIn("今天没有长线分达到门槛的项目。", text)
 
+    def test_card_shows_new_game_leaders_samples_and_rotrends_links(self) -> None:
+        sampled = SpotlightEntry(
+            place_id=1,
+            universe_id=1001,
+            name="DONT SPLASH",
+            genre="Runner",
+            ccu=80778,
+            sheet_ranks=(("在玩榜", 12), ("收入榜", 44)),
+            signals=(SpotlightSignal("new_game", 3, "上线 18 天"),),
+            average_ccu=60000,
+            peak_ccu=90000,
+            ccu_sample_count=4,
+        )
+        unsampled = SpotlightEntry(
+            place_id=2,
+            name="No Universe",
+            genre="RPG",
+            ccu=2778,
+            sheet_ranks=(("在玩榜", 38),),
+            signals=(SpotlightSignal("new_game", 2, "上线 23 天"),),
+        )
+        content = DailyBriefContent(
+            brief_date="2026-11-05",
+            market=MarketSection(
+                pulse=None,
+                spotlight=MarketSpotlight(standout=None, entries=(), new_game_leaders=(sampled, unsampled)),
+                genre_lines=(),
+            ),
+            projects=(),
+            revenues=(),
+            failures=(),
+        )
+
+        text = _card_text(build_daily_brief_card(Config(), content, show_revenue=False))
+
+        self.assertIn("🆕 头部新游", text)
+        self.assertNotIn("今天没有发现值得特别关注的项目", text)
+        self.assertIn("[Rotrends](https://www.rotrends.com/game/1001)：在玩榜 #12，上线 18 天", text)
+        self.assertIn("日均 CCU 60,000｜近似峰值 90,000", text)
+        self.assertIn("在玩榜 #38，上线 23 天", text)
+        self.assertIn("当次 CCU 2,778", text)
+        self.assertEqual(1, text.count("[Rotrends]"))
+
     def test_strip_project_title_removes_sheet_suffix(self) -> None:
         self.assertEqual("Shoot or Shot", strip_project_title("Shoot or Shot 每日数据"))
         self.assertEqual("Troll ur friends", strip_project_title("Troll ur friends"))
@@ -351,22 +394,113 @@ class DailyBriefFlowTests(unittest.TestCase):
         self.github_client_cls.return_value.upsert_repository_variable.assert_not_called()
         self.github_client_cls.return_value.put_repository_file.assert_not_called()
 
-    def test_scheduled_run_writes_game_trend_history_to_data_branch(self) -> None:
-        self.github_client_cls.return_value.get_repository_file.return_value = RepositoryFile(
-            content='{"version":1,"games":{"1":[["2026-10-25",40000,900,90,10]]}}',
-            sha="abc",
+    def _use_data_branch_files(self, **files: str) -> None:
+        """按文件名返回数据分支上的内容，键去掉 .json 后缀；未列出的文件视为不存在。"""
+
+        self.github_client_cls.return_value.get_repository_file.side_effect = lambda path, *, branch: (
+            RepositoryFile(content=files[path.removesuffix(".json")], sha=f"sha-{path}")
+            if path.removesuffix(".json") in files
+            else None
         )
+
+    def _written_files(self) -> dict[str, tuple[str, str]]:
+        """本次写入数据分支的文件：文件名 -> (内容, 基于的 sha)。"""
+
+        put = self.github_client_cls.return_value.put_repository_file
+        return {call.args[0]: (call.args[1], call.kwargs["sha"]) for call in put.call_args_list}
+
+    def test_scheduled_run_writes_game_trend_history_to_data_branch(self) -> None:
+        self._use_data_branch_files(game_trend_history='{"version":1,"games":{"1":[["2026-10-25",40000,900,90,10]]}}')
 
         with patch("app.main.resolve_local_today", return_value=date(2026, 10, 27)):
             _notify_success(self.cfg, self.payload)
 
         put = self.github_client_cls.return_value.put_repository_file
-        path, content = put.call_args.args
-        self.assertEqual("game_trend_history.json", path)
         self.assertEqual("data-history", put.call_args.kwargs["branch"])
-        self.assertEqual("abc", put.call_args.kwargs["sha"])
+        content, sha = self._written_files()["game_trend_history.json"]
+        self.assertEqual("sha-game_trend_history.json", sha)
         snapshots = json.loads(content)["games"]["1"]
         self.assertEqual([["2026-10-27", 50000, 0, 0, 0], ["2026-10-25", 40000, 900, 90, 10]], snapshots)
+
+    def test_scheduled_run_applies_previous_samples_and_opens_next_window(self) -> None:
+        self._use_data_branch_files(
+            game_ccu_samples=(
+                '{"version":1,"window_date":"2026-10-26","universes":{"100":1},'
+                '"sampled_at":["t1","t2","t3"],"games":{"1":[10000,20000,30000]}}'
+            )
+        )
+
+        with patch("app.main.resolve_local_today", return_value=date(2026, 10, 27)):
+            _notify_success(self.cfg, self.payload)
+
+        written = self._written_files()
+        snapshot = json.loads(written["game_trend_history.json"][0])["games"]["1"][0]
+        # 3 次定时采样加早报自身 50000：均值 27500，近似峰值 50000，共 4 次。
+        self.assertEqual(["2026-10-27", 50000, 0, 0, 0, 27500, 50000, 4], snapshot)
+        window_content, window_sha = written["game_ccu_samples.json"]
+        window = json.loads(window_content)
+        self.assertEqual("sha-game_ccu_samples.json", window_sha)
+        self.assertEqual("2026-10-27", window["window_date"])
+        self.assertEqual([], window["sampled_at"])
+        self.assertEqual({}, window["games"])
+        self.assertNotIn("CCU 采样", _card_text(self._sent_cards()[LIMITED_CHAT]))
+
+    def test_too_few_samples_are_reported_to_both_audiences(self) -> None:
+        self._use_data_branch_files(
+            game_ccu_samples=(
+                '{"version":1,"window_date":"2026-10-26","universes":{"100":1},'
+                '"sampled_at":["t1"],"games":{"1":[10000]}}'
+            )
+        )
+
+        with patch("app.main.resolve_local_today", return_value=date(2026, 10, 27)):
+            _notify_success(self.cfg, self.payload)
+
+        snapshot = json.loads(self._written_files()["game_trend_history.json"][0])["games"]["1"][0]
+        self.assertEqual(["2026-10-27", 50000, 0, 0, 0], snapshot)
+        for card in self._sent_cards().values():
+            self.assertIn("CCU 采样 2/4 次，时长暂不计分", _card_text(card))
+
+    def test_rerun_on_same_day_keeps_samples_of_the_open_window(self) -> None:
+        self._use_data_branch_files(
+            game_ccu_samples=(
+                '{"version":1,"window_date":"2026-10-27","universes":{"100":1},'
+                '"sampled_at":["t1"],"games":{"1":[10000]}}'
+            )
+        )
+
+        with patch("app.main.resolve_local_today", return_value=date(2026, 10, 27)):
+            _notify_success(self.cfg, self.payload)
+
+        self.assertNotIn("game_ccu_samples.json", self._written_files())
+        self.assertNotIn("CCU 采样", _card_text(self._sent_cards()[LIMITED_CHAT]))
+
+    def test_manual_run_uses_samples_without_resetting_window(self) -> None:
+        cfg = Config(**{**self.cfg.__dict__, "run_trigger_source": "feishu_command"})
+        self._use_data_branch_files(
+            game_ccu_samples=(
+                '{"version":1,"window_date":"2026-10-26","universes":{"100":1},'
+                '"sampled_at":["t1"],"games":{"1":[10000]}}'
+            )
+        )
+
+        with patch("app.main.resolve_local_today", return_value=date(2026, 10, 27)):
+            _notify_success(cfg, self.payload)
+
+        self.github_client_cls.return_value.put_repository_file.assert_not_called()
+
+    def test_samples_read_failure_is_reported(self) -> None:
+        def get_file(path: str, *, branch: str) -> None:
+            if path == "game_ccu_samples.json":
+                raise GitHubClientError("boom")
+
+        self.github_client_cls.return_value.get_repository_file.side_effect = get_file
+
+        with self.assertLogs(level="ERROR"):
+            _notify_success(self.cfg, self.payload)
+
+        self.assertNotIn("game_ccu_samples.json", self._written_files())
+        self.assertIn("读取采样数据失败，时长暂不计分", _card_text(self._sent_cards()[LIMITED_CHAT]))
 
     def test_history_read_failure_skips_write_and_still_sends_cards(self) -> None:
         self.github_client_cls.return_value.get_repository_file.side_effect = GitHubClientError("boom")

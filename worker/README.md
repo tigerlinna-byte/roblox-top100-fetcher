@@ -69,15 +69,19 @@
 
 ## 当前定时任务
 
-[`worker/wrangler.toml`](./wrangler.toml) 当前只配置一个 cron：
+[`worker/wrangler.toml`](./wrangler.toml) 当前配置的 cron：
 
 | Cron | 北京时间 | report mode |
 | --- | --- | --- |
 | `10 1 * * *` | `09:10` | `daily_brief` |
+| `10 7 * * *` | `15:10` | `ccu_sample` |
+| `10 13 * * *` | `21:10` | `ccu_sample` |
+| `10 19 * * *` | 次日 `03:10` | `ccu_sample` |
 
 注意：
 
-- 早报发送到 `SCHEDULE_CHAT_IDS`；为空时定时任务会被跳过
+- 早报发送到 `SCHEDULE_CHAT_IDS`；为空时早报定时任务会被跳过
+- `ccu_sample` 只积累数据、不发群，不依赖 `SCHEDULE_CHAT_IDS`
 - Worker 会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 作为全量群名单传给 GitHub Actions，名单内的群收到含收入的完整版，其余群收到精简版
 - 原 09:00 今日关注、09:20 收入日报定时任务已于 2026-10-27 合并进早报，对应 cron 已移除
 

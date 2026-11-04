@@ -13,6 +13,7 @@ on:
           - roblox_project_daily_metrics
           - roblox_money
           - daily_brief
+          - ccu_sample
       trigger_source:
         description: Trigger source label shown in Feishu notification
         required: false

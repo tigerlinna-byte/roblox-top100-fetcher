@@ -8,6 +8,33 @@ from app.roblox_client import RobloxClient, RobloxClientError
 
 
 class RobloxClientTests(unittest.TestCase):
+    def test_fetch_ccu_skips_games_without_playing_instead_of_counting_zero(self) -> None:
+        session = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = {
+            "data": [
+                {"id": 100, "playing": 1234},
+                {"id": 200, "playing": 0},
+                {"id": 300},
+            ]
+        }
+        response.raise_for_status.return_value = None
+        session.request.return_value = response
+        client = RobloxClient(config=Config(), session=session)
+
+        self.assertEqual({100: 1234, 200: 0}, client.fetch_ccu_by_universe([100, 200, 300]))
+
+    def test_fetch_ccu_raises_when_api_returns_no_counts(self) -> None:
+        session = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = {"data": []}
+        response.raise_for_status.return_value = None
+        session.request.return_value = response
+        client = RobloxClient(config=Config(), session=session)
+
+        with self.assertRaises(RobloxClientError):
+            client.fetch_ccu_by_universe([100])
+
     def test_parse_basic_tiles(self) -> None:
         response_payload = {
             "games": [

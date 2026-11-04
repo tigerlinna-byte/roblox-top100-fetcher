@@ -18,7 +18,7 @@
 4. GitHub Actions 执行 `python -m app.main`
 5. Python 程序抓取 Roblox 数据，按运行模式更新飞书表格或发送飞书消息
 
-同时，Cloudflare Cron 每天 `10 1 * * *` UTC（北京时间 09:10）自动触发一次 `daily_brief` 每日早报：全量群（`ROBLOX_MONEY_TEST_CHAT_IDS` 内的群）收到含收入的完整版，其余群收到精简版。
+同时，Cloudflare Cron 每天 `10 1 * * *` UTC（北京时间 09:10）自动触发一次 `daily_brief` 每日早报：全量群（`ROBLOX_MONEY_TEST_CHAT_IDS` 内的群）收到含收入的完整版，其余群收到精简版。另有 3 个 `ccu_sample` 定时任务为早报积累 CCU 采样，不发群。
 
 ## 2. 准备信息
 
@@ -350,6 +350,9 @@ npx wrangler deploy
 Worker 会按 [`worker/wrangler.toml`](../worker/wrangler.toml) 里的 cron 触发：
 
 - `10 1 * * *` UTC：每日早报 `daily_brief`
+- `10 7 * * *`、`10 13 * * *`、`10 19 * * *` UTC：CCU 采样 `ccu_sample`，只把数据写入数据分支，不发飞书消息
+
+修改 `wrangler.toml` 的 cron 后必须重新部署 Worker（`npx wrangler deploy`）才会生效。
 
 早报发送到：
 
