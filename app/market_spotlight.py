@@ -157,6 +157,8 @@ class MarketSpotlight:
     不和其他栏去重，保证每天看的是同一批头部游戏。
     new_face_lookback_days 为实际能回看的天数（0 表示当天无法判断新面孔）；
     problems 为历史数据缺失导致的未判断项，由调用方写入“数据异常”。
+    before_scheduled_snapshot 为 True 表示手动运行早于当天的定时早报：当天的快照还没存下，此刻抓到的数据
+    与各天 09:10 的快照不是同一时刻，相减也不足一天，所以留存结论与头部新游趋势都不判断，以定时早报为准。
     """
 
     new_face_standout: SpotlightEntry | None = None
@@ -170,6 +172,7 @@ class MarketSpotlight:
     new_game_leaders: tuple[SpotlightEntry, ...] = ()
     new_face_lookback_days: int = 0
     problems: tuple[str, ...] = ()
+    before_scheduled_snapshot: bool = False
 
     @property
     def all_new_faces(self) -> tuple[SpotlightEntry, ...]:
@@ -317,6 +320,10 @@ def build_market_spotlight(
     today = brief_date or reference_date
     view = _TrendView(today, trend_snapshots, trend_history, market_ccu_by_date)
     can_judge_new_faces = view.lookback_days > 0
+    # 定时早报会先把当天快照存进历史；历史里有往日快照却没有当天的，说明是早于当天定时早报的手动运行。
+    # 这时此刻的在线、访问与各天 09:10 的快照不是同一时刻（例如凌晨 1 点与昨天 9 点相减只有 16 小时，
+    # 单局时长会被放大一半），所以不做留存结论和头部新游趋势这类跨天对比。
+    before_scheduled_snapshot = can_judge_new_faces and not view.has_snapshot_day(0)
     oldest_ranks = oldest_ranks_by_sheet or {}
 
     new_faces: list[SpotlightEntry] = []
@@ -337,7 +344,7 @@ def build_market_spotlight(
         )
         entry = _build_entry(place_id, candidate, age_days, earning)
 
-        metrics = _build_metrics(view, place_id)
+        metrics = None if before_scheduled_snapshot else _build_metrics(view, place_id)
         if metrics is not None:
             long_term_recorded_days = max(long_term_recorded_days, metrics.recorded_days)
             entry = replace(
@@ -349,7 +356,7 @@ def build_market_spotlight(
             )
         if can_judge_new_faces:
             entry = replace(entry, days_on_board=view.days_on_board(place_id))
-        leader = _build_leader_status(view, place_id, candidate)
+        leader = _build_leader_status(view, place_id, candidate, judge_trend=not before_scheduled_snapshot)
         if leader is not None:
             leader_candidates.append(replace(entry, leader=leader))
 
@@ -386,7 +393,11 @@ def build_market_spotlight(
     # 头部新游趋势固定取在玩榜排名最高的几款新游，不和其他栏去重，名单才不会时有时无。
     leaders = sorted(leader_candidates, key=lambda entry: entry.leader.rank)[:SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES]
     problems = _describe_trend_problems(view)
-    if view.history is not None and any(entry.leader.state is None for entry in leaders):
+    if (
+        view.history is not None
+        and not before_scheduled_snapshot
+        and any(entry.leader.state is None for entry in leaders)
+    ):
         problems += (
             f"缺少 {NEW_GAME_LEADER_WEEK_COMPARE_DAYS} 天前（上周同日）的快照，今天不判断头部新游趋势",
         )
@@ -403,6 +414,7 @@ def build_market_spotlight(
         new_game_leaders=tuple(leaders),
         new_face_lookback_days=view.lookback_days,
         problems=problems,
+        before_scheduled_snapshot=before_scheduled_snapshot,
     )
 
 
@@ -743,7 +755,13 @@ def _growth_sort_key(entry: SpotlightEntry) -> tuple[int, float, int, str]:
     return (-len(entry.evidence), -excess, -entry.ccu, entry.name.casefold())
 
 
-def _build_leader_status(view: _TrendView, place_id: int, candidate: _CandidateGame) -> LeaderStatus | None:
+def _build_leader_status(
+    view: _TrendView,
+    place_id: int,
+    candidate: _CandidateGame,
+    *,
+    judge_trend: bool = True,
+) -> LeaderStatus | None:
     """在玩榜前列新游的势头：在线较上周同日的变化；不在在玩榜常规范围内时为 None。
 
     同一个星期几相比，周末效应自然抵消。上周同日有快照但没有这款游戏，说明它一周前还不在各榜前列，
@@ -754,7 +772,8 @@ def _build_leader_status(view: _TrendView, place_id: int, candidate: _CandidateG
     if rank is None or rank > SPOTLIGHT_MAX_CONSIDERED_RANK:
         return None
     ccu = view.ccu(place_id) or candidate.ccu
-    if view.history is None or not view.has_snapshot_day(NEW_GAME_LEADER_WEEK_COMPARE_DAYS):
+    # judge_trend 为 False（手动运行早于当天定时早报）时此刻与上周同日不是同一时刻，同样不判断。
+    if not judge_trend or view.history is None or not view.has_snapshot_day(NEW_GAME_LEADER_WEEK_COMPARE_DAYS):
         return LeaderStatus(rank=rank, ccu=ccu, ccu_week_ago=None, week_change=None, state=None)
     ccu_week_ago = view.ccu(place_id, NEW_GAME_LEADER_WEEK_COMPARE_DAYS)
     if not ccu_week_ago:

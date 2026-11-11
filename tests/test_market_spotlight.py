@@ -98,12 +98,21 @@ def _build(
     market: dict[str, int] | None = None,
     hit_history: dict | None = None,
     snapshots: dict[int, GameDailySnapshot] | None = None,
+    scheduled: bool = True,
 ) -> MarketSpotlight:
+    """scheduled 为 True 时模拟定时早报：当天快照已先存进历史；为 False 时模拟早于当天定时早报的手动运行。"""
+
+    today_snapshots = snapshots if snapshots is not None else _snapshots(records_by_sheet)
+    if scheduled and history is not None and history:
+        history = {
+            place_id: [*history.get(place_id, []), *([today_snapshots[place_id]] if place_id in today_snapshots else [])]
+            for place_id in set(history) | set(today_snapshots)
+        }
     return build_market_spotlight(
         records_by_sheet,
         previous_ranks or {},
         recent_place_ids or {},
-        snapshots if snapshots is not None else _snapshots(records_by_sheet),
+        today_snapshots,
         history,
         oldest_ranks,
         market_ccu_by_date=market if market is not None else _flat_market(1, 3),
@@ -461,6 +470,29 @@ class LongTermAndLeaderTests(unittest.TestCase):
         self.assertEqual((), spotlight.all_growth)
         self.assertEqual([2, 1], _ids(spotlight.long_term))
         self.assertAlmostEqual(40.0, spotlight.long_term[0].retention.session_minutes)
+
+    def test_manual_run_before_scheduled_brief_skips_cross_day_comparisons(self) -> None:
+        # 当天快照还没存进历史：此刻的访问与昨天 09:10 相减不足一天，单局时长会被放大，所以不判断。
+        records = {"top_playing_now": [_record(9, 1, playing=26000)]}
+        today, history = self._retention_history(1, ccu=26000, past_ccu=26000, average_ccu=20000, daily_visits=600_000)
+        history.append(_snapshot(_day(7), 20000))
+
+        manual = _build(
+            records,
+            {1: history},
+            recent_place_ids={"top_playing_now": {1}},
+            snapshots={1: today},
+            scheduled=False,
+        )
+        scheduled = _build(records, {1: list(history)}, recent_place_ids={"top_playing_now": {1}}, snapshots={1: today})
+
+        self.assertTrue(manual.before_scheduled_snapshot)
+        self.assertIsNone(manual.new_game_leaders[0].retention)
+        self.assertIsNone(manual.new_game_leaders[0].leader.state)
+        self.assertFalse([problem for problem in manual.problems if "头部新游" in problem])
+        self.assertFalse(scheduled.before_scheduled_snapshot)
+        self.assertEqual("good", scheduled.new_game_leaders[0].retention.tier)
+        self.assertEqual("up", scheduled.new_game_leaders[0].leader.state)
 
     def test_retention_requires_enough_recorded_days(self) -> None:
         records = {"top_trending_v4": [_record(3, 5, playing=8000)]}

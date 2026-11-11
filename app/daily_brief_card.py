@@ -54,6 +54,8 @@ BRIEF_TRIGGER_TEXTS = {
     "feishu_chat_command": "手动（飞书命令）",
     "workflow_dispatch": "手动（GitHub Actions）",
 }
+# 手动运行早于当天定时早报时，跨天对比不准（此刻与各天 09:10 不是同一时刻），留存与趋势都不判断。
+BEFORE_SCHEDULED_NOTE = "手动运行早于今天的定时早报，以定时早报为准"
 STANDOUT_MARK = "🔥"
 # 栏目标题的表情：每栏只出现一次，起分段作用。
 NEW_FACE_MARK = "🆕"
@@ -193,18 +195,24 @@ def _build_spotlight_elements(spotlight: MarketSpotlight) -> list[CardElement]:
 
     elements: list[CardElement] = []
     if spotlight.new_face_standout is not None:
-        elements.append(_build_standout_panel("新面孔", spotlight.new_face_standout, is_new_face=True))
+        elements.append(_build_standout_panel("新面孔", spotlight.new_face_standout, spotlight, is_new_face=True))
     if spotlight.growth_standout is not None:
-        elements.append(_build_standout_panel("增长快", spotlight.growth_standout, is_new_face=False))
+        elements.append(_build_standout_panel("增长快", spotlight.growth_standout, spotlight, is_new_face=False))
     elements.append(_build_new_face_element(spotlight))
     elements.append(_build_growth_element(spotlight))
     elements.append(_build_long_term_element(spotlight))
     if spotlight.new_game_leaders:
-        elements.append(_build_new_game_leaders_element(spotlight.new_game_leaders))
+        elements.append(_build_new_game_leaders_element(spotlight))
     return elements
 
 
-def _build_standout_panel(group_label: str, standout: SpotlightEntry, *, is_new_face: bool) -> CardElement:
+def _build_standout_panel(
+    group_label: str,
+    standout: SpotlightEntry,
+    spotlight: MarketSpotlight,
+    *,
+    is_new_face: bool,
+) -> CardElement:
     """“今日最突出”放进灰底面板，与其余条目拉开层级；留存结论总是写出，便于判断是不是昙花一现。"""
 
     # 栏目说明用灰色不加粗，只让游戏名加粗突出。
@@ -215,6 +223,8 @@ def _build_standout_panel(group_label: str, standout: SpotlightEntry, *, is_new_
         lines = [title, _format_entry_basics(standout), _format_evidence_line(standout)]
     if standout.retention is not None:
         lines.append(_format_retention(standout.retention))
+    elif spotlight.before_scheduled_snapshot:
+        lines.append(_color(f"留存：{BEFORE_SCHEDULED_NOTE}", SECONDARY_COLOR))
     else:
         lines.append(_color("留存数据积累中", SECONDARY_COLOR))
     return _panel([_column([_markdown("\n".join(lines))])], flex_mode="none")
@@ -261,14 +271,14 @@ def _format_scope() -> str:
     return f"创建 {SPOTLIGHT_MAX_GAME_AGE_DAYS} 天内、CCU ≥{SPOTLIGHT_MIN_CCU:,}"
 
 
-def _build_new_game_leaders_element(leaders: tuple[SpotlightEntry, ...]) -> CardElement:
+def _build_new_game_leaders_element(spotlight: MarketSpotlight) -> CardElement:
     """头部新游趋势：在玩榜排名最高的几款新游，每款只写势头结论和解释它的两个在线人数。"""
 
     scope = "（在玩榜排名最高的新游，在线较上周同日）"
     lines = [f"**{NEW_GAME_LEADER_MARK} 头部新游趋势** {_color(scope, SECONDARY_COLOR)}"]
     lines.extend(
-        f"- {_format_entry_name(entry)}：{_format_leader_status(entry.leader)}"
-        for entry in leaders
+        f"- {_format_entry_name(entry)}：{_format_leader_status(entry.leader, spotlight.before_scheduled_snapshot)}"
+        for entry in spotlight.new_game_leaders
         if entry.leader is not None
     )
     return _markdown("\n".join(lines))
@@ -387,7 +397,9 @@ def _build_long_term_element(spotlight: MarketSpotlight) -> CardElement:
             if entry.retention is not None
         )
         return _markdown("\n".join(lines))
-    if spotlight.long_term_recorded_days < LONG_TERM_MIN_RECORDED_DAYS:
+    if spotlight.before_scheduled_snapshot:
+        hint = f"{BEFORE_SCHEDULED_NOTE}。"
+    elif spotlight.long_term_recorded_days < LONG_TERM_MIN_RECORDED_DAYS:
         remaining_days = LONG_TERM_MIN_RECORDED_DAYS - spotlight.long_term_recorded_days
         hint = f"数据积累中（已记录 {spotlight.long_term_recorded_days} 天，还需 {remaining_days} 天）"
     else:
@@ -424,11 +436,12 @@ def _format_earning_detail(entry: SpotlightEntry, *, include_change: bool = True
     return f"｜{label} #{earning.rank}{suffix}"
 
 
-def _format_leader_status(leader: LeaderStatus) -> str:
+def _format_leader_status(leader: LeaderStatus, before_scheduled_snapshot: bool = False) -> str:
     """结论在前，后面是解释它的数据，例如“▲ 上升｜在线 7.7 万 → 19.5 万（较上周同日 +153%）”。"""
 
     if leader.state is None:
-        return _color(f"在线 {_format_ccu(leader.ccu)}｜缺少上周同日数据，今天不判断", SECONDARY_COLOR)
+        reason = BEFORE_SCHEDULED_NOTE if before_scheduled_snapshot else "缺少上周同日数据，今天不判断"
+        return _color(f"在线 {_format_ccu(leader.ccu)}｜{reason}", SECONDARY_COLOR)
     mark, label, color = LEADER_STATE_TEXTS[leader.state]
     conclusion = _color(f"{mark} {label}", color)
     if leader.ccu_week_ago is None or leader.week_change is None:

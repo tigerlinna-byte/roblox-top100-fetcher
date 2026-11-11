@@ -260,6 +260,33 @@ class DailyBriefCardTests(unittest.TestCase):
         self.assertIn("<font color='purple-400'>收入榜 ↑66</font>｜收入榜 #231（一周前不在榜）", text)
         self.assertEqual(1, text.count("↑66"))
 
+    def test_manual_run_before_scheduled_brief_points_to_scheduled_brief(self) -> None:
+        entry = SpotlightEntry(
+            place_id=1,
+            name="Throw Food",
+            genre="Tycoon",
+            ccu=132831,
+            sheet_ranks=(("在玩榜", 6),),
+            age_days=54,
+            leader=LeaderStatus(rank=6, ccu=132831, ccu_week_ago=None, week_change=None, state=None),
+        )
+
+        text = self._market_text(
+            MarketSpotlight(
+                growth_standout=replace(entry, evidence=(GrowthEvidence("board_entry", "新进热门榜"),)),
+                new_game_leaders=(entry,),
+                long_term_recorded_days=10,
+                new_face_lookback_days=10,
+                before_scheduled_snapshot=True,
+            )
+        )
+
+        self.assertIn("<font color='grey'>留存：手动运行早于今天的定时早报，以定时早报为准</font>", text)
+        self.assertIn("<font color='grey'>在线 13.3 万｜手动运行早于今天的定时早报，以定时早报为准</font>", text)
+        self.assertIn("<font color='grey'>手动运行早于今天的定时早报，以定时早报为准。</font>", text)
+        self.assertNotIn("缺少上周同日数据", text)
+        self.assertNotIn("留存数据积累中", text)
+
     def test_section_count_omits_shown_note_when_everything_is_listed(self) -> None:
         entry = SpotlightEntry(place_id=1, name="Game", genre="RPG", ccu=5000, sheet_ranks=(("新秀榜", 50),), age_days=10)
 
