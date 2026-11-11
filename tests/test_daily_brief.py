@@ -188,12 +188,14 @@ class DailyBriefCardTests(unittest.TestCase):
         text = self._market_text(spotlight)
 
         self.assertIn("🔥 <font color='grey'>今日最突出 · 新面孔：</font>**<font color='blue'>Barber Simulator</font>**", text)
-        self.assertIn("<font color='grey'>Simulation｜当次 CCU 4,359｜上线 28 天</font>", text)
+        # 新面孔只占一行：品类、CCU、上线天数和出现的榜单；栏目已说明是新面孔，不再重复，没进收入榜就不写收入榜。
+        self.assertIn("<font color='grey'>Simulation｜当次 CCU 4,359｜上线 28 天｜新秀榜 #15</font>", text)
         self.assertIn(
-            "<font color='orange-400'>新面孔</font> <font color='grey'>新秀榜 #15</font>"
-            "<font color='grey'>｜收入榜：未进前 300</font>",
+            "- **<font color='blue'>Skate Tree</font>** <font color='grey'>Simulation｜当次 CCU 4,359｜上线 28 天｜新秀榜 #15</font>\n",
             text,
         )
+        self.assertNotIn("新面孔</font> ", text)
+        self.assertNotIn("未进前", text)
         self.assertIn("（共 3 款，展示前 2 款｜近 10 天没上过榜、创建 90 天内、CCU ≥3,000）", text)
         self.assertEqual(1, text.count("[Rotrends](https://www.rotrends.com/game/1001)"))
         # 排名靠后的游戏不在卡片上列出，只体现在总数里。
@@ -203,12 +205,15 @@ class DailyBriefCardTests(unittest.TestCase):
         self.assertIn("🔥 <font color='grey'>今日最突出 · 增长快：</font>**<font color='blue'>13 Days to Escape</font>**", text)
         self.assertIn(
             "<font color='red-400'>在线比大盘多涨 161%（较 3 天前）</font>　"
-            "<font color='purple-400'>新进收入榜</font> "
-            "<font color='grey'>热门榜 #16、在玩榜 #69｜上榜第 5 天｜连续第 4 天增长</font>"
+            "<font color='purple-400'>新进收入榜</font>"
+            "<font color='grey'>｜连续第 4 天增长</font>"
             "｜收入榜 #233（一周前不在榜）",
             text,
         )
-        self.assertIn("日均 CCU 12,000｜近似峰值 19,000", text)
+        # 不再列三个榜单的名次、上榜天数和近似峰值。
+        self.assertIn("<font color='grey'>Escape｜日均 CCU 12,000｜上线 32 天</font>", text)
+        for removed in ("近似峰值", "上榜第", "热门榜 #16"):
+            self.assertNotIn(removed, text)
         # 今日最突出总是写出留存结论；好评率正常时不写。
         self.assertIn("<font color='grey'>◐ 待观察</font>｜单局约 15 分钟 · 在线守住 14 日峰值的 95%", text)
         self.assertIn("<font color='grey'>留存数据积累中</font>", text)
@@ -237,6 +242,23 @@ class DailyBriefCardTests(unittest.TestCase):
         self.assertNotIn("**<font color='red", text)
         self.assertIn("（共 3 款，展示前 2 款｜创建 90 天内、CCU ≥3,000）", text)
         self.assertNotIn("Net a Fish", text)
+
+    def test_earning_change_is_not_repeated_after_earning_evidence(self) -> None:
+        entry = SpotlightEntry(
+            place_id=1,
+            name="Impossible Hill Climb",
+            genre="Incremental Simulator",
+            ccu=4803,
+            sheet_ranks=(("新秀榜", 36), ("收入榜", 231)),
+            age_days=17,
+            evidence=(GrowthEvidence("earning", "收入榜 ↑66"),),
+            earning=EarningMovement(rank=231, change=66, week_change=70, entered_this_week=True),
+        )
+
+        text = self._market_text(MarketSpotlight(growth_standout=entry))
+
+        self.assertIn("<font color='purple-400'>收入榜 ↑66</font>｜收入榜 #231（一周前不在榜）", text)
+        self.assertEqual(1, text.count("↑66"))
 
     def test_section_count_omits_shown_note_when_everything_is_listed(self) -> None:
         entry = SpotlightEntry(place_id=1, name="Game", genre="RPG", ccu=5000, sheet_ranks=(("新秀榜", 50),), age_days=10)
@@ -495,7 +517,17 @@ class DailyBriefFlowTests(unittest.TestCase):
         self.assertNotIn("Shoot or Shot", limited_text)
         self.assertNotIn("💰 收入", limited_text)
         self.assertNotIn("Soccer", limited_text)
-        self.assertIn("数据积累中（已记录 1 天）", limited_text)
+        self.assertIn(
+            "**大盘暂不判断**<font color='grey'>（缺少上周同日数据）</font>｜在玩榜前 100 合计 5.0 万"
+            "<font color='grey'>（数据积累中，已记录 1 天）</font>",
+            limited_text,
+        )
+        self.assertIn("触发：定时", limited_text)
+        # 统计日期写在栏目标题里，项目行和收入行不再重复。
+        self.assertIn("🎮 自家项目（2026-10-26）", limited_text)
+        self.assertIn("峰值PCU 1,234｜D1 待出｜时长 待出", limited_text)
+        self.assertIn("💰 收入（截至 2026-10-25）", full_text)
+        self.assertNotIn("（截至 2026-10-25）：", full_text)
         # 数据分支上还没有快照：如实说明当天没有判断，而不是把所有游戏都当成新面孔。
         for card_text in (full_text, limited_text):
             self.assertIn("值得关注</font>：还没有可用的历史快照，今天不判断新面孔和在线涨幅", card_text)

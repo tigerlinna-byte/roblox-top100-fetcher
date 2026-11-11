@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from .config import Config
+from .config import SCHEDULED_TRIGGER_SOURCE, Config
 from .daily_brief_models import DailyBriefContent, MarketSection, ProjectBriefEntry, RevenueBriefEntry
 from .daily_brief_rules import (
     LONG_TERM_MIN_RECORDED_DAYS,
     LONG_TERM_PEAK_WINDOW_DAYS,
     MARKET_PULSE_BROAD_SIZE,
-    MARKET_PULSE_HEAD_SIZE,
     NEW_FACE_LOOKBACK_DAYS,
     PROJECT_TITLE_SUFFIXES_TO_STRIP,
     PROJECT_TREND_BASELINE_DAYS,
     RETENTION_BAD_LIKE_RATIO,
-    SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK,
     SPOTLIGHT_MAX_GAME_AGE_DAYS,
     SPOTLIGHT_MIN_CCU,
 )
-from .market_pulse import MarketChange, MarketPulse
+from .market_pulse import MarketPulse, MarketTrend
 from .market_spotlight import (
     TOP_EARNING_SHEET_KEY,
     EvidenceKind,
@@ -30,14 +28,13 @@ from .market_spotlight import (
 )
 from .metric_baseline import MetricAlert
 from .roblox_money_summary import format_robux, format_usd
-from .summary import _format_now, _format_trigger
+from .summary import _format_now
 from .top_trending_briefing import SHEET_LABELS
 
 
 # 涨跌颜色沿用国内习惯：上涨红、下跌绿，与榜单排名变化配色一致。
 RISE_COLOR = "red"
 FALL_COLOR = "green"
-FLAT_TREND_TEXT = "平稳"
 HIGHLIGHT_NAME_COLOR = "blue"
 FAILURE_COLOR = "red"
 # 次要信息（品类、日期、Robux 等）统一用灰色，让名字、涨跌和金额更突出。
@@ -45,6 +42,18 @@ SECONDARY_COLOR = "grey"
 # 标题栏颜色：有数据异常时换成橙色，进群一眼就能看出今天的数据是否完整。
 HEADER_TEMPLATE = "blue"
 HEADER_TEMPLATE_WITH_FAILURES = "orange"
+# 大盘结论：看在玩榜前 100 合计在线较上周同日的变化；平稳不上色。
+MARKET_TREND_TEXTS: dict[MarketTrend, tuple[str, str]] = {
+    "up": ("大盘上涨", RISE_COLOR),
+    "flat": ("大盘平稳", ""),
+    "down": ("大盘下滑", FALL_COLOR),
+}
+# 底部备注的触发方式；不显示触发人的用户 ID。
+BRIEF_TRIGGER_TEXTS = {
+    SCHEDULED_TRIGGER_SOURCE: "定时",
+    "feishu_chat_command": "手动（飞书命令）",
+    "workflow_dispatch": "手动（GitHub Actions）",
+}
 STANDOUT_MARK = "🔥"
 # 栏目标题的表情：每栏只出现一次，起分段作用。
 NEW_FACE_MARK = "🆕"
@@ -54,7 +63,6 @@ NEW_GAME_LEADER_MARK = "👑"
 # 条目里的标识不用彩色表情（表情跟文字一样大，会盖过游戏名），只用普通符号和浅色文字，不加粗，
 # 让每行唯一加粗的蓝色游戏名最醒目。色阶（-400）写法见飞书卡片“颜色枚举值”文档；
 # 1.0 卡片 markdown 是否支持文档未写明，2026-11-11 上线时待实测，不生效时改回 orange、red 等默认色。
-NEW_FACE_COLOR = "orange-400"
 # 增长证据的颜色：在线涨幅、晋榜、收入榜上升。收入不用蓝色，避免与蓝色的游戏名混在一起。
 EVIDENCE_COLORS: dict[EvidenceKind, str] = {
     "ccu": "red-400",
@@ -83,11 +91,9 @@ PROJECT_RISE_MARK = "🔴"
 PROJECT_FALL_MARK = "🟢"
 PROJECT_MIXED_MARK = "🟠"
 PROJECT_STEADY_MARK = "⚪"
-# 字号：段落标题与大盘数字放大，标签缩小；旧版客户端不支持时按正常字号显示。
+# 字号：段落标题放大；旧版客户端不支持时按正常字号显示。
 SECTION_TITLE_TEXT_SIZE = "heading"
-KPI_VALUE_TEXT_SIZE = "heading-2"
-KPI_LABEL_TEXT_SIZE = "notation"
-# 灰底面板，用于大盘数字和“今日最突出”。
+# 灰底面板，用于“今日最突出”。
 PANEL_BACKGROUND = "grey"
 # CCU 达到一万时改用“万”为单位展示，便于中文阅读。
 TEN_THOUSAND = 10_000
@@ -118,7 +124,7 @@ def build_daily_brief_card(cfg: Config, content: DailyBriefContent, *, show_reve
                 {
                     "tag": "plain_text",
                     "content": f"时间：{_format_now(cfg.feishu_timezone)}（{cfg.feishu_timezone}）"
-                    f"｜触发：{_format_trigger(cfg)}",
+                    f"｜触发：{BRIEF_TRIGGER_TEXTS.get(cfg.run_trigger_source, '手动')}",
                 }
             ],
         }
@@ -150,81 +156,36 @@ def _build_market_section(market: MarketSection | None) -> list[CardElement]:
         return elements
 
     if market.pulse is not None:
-        elements.append(_build_pulse_columns(market.pulse))
+        elements.append(_build_pulse_line(market.pulse))
     if market.genre_lines:
         elements.append(_markdown("\n".join(f"- **品类风向**：{line}" for line in market.genre_lines)))
     elements.extend(_build_spotlight_elements(market.spotlight))
     return elements
 
 
-def _build_pulse_columns(pulse: MarketPulse) -> CardElement:
-    """大盘与头部并排展示：灰色小字标签、放大的在线人数、涨跌。"""
+def _build_pulse_line(pulse: MarketPulse) -> CardElement:
+    """大盘一行：结论在前，看较上周同日（同一个星期几相比，抵消周末效应），后面是合计在线与涨跌。
 
-    snapshot = pulse.snapshot
-    broad_label = f"大盘 · 在玩榜前 {MARKET_PULSE_BROAD_SIZE}"
-    if snapshot.game_count < MARKET_PULSE_BROAD_SIZE:
-        broad_label += f"（实际 {snapshot.game_count} 款）"
-    return _panel(
-        [
-            _build_pulse_column(
-                broad_label,
-                snapshot.broad_ccu,
-                pulse.broad_day_change,
-                pulse.broad_week_change,
-                pulse.recorded_days,
-            ),
-            _build_pulse_column(
-                f"头部 · 前 {MARKET_PULSE_HEAD_SIZE}",
-                snapshot.head_ccu,
-                pulse.head_day_change,
-                pulse.head_week_change,
-                pulse.recorded_days,
-            ),
-        ],
-        flex_mode="bisect",
-    )
+    缺少上周同日数据时写“暂不判断”，不改用其他日期。
+    """
 
-
-def _build_pulse_column(
-    label: str,
-    ccu: int,
-    day_change: MarketChange | None,
-    week_change: MarketChange | None,
-    recorded_days: int,
-) -> CardElement:
-    return _column(
-        [
-            _markdown(_color(label, SECONDARY_COLOR), text_size=KPI_LABEL_TEXT_SIZE),
-            _markdown(f"**{_format_ccu(ccu)}**", text_size=KPI_VALUE_TEXT_SIZE),
-            _markdown(_format_pulse_changes(day_change, week_change, recorded_days)),
-        ]
-    )
-
-
-def _format_pulse_changes(
-    day_change: MarketChange | None,
-    week_change: MarketChange | None,
-    recorded_days: int,
-) -> str:
-    """有对比数据时逐行展示涨跌，否则提示历史数据仍在积累。"""
-
-    lines: list[str] = []
-    if day_change is not None:
-        lines.append(f"较昨日 {_format_market_change(day_change)}")
+    week_change = pulse.broad_week_change
+    if week_change is None:
+        conclusion = f"**大盘暂不判断**{_color('（缺少上周同日数据）', SECONDARY_COLOR)}"
+    else:
+        text, color = MARKET_TREND_TEXTS[week_change.trend]
+        conclusion = f"**{_color(text, color)}**" if color else f"**{text}**"
+    changes: list[str] = []
+    if pulse.broad_day_change is not None:
+        changes.append(f"较昨天 {_format_ratio(pulse.broad_day_change.change_ratio)}")
     if week_change is not None:
-        lines.append(f"较上周同日 {_format_market_change(week_change)}")
-    if not lines:
-        return _color(f"数据积累中（已记录 {recorded_days} 天）", SECONDARY_COLOR)
-    return "\n".join(lines)
-
-
-def _format_market_change(change: MarketChange) -> str:
-    ratio_text = _format_ratio(change.change_ratio)
-    if change.trend == "up":
-        return f"**{_color(f'{ratio_text} ↑', RISE_COLOR)}**"
-    if change.trend == "down":
-        return f"**{_color(f'{ratio_text} ↓', FALL_COLOR)}**"
-    return _color(f"{ratio_text}（{FLAT_TREND_TEXT}）", SECONDARY_COLOR)
+        changes.append(f"较上周同日 {_format_ratio(week_change.change_ratio)}")
+    detail = f"在玩榜前 {MARKET_PULSE_BROAD_SIZE} 合计 {_format_ccu(pulse.snapshot.broad_ccu)}"
+    if changes:
+        detail += f"（{'，'.join(changes)}）"
+    else:
+        detail += _color(f"（数据积累中，已记录 {pulse.recorded_days} 天）", SECONDARY_COLOR)
+    return _markdown(f"{conclusion}｜{detail}")
 
 
 def _build_spotlight_elements(spotlight: MarketSpotlight) -> list[CardElement]:
@@ -247,11 +208,11 @@ def _build_standout_panel(group_label: str, standout: SpotlightEntry, *, is_new_
     """“今日最突出”放进灰底面板，与其余条目拉开层级；留存结论总是写出，便于判断是不是昙花一现。"""
 
     # 栏目说明用灰色不加粗，只让游戏名加粗突出。
-    lines = [
-        f"{STANDOUT_MARK} {_color(f'今日最突出 · {group_label}：', SECONDARY_COLOR)}{_format_entry_name(standout)}",
-        _format_entry_basics(standout),
-        _format_badge_line(standout, is_new_face=is_new_face),
-    ]
+    title = f"{STANDOUT_MARK} {_color(f'今日最突出 · {group_label}：', SECONDARY_COLOR)}{_format_entry_name(standout)}"
+    if is_new_face:
+        lines = [title, _format_new_face_details(standout)]
+    else:
+        lines = [title, _format_entry_basics(standout), _format_evidence_line(standout)]
     if standout.retention is not None:
         lines.append(_format_retention(standout.retention))
     else:
@@ -314,12 +275,17 @@ def _build_new_game_leaders_element(leaders: tuple[SpotlightEntry, ...]) -> Card
 
 
 def _format_entry_item(entry: SpotlightEntry, *, is_new_face: bool) -> str:
-    """列表里的一款游戏：第一行名字与基本信息，第二行标识；留不住时再加一行提醒是昙花一现。"""
+    """列表里的一款游戏。新面孔只占一行（栏目已说明是新面孔，不再重复）；
+    增长快第二行是增长证据；留不住时再加一行提醒是昙花一现。
+    """
 
-    lines = [
-        f"- {_format_entry_name(entry)} {_format_entry_basics(entry)}",
-        f"{SUB_LINE_INDENT}{_format_badge_line(entry, is_new_face=is_new_face)}",
-    ]
+    if is_new_face:
+        lines = [f"- {_format_entry_name(entry)} {_format_new_face_details(entry)}"]
+    else:
+        lines = [
+            f"- {_format_entry_name(entry)} {_format_entry_basics(entry)}",
+            f"{SUB_LINE_INDENT}{_format_evidence_line(entry)}",
+        ]
     if entry.retention is not None and entry.retention.tier == "bad":
         lines.append(f"{SUB_LINE_INDENT}{_format_retention(entry.retention)}")
     return "\n".join(lines)
@@ -338,32 +304,47 @@ def _format_rotrends_link(entry: SpotlightEntry) -> str:
 def _format_entry_basics(entry: SpotlightEntry) -> str:
     """灰色基本信息：品类、CCU、上线天数。"""
 
+    return _color("｜".join(_entry_basic_parts(entry)), SECONDARY_COLOR)
+
+
+def _entry_basic_parts(entry: SpotlightEntry) -> list[str]:
     parts = [entry.genre or "-", _format_entry_ccu(entry)]
     if entry.age_days is not None:
         parts.append(f"上线 {entry.age_days} 天")
-    return _color("｜".join(parts), SECONDARY_COLOR)
+    return parts
+
+
+def _format_new_face_details(entry: SpotlightEntry) -> str:
+    """新面孔一行里的信息：品类、CCU、上线天数，以及它出现在哪个榜单；进了收入榜时附收入榜位置。"""
+
+    parts = _entry_basic_parts(entry)
+    ranks = _format_sheet_ranks(entry)
+    if ranks:
+        parts.append(ranks)
+    return _color("｜".join(parts), SECONDARY_COLOR) + _format_earning_detail(entry)
 
 
 def _format_entry_ccu(entry: SpotlightEntry) -> str:
-    """采样足够时展示全天口径；否则只有抓取时刻的值，明确标为当次，避免被当成全天水平比较。"""
+    """采样足够时展示全天平均；否则只有抓取时刻的值，明确标为当次，避免被当成全天水平比较。"""
 
-    if entry.average_ccu is None or entry.peak_ccu is None:
+    if entry.average_ccu is None:
         return f"当次 CCU {entry.ccu:,}"
-    return f"日均 CCU {entry.average_ccu:,}｜近似峰值 {entry.peak_ccu:,}"
+    return f"日均 CCU {entry.average_ccu:,}"
 
 
-def _format_badge_line(entry: SpotlightEntry, *, is_new_face: bool) -> str:
-    """标识行：新面孔或各条增长证据，后面跟榜单位置、上榜天数和收入榜情况。"""
+def _format_evidence_line(entry: SpotlightEntry) -> str:
+    """增长快的第二行：增长证据，连续增长两天以上时注明，进了收入榜时附收入榜位置。
 
-    badge = _color("新面孔", NEW_FACE_COLOR) if is_new_face else _format_evidence_badges(entry)
-    notes = [_format_sheet_ranks(entry)]
-    # 新面孔当天一定是上榜第 1 天，不必再写。
-    if not is_new_face and entry.days_on_board is not None:
-        notes.append(f"上榜第 {entry.days_on_board} 天")
-    if entry.growth_streak_days >= 2:
-        notes.append(f"连续第 {entry.growth_streak_days} 天增长")
-    details = _color("｜".join(note for note in notes if note), SECONDARY_COLOR)
-    return f"{badge} {details}{_format_earning_detail(entry, show_missing=True)}"
+    榜单名次与上榜天数不再列出：证据里已说明是哪个榜，规模看第一行的 CCU，新旧看上线天数。
+    """
+
+    streak = (
+        _color(f"｜连续第 {entry.growth_streak_days} 天增长", SECONDARY_COLOR) if entry.growth_streak_days >= 2 else ""
+    )
+    # 收入证据已写了较上次的变化（如“收入榜 ↑66”），收入榜位置后面不再重复。
+    has_earning_evidence = any(item.kind == "earning" for item in entry.evidence)
+    earning = _format_earning_detail(entry, include_change=not has_earning_evidence)
+    return f"{_format_evidence_badges(entry)}{streak}{earning}"
 
 
 def _format_evidence_badges(entry: SpotlightEntry) -> str:
@@ -422,20 +403,18 @@ def _format_sheet_ranks(entry: SpotlightEntry) -> str:
     )
 
 
-def _format_earning_detail(entry: SpotlightEntry, *, show_missing: bool = False) -> str:
-    """收入榜位置与变化，跟在灰色信息后面；上升红、下降绿，与其他涨跌配色一致。
+def _format_earning_detail(entry: SpotlightEntry, *, include_change: bool = True) -> str:
+    """收入榜位置与变化，只在进了收入榜考察范围时写；上升红、下降绿，与其他涨跌配色一致。
 
-    show_missing 为 True 时，不在收入榜考察范围内也如实写明：在线涨得快但看不到收入，不估算。
+    include_change 为 False 时不写较上次的变化，用于增长证据里已经写过的情况。
     """
 
     label = SHEET_LABELS[TOP_EARNING_SHEET_KEY]
     earning = entry.earning
     if earning is None:
-        if not show_missing:
-            return ""
-        return _color(f"｜{label}：未进前 {SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK}", SECONDARY_COLOR)
+        return ""
     changes: list[str] = []
-    if earning.change:
+    if include_change and earning.change:
         changes.append(f"较上次 {_format_rank_change(earning.change)}")
     if earning.entered_this_week:
         changes.append("一周前不在榜")
@@ -467,28 +446,41 @@ def _format_rank_change(change: int) -> str:
 
 
 def _build_projects_section(projects: tuple[ProjectBriefEntry, ...]) -> list[CardElement]:
-    elements = [_section_title("🎮 自家项目")]
+    """统计日期相同时写在栏目标题里，只有个别项目日期不同才在那一行单独写。"""
+
+    common_date = _common_date(entry.trend.report_date for entry in projects if entry.trend is not None)
+    elements = [_section_title(f"🎮 自家项目（{common_date}）" if common_date else "🎮 自家项目")]
     if not projects:
         elements.append(_markdown(_color("没有可展示的项目数据。", SECONDARY_COLOR)))
         return elements
     # 有提醒的项目排在前面，其余保持原有顺序。
     ordered = sorted(projects, key=lambda entry: not (entry.trend is not None and entry.trend.alerts))
-    elements.append(_markdown("\n".join(_build_project_line(entry) for entry in ordered)))
+    elements.append(_markdown("\n".join(_build_project_line(entry, common_date) for entry in ordered)))
     return elements
 
 
-def _build_project_line(entry: ProjectBriefEntry) -> str:
-    """有提醒时只列提醒，没有提醒时用灰色列核心数字；项目名链接到它的日报表格。"""
+def _common_date(dates) -> str:
+    """所有日期都相同时返回该日期，否则返回空串（没有日期时也为空）。"""
+
+    unique = set(dates)
+    return unique.pop() if len(unique) == 1 else ""
+
+
+def _build_project_line(entry: ProjectBriefEntry, common_date: str = "") -> str:
+    """有提醒时只列提醒，没有提醒时用灰色列核心数字；没出数的指标写“待出”。项目名链接到它的日报表格。"""
 
     name = f"[{entry.name}]({entry.sheet_url})" if entry.sheet_url else entry.name
     trend = entry.trend
     if trend is None:
         return f"{PROJECT_STEADY_MARK} **{name}** {_color('表格暂无数据', SECONDARY_COLOR)}"
-    date_text = _color(f"（{trend.report_date}）", SECONDARY_COLOR)
+    date_text = _color(f"（{trend.report_date}）", SECONDARY_COLOR) if trend.report_date != common_date else ""
     if trend.alerts:
         detail = "；".join(_format_alert(alert) for alert in trend.alerts)
         return f"{_project_alert_mark(trend.alerts)} **{name}**{date_text}：{detail}"
-    summary = "｜".join(f"{label} {value}" for label, value in trend.summary_values) or "核心数字未出"
+    if any(value for _, value in trend.summary_values):
+        summary = "｜".join(f"{label} {value or '待出'}" for label, value in trend.summary_values)
+    else:
+        summary = "核心数字未出"
     return f"{PROJECT_STEADY_MARK} **{name}**{date_text}：{_color(summary, SECONDARY_COLOR)}"
 
 
@@ -502,14 +494,18 @@ def _project_alert_mark(alerts: tuple[MetricAlert, ...]) -> str:
 
 
 def _build_revenue_section(revenues: tuple[RevenueBriefEntry, ...]) -> list[CardElement]:
-    elements = [_section_title("💰 收入")]
+    common_date = _common_date(entry.revenue.report_date for entry in revenues)
+    elements = [_section_title(f"💰 收入（截至 {common_date}）" if common_date else "💰 收入")]
     if not revenues:
         elements.append(_markdown(_color("没有可展示的收入数据。", SECONDARY_COLOR)))
         return elements
     lines: list[str] = []
     for entry in revenues:
         revenue = entry.revenue
-        report_date = _color(f"（截至 {revenue.report_date}）", SECONDARY_COLOR)
+        # 统计日期相同时已写在栏目标题里，只有个别项目日期不同才单独写。
+        report_date = (
+            _color(f"（截至 {revenue.report_date}）", SECONDARY_COLOR) if revenue.report_date != common_date else ""
+        )
         robux = _color(f"（{format_robux(revenue.daily_robux)} Robux）", SECONDARY_COLOR)
         line = (
             f"- **{strip_project_title(revenue.project_name)}**{report_date}："

@@ -17,7 +17,6 @@ from .daily_brief_models import (
     RevenueBriefEntry,
 )
 from .daily_brief_rules import (
-    GENRE_SHARE_SHEET_KEY,
     MARKET_PULSE_SHEET_KEY,
     PROJECT_TREND_BASELINE_DAYS,
     PROJECT_TREND_MIN_BASELINE_DAYS,
@@ -52,7 +51,12 @@ from .market_pulse import (
     parse_market_ccu_history,
     serialize_market_ccu_history,
 )
-from .market_spotlight import MarketSpotlight, build_genre_wind_lines, build_market_spotlight
+from .market_spotlight import (
+    MarketSpotlight,
+    build_genre_wind_lines,
+    build_market_spotlight,
+    build_new_game_genre_permille,
+)
 from .metric_baseline import (
     MetricAlert,
     average_baseline,
@@ -858,6 +862,7 @@ def _build_market_section(
             # 当天无法判断新面孔时不写“新面孔集中品类”，而不是写成 0 款。
             [entry.genre for entry in spotlight.all_new_faces] if spotlight.new_face_lookback_days else None,
             pulse,
+            trend_history,
         ),
     )
     # 明细含全部命中的游戏（不只是卡片上详细展示的），便于事后核对漏报和调门槛。
@@ -1023,7 +1028,7 @@ def _build_market_pulse(
     snapshot = build_market_ccu_snapshot(
         playing_records,
         brief_date,
-        records_by_sheet.get(GENRE_SHARE_SHEET_KEY),
+        build_new_game_genre_permille(records_by_sheet),
     )
     history = parse_market_ccu_history(cfg.market_ccu_history)
     if cfg.run_trigger_source == SCHEDULED_TRIGGER_SOURCE:

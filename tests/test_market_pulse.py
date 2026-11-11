@@ -30,26 +30,25 @@ class MarketPulseTests(unittest.TestCase):
         self.assertEqual(sum(rank * 100 for rank in range(1, 13)), snapshot.broad_ccu)
         self.assertEqual(12, snapshot.game_count)
 
-    def test_snapshot_records_trending_genre_share_above_minimum(self) -> None:
+    def test_snapshot_keeps_new_game_genre_share_above_minimum(self) -> None:
         playing = [GameRecord(rank=1, name="P", playing=100)]
-        trending = [
-            GameRecord(rank=1, name="A", genre="Tycoon", playing=700),
-            GameRecord(rank=2, name="B", genre=" Obby ", playing=295),
-            GameRecord(rank=3, name="C", genre="RPG", playing=5),
-            GameRecord(rank=101, name="D", genre="Escape", playing=10000),
-        ]
 
-        snapshot = build_market_ccu_snapshot(playing, date(2026, 11, 3), trending)
+        snapshot = build_market_ccu_snapshot(playing, date(2026, 11, 12), {"Tycoon": 700, "Obby": 295, "RPG": 5})
 
-        self.assertEqual({"Tycoon": 700, "Obby": 295}, snapshot.trending_genre_permille)
+        self.assertEqual({"Tycoon": 700, "Obby": 295}, snapshot.new_game_genre_permille)
 
-    def test_genre_share_round_trips_and_old_entries_parse_without_it(self) -> None:
-        snapshot = MarketCcuSnapshot("2026-11-03", 1, 2, 3, trending_genre_permille={"Tycoon": 180})
+    def test_genre_share_round_trips_and_old_trending_share_is_ignored(self) -> None:
+        snapshot = MarketCcuSnapshot("2026-11-12", 1, 2, 3, new_game_genre_permille={"Tycoon": 180})
         raw = serialize_market_ccu_history([snapshot])
-        legacy = '{"history":[{"snapshot_date":"2026-11-02","head_ccu":1,"broad_ccu":2,"game_count":3}]}'
+        # 2026-11-12 之前存的是热门榜全部游戏的品类占比，口径不同，直接忽略。
+        legacy = (
+            '{"history":[{"snapshot_date":"2026-11-11","head_ccu":1,"broad_ccu":2,"game_count":3,'
+            '"trending_genre_permille":{"Action RPG":190}}]}'
+        )
 
         self.assertEqual([snapshot], parse_market_ccu_history(raw))
-        self.assertEqual({}, parse_market_ccu_history(legacy)[0].trending_genre_permille)
+        self.assertEqual({}, parse_market_ccu_history(legacy)[0].new_game_genre_permille)
+        self.assertNotIn("trending_genre_permille", serialize_market_ccu_history(parse_market_ccu_history(legacy)))
 
     def test_pulse_exposes_day_and_week_compare_snapshots(self) -> None:
         history = [_snapshot("2026-10-26", 100, 1000), _snapshot("2026-10-20", 100, 1000)]

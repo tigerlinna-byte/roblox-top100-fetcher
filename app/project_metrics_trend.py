@@ -40,7 +40,8 @@ class ProjectTrendSummary:
 
     project_id: str
     report_date: str
-    summary_values: tuple[tuple[str, str], ...]
+    # 核心数字（展示名, 值）；统计日该指标还没出数时值为 None，卡片写“待出”，不悄悄省略。
+    summary_values: tuple[tuple[str, str | None], ...]
     alerts: tuple[MetricAlert, ...]
     # 体量低于提醒门槛时为 True；此时不提醒任何涨跌，收入提醒也据此跳过。
     below_alert_floor: bool
@@ -59,9 +60,7 @@ def build_project_trend_summary(project_id: str, rows: list[list[object]]) -> Pr
 
     report_values = values_by_date[report_date]
     summary_values = tuple(
-        (label, report_values[field_name])
-        for field_name, label in PROJECT_SUMMARY_METRIC_LABELS.items()
-        if report_values.get(field_name)
+        (label, report_values.get(field_name) or None) for field_name, label in PROJECT_SUMMARY_METRIC_LABELS.items()
     )
     below_alert_floor = _is_below_alert_floor(report_date, values_by_date)
     return ProjectTrendSummary(

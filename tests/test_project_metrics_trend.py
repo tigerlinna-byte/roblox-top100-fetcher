@@ -81,7 +81,8 @@ class ProjectMetricsTrendTests(unittest.TestCase):
         summary = build_project_trend_summary(PROJECT_ID, rows)
 
         self.assertEqual((), summary.alerts)
-        self.assertEqual((("峰值PCU", "5,000"), ("D1", "20%")), summary.summary_values)
+        # 没出数的指标保留为 None，卡片写“待出”。
+        self.assertEqual((("峰值PCU", "5,000"), ("D1", "20%"), ("时长", None)), summary.summary_values)
 
     def test_report_date_is_latest_day_with_peak_ccu(self) -> None:
         rows = [
@@ -104,7 +105,7 @@ class ProjectMetricsTrendTests(unittest.TestCase):
 
         self.assertTrue(summary.below_alert_floor)
         self.assertEqual((), summary.alerts)
-        self.assertEqual((("峰值PCU", "90"), ("D1", "2%")), summary.summary_values)
+        self.assertEqual((("峰值PCU", "90"), ("D1", "2%"), ("时长", None)), summary.summary_values)
 
     def test_small_project_jumping_above_floor_still_alerts(self) -> None:
         rows = _rows_with_history({"peak_ccu": "300"}, {"peak_ccu": "50"})
