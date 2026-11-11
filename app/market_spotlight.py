@@ -1,11 +1,11 @@
-"""行业趋势：值得关注项目打分与品类风向。"""
+"""行业趋势：值得关注项目（新面孔 / 增长快）与品类风向。"""
 
 from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, replace
+from datetime import date, timedelta
 from typing import Literal
 
 from .daily_brief_rules import (
@@ -14,6 +14,14 @@ from .daily_brief_rules import (
     GENRE_SHARE_MAX_CHANGES,
     GENRE_SHARE_STABLE_TOP,
     GENRE_SHARE_TOP_SIZE,
+    GROWTH_BOARD_ENTRY_SHEET_KEYS,
+    GROWTH_CCU_DAY_COMPARE_DAYS,
+    GROWTH_CCU_DAY_EXCESS,
+    GROWTH_CCU_LONG_COMPARE_DAYS,
+    GROWTH_CCU_LONG_EXCESS,
+    GROWTH_DETAIL_ENTRIES,
+    GROWTH_EARNING_RISE_MIN_STEP,
+    GROWTH_EARNING_TOP_RANK_LIMIT,
     LONG_TERM_BOARD_STREAK_DAYS,
     LONG_TERM_BOARD_STREAK_SCORE,
     LONG_TERM_EARNING_RANK_LIMIT,
@@ -29,6 +37,7 @@ from .daily_brief_rules import (
     LONG_TERM_PEAK_COLLAPSE_SCORE,
     LONG_TERM_PEAK_HOLD_RATIO,
     LONG_TERM_PEAK_HOLD_SCORE,
+    LONG_TERM_PEAK_WINDOW_DAYS,
     LONG_TERM_RATING_HIGH,
     LONG_TERM_RATING_HIGH_SCORE,
     LONG_TERM_RATING_LOW,
@@ -44,59 +53,38 @@ from .daily_brief_rules import (
     LONG_TERM_TREND_COMPARE_DAYS,
     LONG_TERM_TREND_FALL_TIERS,
     LONG_TERM_TREND_RISE_TIERS,
-    SPOTLIGHT_EARNING_DEEP_RANK_MAX_AGE_DAYS,
+    NEW_FACE_DETAIL_ENTRIES,
+    NEW_FACE_LOOKBACK_DAYS,
+    NEW_GAME_LEADER_STATE_THRESHOLD,
+    NEW_GAME_LEADER_WEEK_COMPARE_DAYS,
     SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK,
-    SPOTLIGHT_EARNING_SURGE_BONUS_PER_STEP,
-    SPOTLIGHT_EARNING_SURGE_MAX_BONUS,
-    SPOTLIGHT_EARNING_SURGE_MIN_STEP,
-    SPOTLIGHT_EARNING_SURGE_SCORE,
-    SPOTLIGHT_EARNING_TOP100_RANK_LIMIT,
-    SPOTLIGHT_EARNING_TOP100_SCORE,
-    SPOTLIGHT_EARNING_WEEKLY_CLIMB_MIN_STEP,
-    SPOTLIGHT_EARNING_WEEKLY_CLIMB_SCORE,
     SPOTLIGHT_MAX_CONSIDERED_RANK,
-    SPOTLIGHT_MAX_ENTRIES,
-    SPOTLIGHT_MULTI_SHEET_SCORE_PER_EXTRA,
-    SPOTLIGHT_NEW_ENTRY_SCORE,
-    SPOTLIGHT_NEW_GAME_FULL_SCORE_DAYS,
+    SPOTLIGHT_MAX_GAME_AGE_DAYS,
+    SPOTLIGHT_MIN_CCU,
     SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES,
     SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY,
-    SPOTLIGHT_NEW_GAME_MAX_AGE_DAYS,
-    SPOTLIGHT_NEW_GAME_SCORE,
-    SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS,
-    SPOTLIGHT_RANK_SURGE_BONUS_PER_STEP,
-    SPOTLIGHT_RANK_SURGE_MAX_BONUS,
-    SPOTLIGHT_RANK_SURGE_MIN_STEP,
-    SPOTLIGHT_RANK_SURGE_SCORE,
-    SPOTLIGHT_STANDOUT_MIN_SCORE,
-    SPOTLIGHT_TOP_EARNING_RANK_LIMIT,
-    SPOTLIGHT_TOP_EARNING_SCORE,
-    TREND_HISTORY_KEEP_DAYS,
+    VETERAN_EARNER_MAX_ENTRIES,
 )
 from .game_trend_history import GameDailySnapshot, GameTrendHistory, GameTrendMetrics, build_game_trend_metrics
 from .market_pulse import MarketPulse, build_genre_ccu_permille
 from .models import GameRecord
+from .spotlight_hit_history import SpotlightHitHistory, count_previous_growth_days
 from .top_trending_briefing import (
     SHEET_LABELS,
     SHEET_ORDER,
     build_briefing_display_name,
-    collect_top_trending_focus_place_ids_by_sheet,
     resolve_launch_date,
     resolve_reference_date,
 )
 
 
-# 榜单键：收入榜、热门榜在打分与品类统计中有专门含义。
+# 榜单键：收入榜、热门榜在证据判定与品类统计中有专门含义。
 TOP_EARNING_SHEET_KEY = "top_earning"
 TOP_TRENDING_SHEET_KEY = "top_trending_v4"
 
-SignalKind = Literal[
-    "new_game",
-    "recent_game",
-    "top_earning_entry",
-    "new_entry",
-    "rank_surge",
-    "multi_sheet",
+# 增长证据的类别：在线涨幅、晋榜、收入榜上升。
+EvidenceKind = Literal["ccu", "board_entry", "earning"]
+LongTermSignalKind = Literal[
     "ccu_trend",
     "peak_hold",
     "board_streak",
@@ -104,17 +92,8 @@ SignalKind = Literal[
     "rating",
     "rating_trend",
     "earning",
-    "earning_surge",
-    "earning_top100_entry",
-    "earning_weekly_climb",
 ]
-# 收入榜上升信号：收入榜 100 名以后的游戏只有具备其中之一才入选。
-EARNING_RISE_SIGNAL_KINDS: frozenset[str] = frozenset({"earning_surge", "earning_top100_entry", "earning_weekly_climb"})
-# 只有这些“新鲜”信号能让游戏入选；多榜和 recent_game（上线超过新游门槛天数的递减新游分）只做加分，
-# 否则常驻头部的老游戏会占满名单。
-FRESH_SIGNAL_KINDS: frozenset[str] = (
-    frozenset({"new_game", "top_earning_entry", "new_entry", "rank_surge"}) | EARNING_RISE_SIGNAL_KINDS
-)
+LeaderState = Literal["up", "flat", "down"]
 
 
 @dataclass(frozen=True)
@@ -133,19 +112,47 @@ class EarningMovement:
 
 @dataclass(frozen=True)
 class SpotlightSignal:
-    """一条入选理由及其得分；长线信号得分可以为 0 或负数，理由照常展示。"""
+    """一条长线依据及其得分；得分可以为 0 或负数，理由照常展示。"""
 
-    kind: SignalKind
+    kind: LongTermSignalKind
     score: int
     reason: str
+
+
+@dataclass(frozen=True)
+class GrowthEvidence:
+    """一条增长证据；text 是卡片上直接展示的文字。"""
+
+    kind: EvidenceKind
+    text: str
+
+
+@dataclass(frozen=True)
+class LeaderStatus:
+    """头部新游的近况，让同一款游戏连续出现时每天的描述都不同。
+
+    名次变化为正表示上升；在线变化是未扣除大盘的原始比例。缺少对比数据的项为 None。
+    board_streak_capped 表示连续在榜天数已超出能回看的范围，只能说“N 天以上”。
+    """
+
+    rank: int
+    rank_day_change: int | None
+    rank_week_change: int | None
+    ccu_day_change: float | None
+    ccu_week_change: float | None
+    board_streak_days: int
+    board_streak_capped: bool
+    state: LeaderState | None
 
 
 @dataclass(frozen=True)
 class SpotlightEntry:
     """一个值得关注的游戏。
 
-    signals 衡量“爆发”，决定今日最突出与值得关注的排序；long_term_signals 衡量能否长线，
-    历史快照不足时为空。average_ccu、peak_ccu 来自一天多次采样，采样不足时为 None。
+    evidence 为增长证据，新面孔没有；ccu_day_excess 为较昨天比大盘多涨的比例，无法计算时为 None。
+    long_term_signals 衡量能否长线，历史快照不足时为空。average_ccu、peak_ccu 来自一天多次采样，
+    采样不足时为 None。days_on_board 为从首次上榜算起的第几天，超出回看范围时为 None。
+    growth_streak_days 为连续进入“增长快”的天数（含当天）。
     """
 
     place_id: int
@@ -153,19 +160,18 @@ class SpotlightEntry:
     genre: str
     ccu: int
     sheet_ranks: tuple[tuple[str, int], ...]
-    signals: tuple[SpotlightSignal, ...]
+    age_days: int | None = None
+    evidence: tuple[GrowthEvidence, ...] = ()
+    ccu_day_excess: float | None = None
     long_term_signals: tuple[SpotlightSignal, ...] = ()
     earning: EarningMovement | None = None
     universe_id: int | None = None
     average_ccu: int | None = None
     peak_ccu: int | None = None
     ccu_sample_count: int = 0
-
-    @property
-    def score(self) -> int:
-        """爆发分为各信号得分之和。"""
-
-        return sum(signal.score for signal in self.signals)
+    days_on_board: int | None = None
+    growth_streak_days: int = 0
+    leader: LeaderStatus | None = None
 
     @property
     def long_term_score(self) -> int:
@@ -176,27 +182,141 @@ class SpotlightEntry:
 
 @dataclass(frozen=True)
 class MarketSpotlight:
-    """早报中的值得关注项目。
+    """早报中的值得关注项目，各栏互不重复。
 
-    standout 为“今日最突出（爆发）”，未达门槛时为 None；long_term 为“长线潜力”；
-    entries 为其余值得关注项目；new_game_leaders 为“头部新游”，四者互不重复。
-    long_term_recorded_days 为候选游戏中最多的快照天数，用于提示长线指标还在积累。
+    新面孔：最近若干天没上过榜的新游，按 CCU 排序；增长快：有增长证据的新游，按证据条数、在线涨幅排序。
+    两栏各有一款“今日最突出”，其后是详细展示的条目，overflow 是只列一行简报的其余命中游戏。
+    long_term 为不在两栏里但长线分达标的新游；new_game_leaders 为不在以上各栏的在玩榜头部新游；
+    veteran_earners 为老游戏的收入榜异动。
+    new_face_lookback_days 为实际能回看的天数（0 表示当天无法判断新面孔）；
+    problems 为历史数据缺失导致的未判断项，由调用方写入“数据异常”。
     """
 
-    standout: SpotlightEntry | None
-    entries: tuple[SpotlightEntry, ...]
+    new_face_standout: SpotlightEntry | None = None
+    new_faces: tuple[SpotlightEntry, ...] = ()
+    new_face_overflow: tuple[SpotlightEntry, ...] = ()
+    growth_standout: SpotlightEntry | None = None
+    growth: tuple[SpotlightEntry, ...] = ()
+    growth_overflow: tuple[SpotlightEntry, ...] = ()
     long_term: tuple[SpotlightEntry, ...] = ()
     long_term_recorded_days: int = 0
     new_game_leaders: tuple[SpotlightEntry, ...] = ()
+    veteran_earners: tuple[SpotlightEntry, ...] = ()
+    new_face_lookback_days: int = 0
+    problems: tuple[str, ...] = ()
+
+    @property
+    def all_new_faces(self) -> tuple[SpotlightEntry, ...]:
+        """当天全部新面孔，含最突出与只列简报的。"""
+
+        standout = (self.new_face_standout,) if self.new_face_standout is not None else ()
+        return (*standout, *self.new_faces, *self.new_face_overflow)
+
+    @property
+    def all_growth(self) -> tuple[SpotlightEntry, ...]:
+        """当天全部增长快的游戏，含最突出与只列简报的。"""
+
+        standout = (self.growth_standout,) if self.growth_standout is not None else ()
+        return (*standout, *self.growth, *self.growth_overflow)
 
 
 @dataclass(frozen=True)
 class _CandidateGame:
-    """聚合同一游戏在各榜单中的表现，供打分使用。"""
+    """聚合同一游戏在各榜单中的表现。"""
 
     best_record: GameRecord
     ranks_by_sheet: dict[str, int]
     ccu: int
+
+
+class _TrendView:
+    """按日期查询游戏快照与大盘 CCU，统一处理“当天”和“若干天前”的取数。
+
+    history 为 None 表示快照读取失败。对比日必须恰好是指定的那一天，缺失时返回 None，
+    不用相邻日期代替。
+    """
+
+    def __init__(
+        self,
+        today: date,
+        snapshots: dict[int, GameDailySnapshot] | None,
+        history: GameTrendHistory | None,
+        market_ccu_by_date: dict[str, int] | None,
+    ) -> None:
+        self.today = today
+        self.history = history
+        self._snapshots = snapshots or {}
+        self._market = market_ccu_by_date or {}
+        self._by_date: dict[int, dict[str, GameDailySnapshot]] = {
+            place_id: {item.snapshot_date: item for item in items} for place_id, items in (history or {}).items()
+        }
+        self._lookback_dates = {self._date(offset) for offset in range(1, NEW_FACE_LOOKBACK_DAYS + 1)}
+        self._recorded_dates = {day for by_date in self._by_date.values() for day in by_date}
+
+    def _date(self, days_ago: int) -> str:
+        return (self.today - timedelta(days=days_ago)).isoformat()
+
+    @property
+    def lookback_days(self) -> int:
+        """回看窗口内实际有快照的天数；0 表示无法判断新面孔。"""
+
+        return len(self._recorded_dates & self._lookback_dates)
+
+    def is_new_face(self, place_id: int) -> bool:
+        return not (self._lookback_dates & set(self._by_date.get(place_id, {})))
+
+    def days_on_board(self, place_id: int) -> int | None:
+        """从回看窗口内第一次有快照算起，今天是第几天；窗口最早一天就在榜时无法确定，返回 None。"""
+
+        earlier = self._lookback_dates & set(self._by_date.get(place_id, {}))
+        if not earlier:
+            return 1
+        first_seen = min(earlier)
+        if first_seen == self._date(NEW_FACE_LOOKBACK_DAYS):
+            return None
+        return (self.today - date.fromisoformat(first_seen)).days + 1
+
+    def game_history(self, place_id: int) -> list[GameDailySnapshot]:
+        return list(self._by_date.get(place_id, {}).values())
+
+    def snapshot(self, place_id: int) -> GameDailySnapshot | None:
+        return self._snapshots.get(place_id)
+
+    def ccu(self, place_id: int, days_ago: int = 0) -> int | None:
+        """某天的 CCU；当天优先用历史里已有的同日快照，保证手动补跑时与定时快照口径一致。"""
+
+        stored = self._by_date.get(place_id, {}).get(self._date(days_ago))
+        if stored is not None:
+            return stored.ccu
+        if days_ago == 0 and place_id in self._snapshots:
+            return self._snapshots[place_id].ccu
+        return None
+
+    def has_comparison(self, days_ago: int) -> bool:
+        """对比日是否同时有游戏快照和大盘快照。"""
+
+        return (
+            self._date(days_ago) in self._recorded_dates
+            and self._market.get(self._date(0), 0) > 0
+            and self._market.get(self._date(days_ago), 0) > 0
+        )
+
+    def change(self, place_id: int, days_ago: int) -> float | None:
+        """在线较若干天前的原始变化比例。"""
+
+        current, earlier = self.ccu(place_id), self.ccu(place_id, days_ago)
+        if current is None or not earlier:
+            return None
+        return current / earlier - 1
+
+    def excess(self, place_id: int, days_ago: int) -> float | None:
+        """在线较若干天前比大盘多涨的比例：游戏涨幅除以大盘涨幅再减一。"""
+
+        change = self.change(place_id, days_ago)
+        if change is None or not self.has_comparison(days_ago):
+            return None
+        market_ratio = self._market[self._date(0)] / self._market[self._date(days_ago)]
+        return (1 + change) / market_ratio - 1
 
 
 def build_market_spotlight(
@@ -206,147 +326,140 @@ def build_market_spotlight(
     trend_snapshots: dict[int, GameDailySnapshot] | None = None,
     trend_history: GameTrendHistory | None = None,
     oldest_ranks_by_sheet: dict[str, dict[int, int]] | None = None,
+    market_ccu_by_date: dict[str, int] | None = None,
+    hit_history: SpotlightHitHistory | None = None,
+    brief_date: date | None = None,
 ) -> MarketSpotlight:
-    """为各榜单前列游戏打分，选出“今日最突出（爆发）”“长线潜力”与其余值得关注项目。
+    """把各榜单里的新游分成“新面孔”“增长快”等栏目。
 
-    previous_ranks_by_sheet 为上一次运行的排名，用于判断排名飙升与收入榜新进前列；
-    recent_place_ids_by_sheet 为最近若干次运行出现过的游戏，用于判断新上榜；
-    trend_snapshots 为当天的游戏快照，trend_history 为此前的每日快照，两者用于计算长线指标；
-    oldest_ranks_by_sheet 为已保存历史中最早一次运行的排名，用于计算收入榜一周走势。
+    previous_ranks_by_sheet 为上一次运行的排名，recent_place_ids_by_sheet 为最近若干次运行出现过的游戏，
+    两者用于判断晋榜与收入榜上升；oldest_ranks_by_sheet 为已保存历史中最早一次运行的排名。
+    trend_snapshots 为当天的游戏快照，trend_history 为此前的每日快照（None 表示读取失败），
+    用于判断新面孔、在线涨幅与长线指标；market_ccu_by_date 为大盘每天的 CCU 合计，用来扣除大盘涨跌。
+    hit_history 为此前每天的命中记录，用于标注连续增长天数；brief_date 为早报日期，缺省时取抓取日期。
     """
 
     reference_date = resolve_reference_date(records_by_sheet)
     if reference_date is None:
-        return MarketSpotlight(standout=None, entries=())
+        return MarketSpotlight()
 
-    focus_place_ids_by_sheet = collect_top_trending_focus_place_ids_by_sheet(
-        records_by_sheet,
-        recent_place_ids_by_sheet,
-    )
-    scored: list[SpotlightEntry] = []
+    today = brief_date or reference_date
+    view = _TrendView(today, trend_snapshots, trend_history, market_ccu_by_date)
+    can_judge_new_faces = view.lookback_days > 0
+    oldest_ranks = oldest_ranks_by_sheet or {}
+
+    new_faces: list[SpotlightEntry] = []
+    growth: list[SpotlightEntry] = []
+    steady: list[SpotlightEntry] = []
+    veterans: list[SpotlightEntry] = []
     long_term_recorded_days = 0
     for place_id, candidate in _collect_candidates(records_by_sheet, reference_date).items():
+        age_days = _resolve_age_days(candidate.best_record, reference_date)
+        # 上线时间未知的游戏不算新游也不算老游戏，无法归类。
+        if age_days is None or candidate.ccu < SPOTLIGHT_MIN_CCU:
+            continue
         earning = _build_earning_movement(
             place_id,
             candidate,
             previous_ranks_by_sheet,
-            (oldest_ranks_by_sheet or {}).get(TOP_EARNING_SHEET_KEY, {}),
+            oldest_ranks.get(TOP_EARNING_SHEET_KEY, {}),
         )
-        signals = _collect_signals(
-            place_id,
-            candidate,
-            reference_date,
-            previous_ranks_by_sheet,
-            focus_place_ids_by_sheet,
-            earning,
-        )
-        if not any(signal.kind in FRESH_SIGNAL_KINDS for signal in signals):
+        earning_evidence = _build_earning_evidence(place_id, earning, previous_ranks_by_sheet, recent_place_ids_by_sheet)
+        entry = _build_entry(place_id, candidate, age_days, earning)
+        if age_days > SPOTLIGHT_MAX_GAME_AGE_DAYS:
+            if earning_evidence:
+                veterans.append(replace(entry, evidence=earning_evidence))
             continue
-        # 只在收入榜 100 名以后出现的游戏，必须正在爬收入榜才值得关注，否则新上榜的长尾会刷屏。
-        if not _is_in_considered_range(candidate) and not any(
-            signal.kind in EARNING_RISE_SIGNAL_KINDS for signal in signals
-        ):
-            continue
-        long_term_signals: tuple[SpotlightSignal, ...] = ()
-        metrics: GameTrendMetrics | None = None
-        snapshot = (trend_snapshots or {}).get(place_id)
-        if snapshot is not None:
-            metrics = build_game_trend_metrics(snapshot, (trend_history or {}).get(place_id, []))
-            long_term_recorded_days = max(long_term_recorded_days, metrics.recorded_days)
-            if metrics.recorded_days >= LONG_TERM_MIN_RECORDED_DAYS:
-                long_term_signals = _collect_long_term_signals(metrics, earning)
-        scored.append(
-            SpotlightEntry(
-                place_id=place_id,
-                name=build_briefing_display_name(candidate.best_record),
-                genre=candidate.best_record.genre.strip(),
-                ccu=candidate.ccu,
-                sheet_ranks=tuple(
-                    (SHEET_LABELS[sheet_key], candidate.ranks_by_sheet[sheet_key])
-                    for sheet_key in SHEET_ORDER
-                    if sheet_key in candidate.ranks_by_sheet
-                ),
-                signals=signals,
-                long_term_signals=long_term_signals,
-                earning=earning,
-                universe_id=candidate.best_record.universe_id,
-                average_ccu=metrics.average_ccu if metrics else None,
-                peak_ccu=metrics.peak_ccu if metrics else None,
-                ccu_sample_count=metrics.ccu_sample_count if metrics else 0,
-            )
-        )
 
-    # 总分优先，同分时收入榜排名靠前的优先，再比 CCU，最后按名称保证结果稳定。
-    scored.sort(key=lambda entry: (-entry.score, _earning_sort_rank(entry), -entry.ccu, entry.name.casefold()))
-    standout = scored[0] if scored and scored[0].score >= SPOTLIGHT_STANDOUT_MIN_SCORE else None
-    # 长线潜力不重复展示今日最突出；长线分达到门槛才入选，没有就不硬凑。
+        metrics = _build_metrics(view, place_id)
+        if metrics is not None:
+            long_term_recorded_days = max(long_term_recorded_days, metrics.recorded_days)
+            entry = replace(
+                entry,
+                long_term_signals=(
+                    _collect_long_term_signals(metrics, earning)
+                    if metrics.recorded_days >= LONG_TERM_MIN_RECORDED_DAYS
+                    else ()
+                ),
+                average_ccu=metrics.average_ccu,
+                peak_ccu=metrics.peak_ccu,
+                ccu_sample_count=metrics.ccu_sample_count,
+            )
+        if can_judge_new_faces:
+            entry = replace(entry, days_on_board=view.days_on_board(place_id))
+
+        if can_judge_new_faces and view.is_new_face(place_id):
+            new_faces.append(entry)
+            continue
+        ccu_evidence, day_excess = _build_ccu_evidence(view, place_id)
+        evidence = (
+            *ccu_evidence,
+            *_build_board_entry_evidence(place_id, candidate, recent_place_ids_by_sheet),
+            *earning_evidence,
+        )
+        entry = replace(
+            entry,
+            evidence=evidence,
+            ccu_day_excess=day_excess,
+            leader=_build_leader_status(view, place_id, candidate, metrics, previous_ranks_by_sheet, oldest_ranks),
+        )
+        if evidence:
+            streak = count_previous_growth_days(hit_history or {}, place_id, today) + 1
+            growth.append(replace(entry, growth_streak_days=streak))
+        else:
+            steady.append(entry)
+
+    new_faces.sort(key=lambda entry: (-entry.ccu, entry.name.casefold()))
+    growth.sort(key=_growth_sort_key)
+    # 长线潜力只放两栏之外的游戏；长线分达到门槛才入选，没有就不硬凑。
     long_term = sorted(
-        (
-            entry
-            for entry in scored
-            if entry is not standout and entry.long_term_signals and entry.long_term_score >= LONG_TERM_MIN_SCORE
-        ),
+        (entry for entry in steady if entry.long_term_signals and entry.long_term_score >= LONG_TERM_MIN_SCORE),
         key=lambda entry: (-entry.long_term_score, _earning_sort_rank(entry), -entry.ccu, entry.name.casefold()),
     )[:LONG_TERM_MAX_ENTRIES]
-    shown_place_ids = {entry.place_id for entry in long_term}
-    if standout is not None:
-        shown_place_ids.add(standout.place_id)
-    remaining_slots = SPOTLIGHT_MAX_ENTRIES - len(shown_place_ids)
-    entries = tuple(entry for entry in scored if entry.place_id not in shown_place_ids)[:remaining_slots]
-    shown_place_ids.update(entry.place_id for entry in entries)
+    long_term_place_ids = {entry.place_id for entry in long_term}
+    leader_label = SHEET_LABELS[SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY]
+    leaders = sorted(
+        (
+            entry
+            for entry in steady
+            if entry.place_id not in long_term_place_ids and entry.leader is not None
+        ),
+        key=lambda entry: dict(entry.sheet_ranks)[leader_label],
+    )[:SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES]
+    veterans.sort(key=lambda entry: (-(entry.earning.change or 0) if entry.earning else 0, _earning_sort_rank(entry)))
+
     return MarketSpotlight(
-        standout=standout,
-        entries=entries,
+        new_face_standout=new_faces[0] if new_faces else None,
+        new_faces=tuple(new_faces[1:NEW_FACE_DETAIL_ENTRIES]),
+        new_face_overflow=tuple(new_faces[NEW_FACE_DETAIL_ENTRIES:]),
+        growth_standout=growth[0] if growth else None,
+        growth=tuple(growth[1:GROWTH_DETAIL_ENTRIES]),
+        growth_overflow=tuple(growth[GROWTH_DETAIL_ENTRIES:]),
         long_term=tuple(long_term),
         long_term_recorded_days=long_term_recorded_days,
-        new_game_leaders=_select_new_game_leaders(scored, shown_place_ids),
+        new_game_leaders=tuple(leaders),
+        veteran_earners=tuple(veterans[:VETERAN_EARNER_MAX_ENTRIES]),
+        new_face_lookback_days=view.lookback_days,
+        problems=_describe_trend_problems(view),
     )
-
-
-def _select_new_game_leaders(
-    scored: list[SpotlightEntry],
-    shown_place_ids: set[int],
-) -> tuple[SpotlightEntry, ...]:
-    """按在玩榜排名选出其他栏没有展示的新游；上线天数沿用新游信号的门槛。"""
-
-    label = SHEET_LABELS[SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY]
-    leaders = [
-        entry
-        for entry in scored
-        if entry.place_id not in shown_place_ids
-        and label in dict(entry.sheet_ranks)
-        and any(signal.kind == "new_game" for signal in entry.signals)
-    ]
-    leaders.sort(key=lambda entry: dict(entry.sheet_ranks)[label])
-    return tuple(leaders[:SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES])
 
 
 def build_genre_wind_lines(
     records_by_sheet: dict[str, list[GameRecord]],
-    recent_place_ids_by_sheet: dict[str, set[int]],
+    new_face_genres: Iterable[str] | None,
     pulse: MarketPulse | None = None,
 ) -> tuple[str, ...]:
-    """生成品类风向描述：新上榜游戏的集中品类、热门榜品类 CCU 占比的变化。"""
+    """生成品类风向描述：新面孔的集中品类、热门榜品类 CCU 占比的变化。
+
+    new_face_genres 为当天全部新面孔的品类，与新面孔栏口径一致；None 表示当天无法判断新面孔。
+    """
 
     lines: list[str] = []
-    focus_place_ids = {
-        place_id
-        for place_ids in collect_top_trending_focus_place_ids_by_sheet(
-            records_by_sheet,
-            recent_place_ids_by_sheet,
-        ).values()
-        for place_id in place_ids
-    }
-    new_entry_genres = {
-        record.place_id: record.genre.strip()
-        for sheet_key in SHEET_ORDER
-        for record in records_by_sheet.get(sheet_key, [])
-        if record.place_id in focus_place_ids and record.rank <= SPOTLIGHT_MAX_CONSIDERED_RANK
-    }
-    top_new_genre = _most_common_genre(new_entry_genres.values())
+    genres = list(new_face_genres or ())
+    top_new_genre = _most_common_genre(genres)
     if top_new_genre is not None:
         genre, count = top_new_genre
-        lines.append(f"今日新上榜 {len(new_entry_genres)} 款中 {count} 款是 {genre}")
+        lines.append(f"今日新面孔 {len(genres)} 款中 {count} 款是 {genre}")
 
     share_line = _build_genre_share_line(records_by_sheet.get(TOP_TRENDING_SHEET_KEY, []), pulse)
     if share_line:
@@ -435,7 +548,7 @@ def _collect_candidates(
 ) -> dict[int, _CandidateGame]:
     """把各榜单前列记录按游戏聚合，记录每个榜单的排名与最高 CCU。
 
-    收入榜对较新的游戏放宽到更靠后的名次，用来发现正在爬收入榜的新游。
+    收入榜对新游放宽到更靠后的名次，用来发现刚开始变现的游戏。
     """
 
     candidates: dict[int, _CandidateGame] = {}
@@ -463,16 +576,178 @@ def _collect_candidates(
 def _considered_rank_limit(sheet_key: str, record: GameRecord, reference_date: date) -> int:
     if sheet_key != TOP_EARNING_SHEET_KEY:
         return SPOTLIGHT_MAX_CONSIDERED_RANK
-    launch_date = resolve_launch_date(record)
-    if launch_date is None or (reference_date - launch_date).days > SPOTLIGHT_EARNING_DEEP_RANK_MAX_AGE_DAYS:
+    age_days = _resolve_age_days(record, reference_date)
+    if age_days is None or age_days > SPOTLIGHT_MAX_GAME_AGE_DAYS:
         return SPOTLIGHT_MAX_CONSIDERED_RANK
     return SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK
 
 
-def _is_in_considered_range(candidate: _CandidateGame) -> bool:
-    """是否至少在一个榜单的常规考察范围（前 N 名）内。"""
+def _resolve_age_days(record: GameRecord, reference_date: date) -> int | None:
+    launch_date = resolve_launch_date(record)
+    if launch_date is None:
+        return None
+    return (reference_date - launch_date).days
 
-    return any(rank <= SPOTLIGHT_MAX_CONSIDERED_RANK for rank in candidate.ranks_by_sheet.values())
+
+def _build_entry(
+    place_id: int,
+    candidate: _CandidateGame,
+    age_days: int,
+    earning: EarningMovement | None,
+) -> SpotlightEntry:
+    return SpotlightEntry(
+        place_id=place_id,
+        name=build_briefing_display_name(candidate.best_record),
+        genre=candidate.best_record.genre.strip(),
+        ccu=candidate.ccu,
+        sheet_ranks=tuple(
+            (SHEET_LABELS[sheet_key], candidate.ranks_by_sheet[sheet_key])
+            for sheet_key in SHEET_ORDER
+            if sheet_key in candidate.ranks_by_sheet
+        ),
+        age_days=age_days,
+        earning=earning,
+        universe_id=candidate.best_record.universe_id,
+    )
+
+
+def _build_metrics(view: _TrendView, place_id: int) -> GameTrendMetrics | None:
+    """长线指标；快照读取失败或当天没有该游戏的快照时为 None。"""
+
+    snapshot = view.snapshot(place_id)
+    if snapshot is None or view.history is None:
+        return None
+    return build_game_trend_metrics(snapshot, view.game_history(place_id))
+
+
+def _describe_trend_problems(view: _TrendView) -> tuple[str, ...]:
+    """历史数据缺失时说明当天哪些判断没有做；不拿其他日期或数据源顶替。"""
+
+    if view.history is None:
+        return ("游戏每日快照读取失败，今天不判断新面孔、在线涨幅和长线潜力",)
+    if view.lookback_days == 0:
+        return ("还没有可用的历史快照，今天不判断新面孔和在线涨幅",)
+    problems: list[str] = []
+    if not view.has_comparison(GROWTH_CCU_DAY_COMPARE_DAYS):
+        problems.append("缺少昨天的游戏或大盘快照，今天不判断较昨天的在线涨幅")
+    if not view.has_comparison(GROWTH_CCU_LONG_COMPARE_DAYS):
+        problems.append(
+            f"缺少 {GROWTH_CCU_LONG_COMPARE_DAYS} 天前的游戏或大盘快照，"
+            f"今天不判断较 {GROWTH_CCU_LONG_COMPARE_DAYS} 天前的在线涨幅"
+        )
+    return tuple(problems)
+
+
+def _build_ccu_evidence(view: _TrendView, place_id: int) -> tuple[tuple[GrowthEvidence, ...], float | None]:
+    """在线证据：较昨天比大盘多涨达到门槛，否则再看较若干天前；同时返回较昨天的超额涨幅用于排序。"""
+
+    day_excess = view.excess(place_id, GROWTH_CCU_DAY_COMPARE_DAYS)
+    if day_excess is not None and day_excess >= GROWTH_CCU_DAY_EXCESS:
+        return (GrowthEvidence("ccu", f"在线比大盘多涨 {day_excess:.0%}（较昨天）"),), day_excess
+    long_excess = view.excess(place_id, GROWTH_CCU_LONG_COMPARE_DAYS)
+    if long_excess is not None and long_excess >= GROWTH_CCU_LONG_EXCESS:
+        text = f"在线比大盘多涨 {long_excess:.0%}（较 {GROWTH_CCU_LONG_COMPARE_DAYS} 天前）"
+        return (GrowthEvidence("ccu", text),), day_excess
+    return (), day_excess
+
+
+def _build_board_entry_evidence(
+    place_id: int,
+    candidate: _CandidateGame,
+    recent_place_ids_by_sheet: dict[str, set[int]],
+) -> tuple[GrowthEvidence, ...]:
+    """晋榜证据：最近若干次运行首次进入热门榜、在玩榜前列。
+
+    某个榜单没有历史时无法判断，不能把整张榜都当成新进榜。收入榜的晋榜归入收入证据。
+    """
+
+    entered = [
+        SHEET_LABELS[sheet_key]
+        for sheet_key in GROWTH_BOARD_ENTRY_SHEET_KEYS
+        if candidate.ranks_by_sheet.get(sheet_key, SPOTLIGHT_MAX_CONSIDERED_RANK + 1) <= SPOTLIGHT_MAX_CONSIDERED_RANK
+        and recent_place_ids_by_sheet.get(sheet_key)
+        and place_id not in recent_place_ids_by_sheet[sheet_key]
+    ]
+    if not entered:
+        return ()
+    return (GrowthEvidence("board_entry", f"新进{'、'.join(entered)}"),)
+
+
+def _build_earning_evidence(
+    place_id: int,
+    earning: EarningMovement | None,
+    previous_ranks_by_sheet: dict[str, dict[int, int]],
+    recent_place_ids_by_sheet: dict[str, set[int]],
+) -> tuple[GrowthEvidence, ...]:
+    """收入证据：首次进入收入榜考察范围、较上次上升达到步长，或冲进前列。
+
+    收入榜没有历史时不判断，避免首次运行把所有游戏都当成新进榜。
+    """
+
+    recent_place_ids = recent_place_ids_by_sheet.get(TOP_EARNING_SHEET_KEY)
+    if earning is None or not recent_place_ids or not previous_ranks_by_sheet.get(TOP_EARNING_SHEET_KEY):
+        return ()
+    label = SHEET_LABELS[TOP_EARNING_SHEET_KEY]
+    if place_id not in recent_place_ids:
+        return (GrowthEvidence("earning", f"新进{label}"),)
+    if earning.change is not None and earning.change >= GROWTH_EARNING_RISE_MIN_STEP:
+        return (GrowthEvidence("earning", f"{label} ↑{earning.change}"),)
+    previous_rank = earning.rank + earning.change if earning.change is not None else None
+    if earning.rank <= GROWTH_EARNING_TOP_RANK_LIMIT and (
+        previous_rank is None or previous_rank > GROWTH_EARNING_TOP_RANK_LIMIT
+    ):
+        return (GrowthEvidence("earning", f"冲进{label}前 {GROWTH_EARNING_TOP_RANK_LIMIT}"),)
+    return ()
+
+
+def _growth_sort_key(entry: SpotlightEntry) -> tuple[int, float, int, str]:
+    """证据条数多的在前，其次在线比大盘多涨得多的在前；算不出涨幅的排在同条数的最后。"""
+
+    excess = entry.ccu_day_excess if entry.ccu_day_excess is not None else float("-inf")
+    return (-len(entry.evidence), -excess, -entry.ccu, entry.name.casefold())
+
+
+def _build_leader_status(
+    view: _TrendView,
+    place_id: int,
+    candidate: _CandidateGame,
+    metrics: GameTrendMetrics | None,
+    previous_ranks_by_sheet: dict[str, dict[int, int]],
+    oldest_ranks_by_sheet: dict[str, dict[int, int]],
+) -> LeaderStatus | None:
+    """在玩榜前列的新游近况；不在在玩榜常规范围内时为 None。"""
+
+    sheet_key = SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY
+    rank = candidate.ranks_by_sheet.get(sheet_key)
+    if rank is None or rank > SPOTLIGHT_MAX_CONSIDERED_RANK:
+        return None
+    previous_rank = previous_ranks_by_sheet.get(sheet_key, {}).get(place_id)
+    oldest_rank = oldest_ranks_by_sheet.get(sheet_key, {}).get(place_id)
+    week_change = view.change(place_id, NEW_GAME_LEADER_WEEK_COMPARE_DAYS)
+    streak = metrics.board_streak_days if metrics is not None else 0
+    return LeaderStatus(
+        rank=rank,
+        rank_day_change=previous_rank - rank if previous_rank is not None else None,
+        rank_week_change=oldest_rank - rank if oldest_rank is not None else None,
+        ccu_day_change=view.change(place_id, GROWTH_CCU_DAY_COMPARE_DAYS),
+        ccu_week_change=week_change,
+        board_streak_days=min(streak, NEW_FACE_LOOKBACK_DAYS),
+        board_streak_capped=streak > NEW_FACE_LOOKBACK_DAYS,
+        state=_resolve_leader_state(week_change, view.excess(place_id, GROWTH_CCU_DAY_COMPARE_DAYS)),
+    )
+
+
+def _resolve_leader_state(week_change: float | None, day_excess: float | None) -> LeaderState | None:
+    """状态词优先看较上周同日（抵消周末效应），没有时看较昨天比大盘多涨多少；都没有时不给结论。"""
+
+    change = week_change if week_change is not None else day_excess
+    if change is None:
+        return None
+    if change >= NEW_GAME_LEADER_STATE_THRESHOLD:
+        return "up"
+    if change <= -NEW_GAME_LEADER_STATE_THRESHOLD:
+        return "down"
+    return "flat"
 
 
 def _build_earning_movement(
@@ -502,116 +777,6 @@ def _build_earning_movement(
     )
 
 
-def _collect_signals(
-    place_id: int,
-    candidate: _CandidateGame,
-    reference_date: date,
-    previous_ranks_by_sheet: dict[str, dict[int, int]],
-    focus_place_ids_by_sheet: dict[str, set[int]],
-    earning: EarningMovement | None,
-) -> tuple[SpotlightSignal, ...]:
-    """按规则逐项判定信号，信号顺序即理由的展示顺序；收入榜信号排在前面，便于一眼看到。"""
-
-    signals: list[SpotlightSignal] = []
-    launch_date = resolve_launch_date(candidate.best_record)
-    if launch_date is not None:
-        age_days = (reference_date - launch_date).days
-        new_game_score = _new_game_score(age_days)
-        if new_game_score > 0:
-            kind: SignalKind = "new_game" if age_days <= SPOTLIGHT_NEW_GAME_MAX_AGE_DAYS else "recent_game"
-            signals.append(SpotlightSignal(kind, new_game_score, f"上线 {age_days} 天"))
-
-    signals.extend(_build_earning_signals(earning, bool(previous_ranks_by_sheet.get(TOP_EARNING_SHEET_KEY))))
-
-    new_entry_labels = [
-        SHEET_LABELS[sheet_key]
-        for sheet_key in SHEET_ORDER
-        if sheet_key in candidate.ranks_by_sheet
-        and place_id in focus_place_ids_by_sheet.get(sheet_key, set())
-    ]
-    if new_entry_labels:
-        signals.append(
-            SpotlightSignal("new_entry", SPOTLIGHT_NEW_ENTRY_SCORE, f"新上{'、'.join(new_entry_labels)}")
-        )
-
-    surge_signal = _build_rank_surge_signal(place_id, candidate, previous_ranks_by_sheet)
-    if surge_signal is not None:
-        signals.append(surge_signal)
-
-    # 多榜只统计常规考察范围内的排名，收入榜靠后的名次不算“同时在榜”。
-    sheet_count = sum(1 for rank in candidate.ranks_by_sheet.values() if rank <= SPOTLIGHT_MAX_CONSIDERED_RANK)
-    if sheet_count > 1:
-        signals.append(
-            SpotlightSignal(
-                "multi_sheet",
-                (sheet_count - 1) * SPOTLIGHT_MULTI_SHEET_SCORE_PER_EXTRA,
-                f"同时在 {sheet_count} 个榜单",
-            )
-        )
-    return tuple(signals)
-
-
-def _new_game_score(age_days: int) -> int:
-    """新游分：满分天数内得满分，之后线性递减到归零天数为 0，四舍五入取整（不用 round 的银行家舍入）。"""
-
-    if age_days < 0 or age_days >= SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS:
-        return 0
-    if age_days <= SPOTLIGHT_NEW_GAME_FULL_SCORE_DAYS:
-        return SPOTLIGHT_NEW_GAME_SCORE
-    remaining_ratio = (SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS - age_days) / (
-        SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS - SPOTLIGHT_NEW_GAME_FULL_SCORE_DAYS
-    )
-    return int(SPOTLIGHT_NEW_GAME_SCORE * remaining_ratio + 0.5)
-
-
-def _build_earning_signals(
-    earning: EarningMovement | None,
-    has_previous_earning_ranks: bool,
-) -> list[SpotlightSignal]:
-    """收入榜单独计分：新进前 20 或冲进前 100、较上次飙升、一周爬升。
-
-    上次运行没有收入榜历史时不判断“冲进前 100”，避免首次运行把所有游戏都当成新进榜。
-    """
-
-    if earning is None:
-        return []
-    label = SHEET_LABELS[TOP_EARNING_SHEET_KEY]
-    previous_rank = earning.rank + earning.change if earning.change is not None else None
-    signals: list[SpotlightSignal] = []
-    if earning.rank <= SPOTLIGHT_TOP_EARNING_RANK_LIMIT and (
-        previous_rank is None or previous_rank > SPOTLIGHT_TOP_EARNING_RANK_LIMIT
-    ):
-        signals.append(
-            SpotlightSignal("top_earning_entry", SPOTLIGHT_TOP_EARNING_SCORE, f"新进{label}前 {SPOTLIGHT_TOP_EARNING_RANK_LIMIT}")
-        )
-    elif (
-        has_previous_earning_ranks
-        and earning.rank <= SPOTLIGHT_EARNING_TOP100_RANK_LIMIT
-        and (previous_rank is None or previous_rank > SPOTLIGHT_EARNING_TOP100_RANK_LIMIT)
-    ):
-        signals.append(
-            SpotlightSignal(
-                "earning_top100_entry",
-                SPOTLIGHT_EARNING_TOP100_SCORE,
-                f"冲进{label}前 {SPOTLIGHT_EARNING_TOP100_RANK_LIMIT}",
-            )
-        )
-
-    if earning.change is not None and earning.change >= SPOTLIGHT_EARNING_SURGE_MIN_STEP:
-        # 基础分之外，每多上升一个步长再加分，加分有上限。
-        extra_steps = (earning.change - SPOTLIGHT_EARNING_SURGE_MIN_STEP) // SPOTLIGHT_EARNING_SURGE_MIN_STEP
-        bonus = min(SPOTLIGHT_EARNING_SURGE_MAX_BONUS, extra_steps * SPOTLIGHT_EARNING_SURGE_BONUS_PER_STEP)
-        signals.append(
-            SpotlightSignal("earning_surge", SPOTLIGHT_EARNING_SURGE_SCORE + bonus, f"{label}较上次 ↑{earning.change}")
-        )
-
-    if earning.week_change is not None and earning.week_change >= SPOTLIGHT_EARNING_WEEKLY_CLIMB_MIN_STEP:
-        signals.append(
-            SpotlightSignal("earning_weekly_climb", SPOTLIGHT_EARNING_WEEKLY_CLIMB_SCORE, _format_earning_week(earning))
-        )
-    return signals
-
-
 def _format_earning_week(earning: EarningMovement) -> str:
     """一周走势的文字；一周前不在榜时写明从榜外升上来，而不是给出按末位推算的名次差。"""
 
@@ -627,38 +792,6 @@ def _earning_sort_rank(entry: SpotlightEntry) -> int:
     """排序用的收入榜名次；不在收入榜的排在最后。"""
 
     return entry.earning.rank if entry.earning is not None else SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK + 1
-
-
-def _build_rank_surge_signal(
-    place_id: int,
-    candidate: _CandidateGame,
-    previous_ranks_by_sheet: dict[str, dict[int, int]],
-) -> SpotlightSignal | None:
-    """取收入榜以外各榜单中较上次运行上升最多的一次，达到步长才算飙升；收入榜飙升单独计分。"""
-
-    best_sheet_key = ""
-    best_surge = 0
-    for sheet_key in SHEET_ORDER:
-        if sheet_key == TOP_EARNING_SHEET_KEY:
-            continue
-        current_rank = candidate.ranks_by_sheet.get(sheet_key)
-        previous_rank = previous_ranks_by_sheet.get(sheet_key, {}).get(place_id)
-        if current_rank is None or previous_rank is None:
-            continue
-        surge = previous_rank - current_rank
-        if surge > best_surge:
-            best_sheet_key, best_surge = sheet_key, surge
-    if best_surge < SPOTLIGHT_RANK_SURGE_MIN_STEP:
-        return None
-
-    # 基础分之外，每多上升一个步长再加分，加分有上限，防止单一信号压过其他信号。
-    extra_steps = (best_surge - SPOTLIGHT_RANK_SURGE_MIN_STEP) // SPOTLIGHT_RANK_SURGE_MIN_STEP
-    bonus = min(SPOTLIGHT_RANK_SURGE_MAX_BONUS, extra_steps * SPOTLIGHT_RANK_SURGE_BONUS_PER_STEP)
-    return SpotlightSignal(
-        "rank_surge",
-        SPOTLIGHT_RANK_SURGE_SCORE + bonus,
-        f"{SHEET_LABELS[best_sheet_key]}较上次 ↑{best_surge}",
-    )
 
 
 def _collect_long_term_signals(
@@ -685,9 +818,9 @@ def _collect_long_term_signals(
         else:
             peak_score = 0
         peak_reason = (
-            f"处于 {TREND_HISTORY_KEEP_DAYS} 日峰值"
+            f"处于 {LONG_TERM_PEAK_WINDOW_DAYS} 日峰值"
             if metrics.peak_ratio >= 1
-            else f"较 {TREND_HISTORY_KEEP_DAYS} 日峰值 {_format_percent_change(metrics.peak_ratio - 1)}"
+            else f"较 {LONG_TERM_PEAK_WINDOW_DAYS} 日峰值 {_format_percent_change(metrics.peak_ratio - 1)}"
         )
         signals.append(SpotlightSignal("peak_hold", peak_score, peak_reason))
 

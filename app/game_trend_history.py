@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 from .daily_brief_rules import (
+    LONG_TERM_PEAK_WINDOW_DAYS,
     LONG_TERM_RATING_MIN_NEW_VOTES,
     LONG_TERM_RATING_TREND_DAYS,
     LONG_TERM_TREND_COMPARE_DAYS,
@@ -195,7 +196,7 @@ def build_game_trend_metrics(snapshot: GameDailySnapshot, history: list[GameDail
         recorded_days=len(snapshots_by_date),
         ccu=current.ccu,
         ccu_change_ratio=_ccu_change_ratio(current, earlier, current_date),
-        peak_ratio=_peak_ratio(current, snapshots_by_date.values()),
+        peak_ratio=_peak_ratio(current, snapshots_by_date.values(), current_date),
         board_streak_days=_board_streak_days(snapshots_by_date, current_date),
         session_minutes=_session_minutes(current, interval_previous, gap_days),
         like_ratio=like_ratio,
@@ -225,8 +226,15 @@ def _ccu_change_ratio(
     return current.ccu / average - 1
 
 
-def _peak_ratio(current: GameDailySnapshot, snapshots: Iterable[GameDailySnapshot]) -> float | None:
-    peak = max(item.ccu for item in snapshots)
+def _peak_ratio(
+    current: GameDailySnapshot,
+    snapshots: Iterable[GameDailySnapshot],
+    current_date: date,
+) -> float | None:
+    """当天 CCU 占峰值窗口内最高值的比例；快照保留天数比窗口多一天，更早的那天不参与。"""
+
+    window_start = (current_date - timedelta(days=LONG_TERM_PEAK_WINDOW_DAYS - 1)).isoformat()
+    peak = max(item.ccu for item in snapshots if item.snapshot_date >= window_start)
     if peak <= 0:
         return None
     return current.ccu / peak

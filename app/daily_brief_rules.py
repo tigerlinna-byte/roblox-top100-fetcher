@@ -107,52 +107,56 @@ MARKET_PULSE_DAY_COMPARE_DAYS = 1
 MARKET_CCU_HISTORY_KEEP_DAYS = 30
 
 # ---------------------------------------------------------------------------
-# 值得关注项目（打分）
+# 值得关注项目（新面孔 / 增长快）
 # ---------------------------------------------------------------------------
 
-# 只考察各榜单前 N 名，避免收入榜 100 名以后的排名波动制造噪音。
+# 常规考察范围：各榜单前 N 名。
 SPOTLIGHT_MAX_CONSIDERED_RANK = 100
-# 新游信号：上线不超过满分天数得满分，之后按天线性递减（四舍五入取整），到归零天数为 0。
-SPOTLIGHT_NEW_GAME_SCORE = 3
-SPOTLIGHT_NEW_GAME_FULL_SCORE_DAYS = 14
-SPOTLIGHT_NEW_GAME_ZERO_SCORE_DAYS = 90
-# 只有上线不超过该天数的新游信号能让游戏入选；更久的只加分，避免常驻多榜的次新游戏占满名单。
-SPOTLIGHT_NEW_GAME_MAX_AGE_DAYS = 30
-# 收入榜新进前 N 信号：本次在收入榜前 N，上次运行不在前 N。
-SPOTLIGHT_TOP_EARNING_RANK_LIMIT = 20
-SPOTLIGHT_TOP_EARNING_SCORE = 3
-# 新上榜信号：最近若干次运行首次出现在某榜单，且首次上线未满 6 个月（沿用今日关注规则）。
-SPOTLIGHT_NEW_ENTRY_SCORE = 2
-# 排名飙升信号：较上次运行上升达到该名次即得基础分，每多上升一个步长再加分，加分有上限。
-SPOTLIGHT_RANK_SURGE_MIN_STEP = 20
-SPOTLIGHT_RANK_SURGE_SCORE = 2
-SPOTLIGHT_RANK_SURGE_BONUS_PER_STEP = 1
-SPOTLIGHT_RANK_SURGE_MAX_BONUS = 3
-# 多榜信号：同时出现在多个榜单时，每多一个榜单加分（只统计各榜前 N 名）。
-SPOTLIGHT_MULTI_SHEET_SCORE_PER_EXTRA = 1
-
-# 收入榜比其他榜单稳定得多（前 100 名每天变化中位数只有 2～4 名），单独设置更灵敏的规则。
-# 收入榜考察范围：上线不超过该天数的游戏，收入榜看到前 N 名；它们必须有收入榜上升信号才入选。
+# 收入榜对新游放宽到前 N 名，用来发现刚开始变现的游戏；老游戏仍只看常规范围。
 SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK = 300
-SPOTLIGHT_EARNING_DEEP_RANK_MAX_AGE_DAYS = 180
-# 收入榜飙升：较上次运行上升达到该名次即得基础分，每多上升一个步长再加分，加分有上限。
-SPOTLIGHT_EARNING_SURGE_MIN_STEP = 10
-SPOTLIGHT_EARNING_SURGE_SCORE = 3
-SPOTLIGHT_EARNING_SURGE_BONUS_PER_STEP = 1
-SPOTLIGHT_EARNING_SURGE_MAX_BONUS = 3
-# 冲进收入榜前 N：上次运行在前 N 以外（或不在榜），本次进入前 N。
-SPOTLIGHT_EARNING_TOP100_RANK_LIMIT = 100
-SPOTLIGHT_EARNING_TOP100_SCORE = 3
-# 收入榜一周爬升：与已保存历史中最早一次运行（约 7 天前）相比上升达到该名次；当时不在榜按第 N+1 名计。
-SPOTLIGHT_EARNING_WEEKLY_CLIMB_MIN_STEP = 50
-SPOTLIGHT_EARNING_WEEKLY_CLIMB_SCORE = 2
-# 卡片最多展示的值得关注项目数（含“今日最突出”）。
-SPOTLIGHT_MAX_ENTRIES = 8
-# “今日最突出”的最低总分，没有游戏达到时不评选，避免硬凑。
-SPOTLIGHT_STANDOUT_MIN_SCORE = 3
-# 头部新游：爆发分偏爱榜单变化，排名稳定的头部新游容易落选，所以按在玩榜排名单列；不与其他栏重复。
+# 新游范围：创建不超过该天数。统计 2026-11 上旬首次上榜的 128 款游戏，91% 在创建 60 天内，
+# 但起量后还要观察几周（13 Days to Escape 创建 31 天、Throw Food For Animals 创建 39 天才起量）。
+SPOTLIGHT_MAX_GAME_AGE_DAYS = 90
+# 最低体量：CCU 低于该值的游戏不进名单。Barber Simulator 首次上榜时 4,359，取 5,000 会漏掉它。
+SPOTLIGHT_MIN_CCU = 3000
+
+# 新面孔：最近 N 天（不含当天）没在四个榜单的考察范围内出现过，依据游戏每日快照判断。
+NEW_FACE_LOOKBACK_DAYS = 14
+# 新面孔详细展示条数（含“今日最突出”），其余只列一行简报。
+NEW_FACE_DETAIL_ENTRIES = 6
+
+# 增长快：以下三类证据任一成立即入选，证据条数越多排得越前。
+# 在线：CCU 涨幅要扣除大盘同期涨跌，否则周六会有二十多款命中、周一一款都没有。
+# 较昨天比大盘多涨达到该比例，或较若干天前比大盘多涨达到另一比例。
+GROWTH_CCU_DAY_COMPARE_DAYS = 1
+GROWTH_CCU_DAY_EXCESS = 0.5
+GROWTH_CCU_LONG_COMPARE_DAYS = 3
+GROWTH_CCU_LONG_EXCESS = 1.0
+# 晋榜：最近若干次运行首次进入这些榜单的前 N 名；首次进入收入榜考察范围同样算晋榜。
+GROWTH_BOARD_ENTRY_SHEET_KEYS: tuple[str, ...] = ("top_trending_v4", "top_playing_now")
+# 收入：收入榜较上次运行上升达到该名次，或从前 N 名以外冲进前 N 名。
+GROWTH_EARNING_RISE_MIN_STEP = 20
+GROWTH_EARNING_TOP_RANK_LIMIT = 100
+# 增长快详细展示条数（含“今日最突出”），其余只列一行简报。
+GROWTH_DETAIL_ENTRIES = 8
+
+# 每栏简报行最多列出的游戏数。近十天实际最多 33 款；设上限只为保证卡片不超过飞书的体积限制，
+# 超出时卡片写明还有多少款，完整名单在明细产物里。
+SPOTLIGHT_OVERFLOW_MAX_ENTRIES = 40
+
+# 头部新游：排名稳定的头部新游没有变化事件，新面孔和增长快都不会命中，所以按在玩榜排名单列。
 SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY = "top_playing_now"
 SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES = 3
+# 头部新游的在线对比：较上周同日（抵消周末效应），没有时改看较昨天比大盘多涨多少。
+NEW_GAME_LEADER_WEEK_COMPARE_DAYS = 7
+# 状态词：在线变化超过该比例为“上升/回落”，否则为“平稳”。
+NEW_GAME_LEADER_STATE_THRESHOLD = 0.10
+
+# 老游戏收入异动：创建超过新游范围的游戏命中收入证据时单列一行，最多 N 款。
+VETERAN_EARNER_MAX_ENTRIES = 3
+
+# 命中历史保留天数，用来标注“连续第 N 天增长”。
+SPOTLIGHT_HIT_HISTORY_KEEP_DAYS = 14
 
 # ---------------------------------------------------------------------------
 # 长线潜力（基于每日历史快照）
@@ -160,8 +164,10 @@ SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES = 3
 
 # 每日快照的记录范围：各榜单前 N 名中首次上线不超过该天数的游戏，老游戏不需要看长线潜力。
 TREND_HISTORY_MAX_GAME_AGE_DAYS = 180
-# 每日快照保留天数；同时决定“较峰值”的峰值窗口。
-TREND_HISTORY_KEEP_DAYS = 14
+# 每日快照保留天数（含当天）：新面孔要回看当天之前的 14 天，所以保留 15 天。
+TREND_HISTORY_KEEP_DAYS = 15
+# “较峰值”的峰值窗口（含当天）。
+LONG_TERM_PEAK_WINDOW_DAYS = 14
 # 至少有这么多天快照（含当天）才计算长线指标，不足时卡片显示“数据积累中”。
 LONG_TERM_MIN_RECORDED_DAYS = 3
 # 在线趋势：当天 CCU 与之前若干天均值比较；窗口内至少要有 2 天数据。

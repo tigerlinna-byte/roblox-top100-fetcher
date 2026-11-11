@@ -19,7 +19,14 @@ from app.main import (
 )
 from app.github_client import GitHubClientError, RepositoryFile
 from app.market_pulse import MARKET_CCU_HISTORY_VAR
-from app.market_spotlight import EarningMovement, MarketSpotlight, SpotlightEntry, SpotlightSignal
+from app.market_spotlight import (
+    EarningMovement,
+    GrowthEvidence,
+    LeaderStatus,
+    MarketSpotlight,
+    SpotlightEntry,
+    SpotlightSignal,
+)
 from app.metric_baseline import MetricAlert
 from app.models import GameRecord
 from app.project_metrics_sheet import PROJECT_METRICS_FIELD_TO_HEADER, PROJECT_METRICS_HEADERS
@@ -109,88 +116,166 @@ class DailyBriefAudienceTests(unittest.TestCase):
 
 
 class DailyBriefCardTests(unittest.TestCase):
-    def test_spotlight_lines_show_earning_rank_and_changes(self) -> None:
-        standout = SpotlightEntry(
-            place_id=1,
-            name="DONT SPLASH",
-            genre="Runner",
-            ccu=86967,
-            sheet_ranks=(("热门榜", 1), ("收入榜", 76)),
-            signals=(SpotlightSignal("earning_surge", 6, "收入榜较上次 ↑48"),),
-            earning=EarningMovement(rank=76, change=48, week_change=225, entered_this_week=True),
-        )
-        entry = SpotlightEntry(
-            place_id=2,
-            name="Pixel Lineage",
-            genre="RPG",
-            ccu=2778,
-            sheet_ranks=(("收入榜", 149),),
-            signals=(SpotlightSignal("new_game", 3, "上线 25 天"),),
-            earning=EarningMovement(rank=149, change=-37, week_change=-74, entered_this_week=False),
-        )
+    def _market_text(self, spotlight: MarketSpotlight) -> str:
         content = DailyBriefContent(
-            brief_date="2026-10-30",
-            market=MarketSection(
-                pulse=None,
-                spotlight=MarketSpotlight(standout=standout, entries=(entry,), long_term_recorded_days=3),
-                genre_lines=(),
-            ),
+            brief_date="2026-11-11",
+            market=MarketSection(pulse=None, spotlight=spotlight, genre_lines=()),
             projects=(),
             revenues=(),
             failures=(),
         )
+        return _card_text(build_daily_brief_card(Config(), content, show_revenue=False))
 
-        text = _card_text(build_daily_brief_card(Config(), content, show_revenue=False))
+    def test_new_face_and_growth_sections_show_badges_ranks_and_earning(self) -> None:
+        new_face = SpotlightEntry(
+            place_id=1,
+            universe_id=1001,
+            name="Barber Simulator",
+            genre="Simulation",
+            ccu=4359,
+            sheet_ranks=(("新秀榜", 15),),
+            age_days=28,
+            days_on_board=1,
+        )
+        growing = SpotlightEntry(
+            place_id=2,
+            name="13 Days to Escape",
+            genre="Escape",
+            ccu=16007,
+            sheet_ranks=(("热门榜", 16), ("在玩榜", 69), ("收入榜", 233)),
+            age_days=32,
+            evidence=(
+                GrowthEvidence("ccu", "在线比大盘多涨 161%（较 3 天前）"),
+                GrowthEvidence("earning", "新进收入榜"),
+            ),
+            long_term_signals=(SpotlightSignal("rating", 1, "新增好评 93%"), SpotlightSignal("peak_hold", 2, "处于 14 日峰值")),
+            earning=EarningMovement(rank=233, change=None, week_change=68, entered_this_week=True),
+            average_ccu=12000,
+            peak_ccu=19000,
+            ccu_sample_count=4,
+            days_on_board=5,
+            growth_streak_days=4,
+        )
+        listed_growth = replace(
+            growing,
+            place_id=3,
+            name="Pixel Lineage",
+            evidence=(GrowthEvidence("board_entry", "新进热门榜"),),
+            long_term_signals=(SpotlightSignal("rating", 1, "新增好评 91%"),),
+            earning=EarningMovement(rank=149, change=-37, week_change=-74, entered_this_week=False),
+            growth_streak_days=1,
+        )
+        spotlight = MarketSpotlight(
+            new_face_standout=new_face,
+            new_faces=(replace(new_face, place_id=4, name="Skate Tree", universe_id=None),),
+            new_face_overflow=(replace(new_face, place_id=5, name="Voxel Wars", ccu=4070),),
+            growth_standout=growing,
+            growth=(listed_growth,),
+            growth_overflow=(replace(growing, place_id=6, name="Net a Fish", evidence=growing.evidence[1:]),),
+            long_term_recorded_days=10,
+            new_face_lookback_days=10,
+        )
 
-        self.assertIn("热门榜 #1</font>｜收入榜 #76（较上次 <font color='red'>↑48</font>，一周前不在榜）", text)
+        text = self._market_text(spotlight)
+
+        self.assertIn("🔥 **今日最突出 · 新面孔：<font color='blue'>Barber Simulator</font>**", text)
+        self.assertIn("<font color='grey'>Simulation｜当次 CCU 4,359｜上线 28 天</font>", text)
+        self.assertIn(
+            "🆕 **<font color='orange'>新面孔</font>** <font color='grey'>新秀榜 #15</font>"
+            "<font color='grey'>｜收入榜：未进前 300</font>",
+            text,
+        )
+        self.assertIn("（3 款｜近 10 天没上过榜、创建 90 天内、CCU ≥3,000）", text)
+        self.assertIn("其余 1 款：</font>Voxel Wars 4,070（新秀榜 #15）", text)
+        self.assertEqual(1, text.count("[Rotrends](https://www.rotrends.com/game/1001)"))
+
+        self.assertIn("🔥 **今日最突出 · 增长快：<font color='blue'>13 Days to Escape</font>**", text)
+        self.assertIn(
+            "📈 **<font color='red'>在线比大盘多涨 161%（较 3 天前）</font>**　"
+            "💰 **<font color='purple'>新进收入榜</font>** "
+            "<font color='grey'>热门榜 #16、在玩榜 #69｜上榜第 5 天｜连续第 4 天增长</font>"
+            "｜收入榜 #233（一周前不在榜）",
+            text,
+        )
+        self.assertIn("日均 CCU 12,000｜近似峰值 19,000", text)
+        self.assertIn("🌱 **<font color='green'>长线 3 分</font>** <font color='grey'>新增好评 93%，处于 14 日峰值</font>", text)
+        self.assertIn("🆙 **<font color='orange'>新进热门榜</font>**", text)
         self.assertIn(
             "｜收入榜 #149（较上次 <font color='green'>↓37</font>，一周 <font color='green'>↓74</font>）",
             text,
         )
-        self.assertIn("今天没有长线分达到门槛的项目。", text)
+        # 列表里的游戏只有长线分达标才加一行长线依据。
+        self.assertNotIn("长线 1 分", text)
+        self.assertIn("其余 1 款：</font>Net a Fish 16,007（新进收入榜、连续第 4 天）", text)
+        self.assertIn("今天没有长线分达到门槛的其他项目。", text)
 
-    def test_card_shows_new_game_leaders_samples_and_rotrends_links(self) -> None:
-        sampled = SpotlightEntry(
+    def test_leaders_and_veterans_are_described_and_missing_history_is_stated(self) -> None:
+        leader = SpotlightEntry(
             place_id=1,
             universe_id=1001,
             name="DONT SPLASH",
             genre="Runner",
-            ccu=80778,
-            sheet_ranks=(("在玩榜", 12), ("收入榜", 44)),
-            signals=(SpotlightSignal("new_game", 3, "上线 18 天"),),
-            average_ccu=60000,
-            peak_ccu=90000,
-            ccu_sample_count=4,
-        )
-        unsampled = SpotlightEntry(
-            place_id=2,
-            name="No Universe",
-            genre="RPG",
-            ccu=2778,
-            sheet_ranks=(("在玩榜", 38),),
-            signals=(SpotlightSignal("new_game", 2, "上线 23 天"),),
-        )
-        content = DailyBriefContent(
-            brief_date="2026-11-05",
-            market=MarketSection(
-                pulse=None,
-                spotlight=MarketSpotlight(standout=None, entries=(), new_game_leaders=(sampled, unsampled)),
-                genre_lines=(),
+            ccu=57164,
+            sheet_ranks=(("在玩榜", 20), ("收入榜", 53)),
+            age_days=25,
+            earning=EarningMovement(rank=53, change=-4, week_change=-9, entered_this_week=False),
+            leader=LeaderStatus(
+                rank=20,
+                rank_day_change=-2,
+                rank_week_change=-8,
+                ccu_day_change=-0.07,
+                ccu_week_change=-0.29,
+                board_streak_days=14,
+                board_streak_capped=True,
+                state="down",
             ),
-            projects=(),
-            revenues=(),
-            failures=(),
+        )
+        newcomer = replace(
+            leader,
+            place_id=2,
+            universe_id=None,
+            name="No History",
+            earning=None,
+            leader=LeaderStatus(38, None, None, None, None, 1, False, None),
+        )
+        veteran = SpotlightEntry(
+            place_id=3,
+            name="King Legacy",
+            genre="RPG",
+            ccu=31123,
+            sheet_ranks=(("收入榜", 31),),
+            age_days=1500,
+            evidence=(GrowthEvidence("earning", "收入榜 ↑181"),),
+            earning=EarningMovement(rank=31, change=181, week_change=194, entered_this_week=False),
         )
 
-        text = _card_text(build_daily_brief_card(Config(), content, show_revenue=False))
+        text = self._market_text(MarketSpotlight(new_game_leaders=(leader, newcomer), veteran_earners=(veteran,)))
 
-        self.assertIn("🆕 头部新游", text)
-        self.assertNotIn("今天没有发现值得特别关注的项目", text)
-        self.assertIn("[Rotrends](https://www.rotrends.com/game/1001)：在玩榜 #12，上线 18 天", text)
-        self.assertIn("日均 CCU 60,000｜近似峰值 90,000", text)
-        self.assertIn("在玩榜 #38，上线 23 天", text)
-        self.assertIn("当次 CCU 2,778", text)
-        self.assertEqual(1, text.count("[Rotrends]"))
+        self.assertIn(
+            "[Rotrends](https://www.rotrends.com/game/1001)：在玩榜 #20"
+            "（较上次 <font color='green'>↓2</font>，一周 <font color='green'>↓8</font>）"
+            "｜在线较昨天 -7%，较上周同日 -29%｜连续在榜 14 天以上｜**<font color='green'>回落</font>**"
+            "｜<font color='grey'>Runner｜当次 CCU 57,164｜上线 25 天</font>｜收入榜 #53",
+            text,
+        )
+        self.assertIn("**<font color='blue'>No History</font>**：在玩榜 #38｜<font color='grey'>Runner", text)
+        self.assertIn("💰 老游戏收入异动", text)
+        self.assertIn("💰 **<font color='purple'>收入榜 ↑181</font>**", text)
+        self.assertIn("历史快照不可用，今天无法判断，详见下方数据异常。", text)
+        self.assertIn("今天没有增长明显的新游。", text)
+        self.assertNotIn("今日最突出", text)
+
+    def test_overflow_line_is_capped_and_states_how_many_are_hidden(self) -> None:
+        entry = SpotlightEntry(place_id=1, name="Game", genre="RPG", ccu=5000, sheet_ranks=(("新秀榜", 50),), age_days=10)
+        overflow = tuple(replace(entry, place_id=index, name=f"Game {index}") for index in range(45))
+
+        text = self._market_text(
+            MarketSpotlight(new_face_standout=entry, new_face_overflow=overflow, new_face_lookback_days=14)
+        )
+
+        self.assertIn("其余 45 款：", text)
+        self.assertIn("Game 39 5,000（新秀榜 #50）；另有 5 款未列出，见明细产物", text)
+        self.assertNotIn("Game 40 ", text)
 
     def test_strip_project_title_removes_sheet_suffix(self) -> None:
         self.assertEqual("Shoot or Shot", strip_project_title("Shoot or Shot 每日数据"))
@@ -362,6 +447,10 @@ class DailyBriefFlowTests(unittest.TestCase):
         self.assertNotIn("💰 收入", limited_text)
         self.assertNotIn("Soccer", limited_text)
         self.assertIn("数据积累中（已记录 1 天）", limited_text)
+        # 数据分支上还没有快照：如实说明当天没有判断，而不是把所有游戏都当成新面孔。
+        for card_text in (full_text, limited_text):
+            self.assertIn("值得关注</font>：还没有可用的历史快照，今天不判断新面孔和在线涨幅", card_text)
+            self.assertIn("历史快照不可用，今天无法判断，详见下方数据异常。", card_text)
 
     def test_revenue_alert_is_skipped_for_project_below_peak_ccu_floor(self) -> None:
         self.sheet_peak_ccu = "50"
@@ -421,6 +510,30 @@ class DailyBriefFlowTests(unittest.TestCase):
         self.assertEqual("sha-game_trend_history.json", sha)
         snapshots = json.loads(content)["games"]["1"]
         self.assertEqual([["2026-10-27", 50000, 0, 0, 0], ["2026-10-25", 40000, 900, 90, 10]], snapshots)
+
+    def test_scheduled_run_records_new_faces_in_hit_history(self) -> None:
+        self._use_data_branch_files(
+            # 另一款游戏昨天有快照，说明历史可用；榜单上的游戏此前没出现过，是新面孔。
+            game_trend_history='{"version":1,"games":{"2":[["2026-10-26",40000,900,90,10]]}}',
+            spotlight_hit_history='{"version":1,"days":{"2026-10-26":{"new_face":[7],"growth":[8]}}}',
+        )
+
+        with patch("app.main.resolve_local_today", return_value=date(2026, 10, 27)):
+            _notify_success(self.cfg, self.payload)
+
+        content, sha = self._written_files()["spotlight_hit_history.json"]
+        self.assertEqual("sha-spotlight_hit_history.json", sha)
+        self.assertEqual(
+            {
+                "2026-10-27": {"new_face": [1], "growth": []},
+                "2026-10-26": {"new_face": [7], "growth": [8]},
+            },
+            json.loads(content)["days"],
+        )
+        limited_text = _card_text(self._sent_cards()[LIMITED_CHAT])
+        self.assertIn("今日最突出 · 新面孔：<font color='blue'>Big</font>", limited_text)
+        self.assertIn("（1 款｜近 1 天没上过榜", limited_text)
+        self.assertNotIn("还没有可用的历史快照", limited_text)
 
     def test_scheduled_run_applies_previous_samples_and_opens_next_window(self) -> None:
         self._use_data_branch_files(
@@ -510,6 +623,10 @@ class DailyBriefFlowTests(unittest.TestCase):
 
         self.github_client_cls.return_value.put_repository_file.assert_not_called()
         self.assertEqual({FULL_CHAT, LIMITED_CHAT}, set(self._sent_cards()))
+        for card in self._sent_cards().values():
+            card_text = _card_text(card)
+            self.assertIn("游戏每日快照读取失败，今天不判断新面孔、在线涨幅和长线潜力", card_text)
+            self.assertIn("命中历史读取失败，今天不标注连续增长天数", card_text)
 
     def test_history_write_failure_still_sends_cards(self) -> None:
         self.github_client_cls.return_value.put_repository_file.side_effect = GitHubClientError("403")

@@ -118,6 +118,14 @@ class GameTrendMetricsTests(unittest.TestCase):
         self.assertTrue(metrics.like_ratio_is_recent)
         self.assertAlmostEqual(0.97 - 6000 / 6500, metrics.like_ratio_change)
 
+    def test_peak_window_ignores_the_extra_day_kept_for_new_face_lookback(self) -> None:
+        # 快照保留 15 天，峰值窗口只看含当天在内的 14 天：14 天前的高点不参与。
+        history = [_snapshot("2026-10-14", 30000), _snapshot("2026-10-13", 90000)]
+
+        metrics = build_game_trend_metrics(_snapshot("2026-10-27", 24000), history)
+
+        self.assertAlmostEqual(24000 / 30000, metrics.peak_ratio)
+
     def test_missing_samples_skip_session_instead_of_using_single_ccu(self) -> None:
         history = [_snapshot("2026-10-26", 20000, 9_000_000)]
         today = _snapshot("2026-10-27", 26000, 10_000_000)

@@ -52,7 +52,7 @@ from .market_pulse import (
     parse_market_ccu_history,
     serialize_market_ccu_history,
 )
-from .market_spotlight import build_genre_wind_lines, build_market_spotlight
+from .market_spotlight import MarketSpotlight, build_genre_wind_lines, build_market_spotlight
 from .metric_baseline import (
     MetricAlert,
     average_baseline,
@@ -77,6 +77,13 @@ from .project_metrics_sheet import (
     resolve_project_metrics_column_insert_range,
     resolve_project_metrics_variables,
     save_project_metrics_target,
+)
+from .spotlight_hit_history import (
+    SPOTLIGHT_HIT_HISTORY_PATH,
+    SpotlightHitHistory,
+    merge_spotlight_hit_history,
+    parse_spotlight_hit_history,
+    serialize_spotlight_hit_history,
 )
 from .roblox_money_models import (
     RobloxMoneyFetchFailure,
@@ -142,6 +149,7 @@ MARKET_SECTION_LABEL = "行业趋势"
 PROJECT_SECTION_LABEL = "自家项目"
 MONEY_SECTION_LABEL = "收入"
 CCU_SAMPLE_LABEL = "CCU 采样"
+SPOTLIGHT_LABEL = "值得关注"
 PROJECT_METRICS_SHEET_MAX_ROWS = 365
 PROJECT_METRICS_SHEET_END_COLUMN = get_project_metrics_end_column_letter()
 # 以下项目的日报信息仅发送到现有全量群（test 群）名单。
@@ -829,19 +837,32 @@ def _build_market_section(
     )
     trend_history = _load_game_trend_history(cfg, trend_snapshots, brief_date)
     pulse = _build_market_pulse(cfg, records_by_sheet, brief_date)
+    hit_history, hit_history_sha = _load_spotlight_hit_history(cfg, failures)
+    spotlight = build_market_spotlight(
+        records_by_sheet,
+        previous_ranks_by_sheet,
+        recent_place_ids_by_sheet,
+        trend_snapshots,
+        trend_history,
+        oldest_ranks_by_sheet,
+        market_ccu_by_date=pulse.broad_ccu_by_date if pulse else None,
+        hit_history=hit_history,
+        brief_date=brief_date,
+    )
+    failures.extend(BriefFailure("market", "", SPOTLIGHT_LABEL, problem) for problem in spotlight.problems)
     section = MarketSection(
         pulse=pulse,
-        spotlight=build_market_spotlight(
+        spotlight=spotlight,
+        genre_lines=build_genre_wind_lines(
             records_by_sheet,
-            previous_ranks_by_sheet,
-            recent_place_ids_by_sheet,
-            trend_snapshots,
-            trend_history,
-            oldest_ranks_by_sheet,
+            # 当天无法判断新面孔时不写“新面孔集中品类”，而不是写成 0 款。
+            [entry.genre for entry in spotlight.all_new_faces] if spotlight.new_face_lookback_days else None,
+            pulse,
         ),
-        genre_lines=build_genre_wind_lines(records_by_sheet, recent_place_ids_by_sheet, pulse),
     )
-    write_json_document(cfg.output_dir, asdict(section.spotlight), prefix=DAILY_BRIEF_SPOTLIGHT_OUTPUT_PREFIX)
+    # 明细含全部命中的游戏（不只是卡片上详细展示的），便于事后核对漏报和调门槛。
+    write_json_document(cfg.output_dir, asdict(spotlight), prefix=DAILY_BRIEF_SPOTLIGHT_OUTPUT_PREFIX)
+    _persist_spotlight_hit_history(cfg, hit_history, hit_history_sha, spotlight, brief_date)
     try:
         _persist_top_trending_previous_ranks(cfg, records_by_sheet)
     except GitHubClientError:
@@ -898,10 +919,11 @@ def _load_game_trend_history(
     cfg: Config,
     snapshots: dict[int, GameDailySnapshot],
     brief_date: date,
-) -> GameTrendHistory:
+) -> GameTrendHistory | None:
     """读取游戏每日快照历史；定时任务再把当天快照写回数据分支。
 
-    读取失败时不写入，避免用只有当天的数据覆盖已有历史；写入失败只记录日志，不影响早报发送。
+    读取失败时返回 None 且不写入，避免用只有当天的数据覆盖已有历史；依赖快照的判断当天不做，
+    由值得关注项目写入“数据异常”。写入失败只记录日志，不影响早报发送。
     """
 
     client = GitHubClient(cfg)
@@ -910,8 +932,8 @@ def _load_game_trend_history(
     try:
         existing = client.get_repository_file(path, branch=branch)
     except GitHubClientError:
-        logging.exception("Failed to read game trend history from branch %s; long-term metrics skipped today.", branch)
-        return {}
+        logging.exception("Failed to read game trend history from branch %s; trend metrics skipped today.", branch)
+        return None
     history = parse_game_trend_history(existing.content if existing else "")
     if cfg.run_trigger_source != SCHEDULED_TRIGGER_SOURCE:
         return history
@@ -933,6 +955,58 @@ def _load_game_trend_history(
             branch,
         )
     return history
+
+
+def _load_spotlight_hit_history(
+    cfg: Config,
+    failures: list[BriefFailure],
+) -> tuple[SpotlightHitHistory | None, str]:
+    """读取值得关注项目的命中历史及文件 sha；读取失败时历史为 None，当天不标注连续增长天数。"""
+
+    branch = cfg.game_trend_history_branch
+    try:
+        existing = GitHubClient(cfg).get_repository_file(SPOTLIGHT_HIT_HISTORY_PATH, branch=branch)
+    except GitHubClientError:
+        logging.exception("Failed to read spotlight hit history from branch %s.", branch)
+        failures.append(BriefFailure("market", "", SPOTLIGHT_LABEL, "命中历史读取失败，今天不标注连续增长天数"))
+        return None, ""
+    if existing is None:
+        return {}, ""
+    return parse_spotlight_hit_history(existing.content), existing.sha
+
+
+def _persist_spotlight_hit_history(
+    cfg: Config,
+    history: SpotlightHitHistory | None,
+    sha: str,
+    spotlight: MarketSpotlight,
+    brief_date: date,
+) -> None:
+    """定时任务把当天命中的游戏写回数据分支；读取失败时不写入，避免覆盖已有历史。
+
+    写入失败只记录日志：次日这些游戏的连续天数会从头算起。
+    """
+
+    if history is None or cfg.run_trigger_source != SCHEDULED_TRIGGER_SOURCE:
+        return
+    merged = merge_spotlight_hit_history(
+        history,
+        brief_date,
+        (entry.place_id for entry in spotlight.all_new_faces),
+        (entry.place_id for entry in spotlight.all_growth),
+    )
+    branch = cfg.game_trend_history_branch
+    try:
+        if not GitHubClient(cfg).put_repository_file(
+            SPOTLIGHT_HIT_HISTORY_PATH,
+            serialize_spotlight_hit_history(merged),
+            branch=branch,
+            sha=sha,
+            message=f"chore(data): 更新值得关注命中历史 {brief_date.isoformat()}",
+        ):
+            logging.warning("Spotlight hit history was not persisted: GitHub repository or token is not configured.")
+    except GitHubClientError:
+        logging.exception("Failed to persist spotlight hit history to branch %s.", branch)
 
 
 def _build_market_pulse(

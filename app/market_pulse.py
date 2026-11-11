@@ -61,6 +61,8 @@ class MarketPulse:
     # 昨天、上周同日的快照，供品类风向对比；缺失时为 None。
     day_before: MarketCcuSnapshot | None = None
     week_before: MarketCcuSnapshot | None = None
+    # 各天的大盘 CCU 合计（含当天），供值得关注项目扣除大盘涨跌后比较单款游戏的在线涨幅。
+    broad_ccu_by_date: dict[str, int] = field(default_factory=dict)
 
 
 def build_market_ccu_snapshot(
@@ -175,6 +177,10 @@ def build_market_pulse(snapshot: MarketCcuSnapshot, history: list[MarketCcuSnaps
         recorded_days=len(recorded_dates),
         day_before=day_before,
         week_before=week_before,
+        broad_ccu_by_date={
+            **{item.snapshot_date: item.broad_ccu for item in history},
+            current.snapshot_date: current.broad_ccu,
+        },
     )
 
 
