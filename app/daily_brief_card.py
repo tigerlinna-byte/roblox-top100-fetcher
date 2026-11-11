@@ -45,23 +45,25 @@ HEADER_TEMPLATE = "blue"
 HEADER_TEMPLATE_WITH_FAILURES = "orange"
 STANDOUT_MARK = "🔥"
 # 值得关注项目的标识：新面孔、增长快、长线潜力、头部新游各用一个固定表情。
+# 标识文字不加粗，并用飞书颜色枚举里浅一档的色阶（-400），让每行唯一加粗的蓝色游戏名最醒目。
+# 色阶写法见飞书卡片“颜色枚举值”文档；1.0 卡片 markdown 是否支持文档未写明，2026-11-11 上线时待实测。
 NEW_FACE_MARK = "🆕"
-NEW_FACE_COLOR = "orange"
+NEW_FACE_COLOR = "orange-400"
 GROWTH_MARK = "📈"
 LONG_TERM_MARK = "🌱"
-LONG_TERM_COLOR = "green"
+LONG_TERM_COLOR = "green-400"
 NEW_GAME_LEADER_MARK = "👑"
 # 增长证据的表情与颜色：在线涨幅、晋榜、收入榜上升。收入不用蓝色，避免与蓝色的游戏名混在一起。
 EVIDENCE_STYLES: dict[EvidenceKind, tuple[str, str]] = {
-    "ccu": ("📈", "red"),
-    "board_entry": ("🆙", "orange"),
-    "earning": ("💰", "purple"),
+    "ccu": ("📈", "red-400"),
+    "board_entry": ("🆙", "orange-400"),
+    "earning": ("💰", "purple-400"),
 }
-# 头部新游的状态词及颜色，涨红跌绿与其他涨跌一致。
+# 头部新游的状态词及颜色，涨红跌绿与其他涨跌一致，同样不加粗、用浅一档的色阶。
 LEADER_STATE_TEXTS: dict[LeaderState, tuple[str, str]] = {
-    "up": ("上升", "red"),
+    "up": ("上升", "red-400"),
     "flat": ("平稳", "grey"),
-    "down": ("回落", "green"),
+    "down": ("回落", "green-400"),
 }
 # 条目第二行起的缩进，用全角空格，飞书不会折叠。
 SUB_LINE_INDENT = "　"
@@ -235,9 +237,9 @@ def _build_spotlight_elements(spotlight: MarketSpotlight) -> list[CardElement]:
 def _build_standout_panel(group_label: str, standout: SpotlightEntry, *, is_new_face: bool) -> CardElement:
     """“今日最突出”放进灰底面板，与其余条目拉开层级；长线依据全部列出，便于判断能否留住人。"""
 
+    # 栏目说明用灰色不加粗，只让游戏名加粗突出。
     lines = [
-        f"{STANDOUT_MARK} **今日最突出 · {group_label}：{_color(standout.name, HIGHLIGHT_NAME_COLOR)}**"
-        f"{_format_rotrends_link(standout)}",
+        f"{STANDOUT_MARK} {_color(f'今日最突出 · {group_label}：', SECONDARY_COLOR)}{_format_entry_name(standout)}",
         _format_entry_basics(standout),
         _format_badge_line(standout, is_new_face=is_new_face),
     ]
@@ -361,9 +363,9 @@ def _format_long_term_badge(entry: SpotlightEntry) -> str:
 
 
 def _badge(mark: str, color: str, *, text: str) -> str:
-    """显眼的标识：表情加彩色加粗文字。"""
+    """标识：表情加浅色文字，不加粗，避免抢过游戏名。"""
 
-    return f"{mark} **{_color(text, color)}**"
+    return f"{mark} {_color(text, color)}"
 
 
 def _build_long_term_element(spotlight: MarketSpotlight) -> CardElement:
@@ -446,7 +448,7 @@ def _format_leader_status(leader: LeaderStatus) -> str:
         parts.append(f"连续在榜 {leader.board_streak_days} 天{suffix}")
     if leader.state is not None:
         state_text, state_color = LEADER_STATE_TEXTS[leader.state]
-        parts.append(f"**{_color(state_text, state_color)}**")
+        parts.append(_color(state_text, state_color))
     return "｜".join(parts)
 
 

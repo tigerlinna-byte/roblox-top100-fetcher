@@ -178,10 +178,10 @@ class DailyBriefCardTests(unittest.TestCase):
 
         text = self._market_text(spotlight)
 
-        self.assertIn("🔥 **今日最突出 · 新面孔：<font color='blue'>Barber Simulator</font>**", text)
+        self.assertIn("🔥 <font color='grey'>今日最突出 · 新面孔：</font>**<font color='blue'>Barber Simulator</font>**", text)
         self.assertIn("<font color='grey'>Simulation｜当次 CCU 4,359｜上线 28 天</font>", text)
         self.assertIn(
-            "🆕 **<font color='orange'>新面孔</font>** <font color='grey'>新秀榜 #15</font>"
+            "🆕 <font color='orange-400'>新面孔</font> <font color='grey'>新秀榜 #15</font>"
             "<font color='grey'>｜收入榜：未进前 300</font>",
             text,
         )
@@ -191,23 +191,26 @@ class DailyBriefCardTests(unittest.TestCase):
         self.assertNotIn("Voxel Wars", text)
         self.assertNotIn("其余", text)
 
-        self.assertIn("🔥 **今日最突出 · 增长快：<font color='blue'>13 Days to Escape</font>**", text)
+        self.assertIn("🔥 <font color='grey'>今日最突出 · 增长快：</font>**<font color='blue'>13 Days to Escape</font>**", text)
         self.assertIn(
-            "📈 **<font color='red'>在线比大盘多涨 161%（较 3 天前）</font>**　"
-            "💰 **<font color='purple'>新进收入榜</font>** "
+            "📈 <font color='red-400'>在线比大盘多涨 161%（较 3 天前）</font>　"
+            "💰 <font color='purple-400'>新进收入榜</font> "
             "<font color='grey'>热门榜 #16、在玩榜 #69｜上榜第 5 天｜连续第 4 天增长</font>"
             "｜收入榜 #233（一周前不在榜）",
             text,
         )
         self.assertIn("日均 CCU 12,000｜近似峰值 19,000", text)
-        self.assertIn("🌱 **<font color='green'>长线 3 分</font>** <font color='grey'>新增好评 93%，处于 14 日峰值</font>", text)
-        self.assertIn("🆙 **<font color='orange'>新进热门榜</font>**", text)
+        self.assertIn("🌱 <font color='green-400'>长线 3 分</font> <font color='grey'>新增好评 93%，处于 14 日峰值</font>", text)
+        self.assertIn("🆙 <font color='orange-400'>新进热门榜</font>", text)
         self.assertIn(
             "｜收入榜 #149（较上次 <font color='green'>↓37</font>，一周 <font color='green'>↓74</font>）",
             text,
         )
         # 列表里的游戏只有长线分达标才加一行长线依据。
         self.assertNotIn("长线 1 分", text)
+        # 游戏名是唯一加粗的彩色文字，标识不加粗。
+        self.assertNotIn("**<font color='orange", text)
+        self.assertNotIn("**<font color='red", text)
         self.assertIn("（共 3 款，展示前 2 款｜创建 90 天内、CCU ≥3,000）", text)
         self.assertNotIn("Net a Fish", text)
         self.assertIn("今天没有长线分达到门槛的其他项目。", text)
@@ -258,7 +261,7 @@ class DailyBriefCardTests(unittest.TestCase):
         self.assertIn(
             "[Rotrends](https://www.rotrends.com/game/1001)：在玩榜 #20"
             "（较上次 <font color='green'>↓2</font>，一周 <font color='green'>↓8</font>）"
-            "｜在线较昨天 -7%，较上周同日 -29%｜连续在榜 14 天以上｜**<font color='green'>回落</font>**"
+            "｜在线较昨天 -7%，较上周同日 -29%｜连续在榜 14 天以上｜<font color='green-400'>回落</font>"
             "｜<font color='grey'>Runner｜当次 CCU 57,164｜上线 25 天</font>｜收入榜 #53",
             text,
         )
@@ -522,7 +525,7 @@ class DailyBriefFlowTests(unittest.TestCase):
             json.loads(content)["days"],
         )
         limited_text = _card_text(self._sent_cards()[LIMITED_CHAT])
-        self.assertIn("今日最突出 · 新面孔：<font color='blue'>Big</font>", limited_text)
+        self.assertIn("今日最突出 · 新面孔：</font>**<font color='blue'>Big</font>**", limited_text)
         self.assertIn("（共 1 款｜近 1 天没上过榜", limited_text)
         self.assertNotIn("还没有可用的历史快照", limited_text)
 
