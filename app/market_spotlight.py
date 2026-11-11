@@ -22,41 +22,18 @@ from .daily_brief_rules import (
     GROWTH_DETAIL_ENTRIES,
     GROWTH_EARNING_RISE_MIN_STEP,
     GROWTH_EARNING_TOP_RANK_LIMIT,
-    LONG_TERM_BOARD_STREAK_DAYS,
-    LONG_TERM_BOARD_STREAK_SCORE,
-    LONG_TERM_EARNING_RANK_LIMIT,
-    LONG_TERM_EARNING_SCORE,
-    LONG_TERM_EARNING_WEEK_FALL_SCORE,
-    LONG_TERM_EARNING_WEEK_FALL_STEP,
-    LONG_TERM_EARNING_WEEK_RISE_SCORE,
-    LONG_TERM_EARNING_WEEK_RISE_STEP,
     LONG_TERM_MAX_ENTRIES,
     LONG_TERM_MIN_RECORDED_DAYS,
-    LONG_TERM_MIN_SCORE,
-    LONG_TERM_PEAK_COLLAPSE_RATIO,
-    LONG_TERM_PEAK_COLLAPSE_SCORE,
-    LONG_TERM_PEAK_HOLD_RATIO,
-    LONG_TERM_PEAK_HOLD_SCORE,
-    LONG_TERM_PEAK_WINDOW_DAYS,
-    LONG_TERM_RATING_HIGH,
-    LONG_TERM_RATING_HIGH_SCORE,
-    LONG_TERM_RATING_LOW,
-    LONG_TERM_RATING_LOW_SCORE,
-    LONG_TERM_RATING_TREND_DAYS,
-    LONG_TERM_RATING_TREND_MIN_POINTS,
-    LONG_TERM_RATING_TREND_SCORE,
     LONG_TERM_SESSION_AFK_MINUTES,
-    LONG_TERM_SESSION_LONG_MINUTES,
-    LONG_TERM_SESSION_LONG_SCORE,
-    LONG_TERM_SESSION_SHORT_MINUTES,
-    LONG_TERM_SESSION_SHORT_SCORE,
-    LONG_TERM_TREND_COMPARE_DAYS,
-    LONG_TERM_TREND_FALL_TIERS,
-    LONG_TERM_TREND_RISE_TIERS,
     NEW_FACE_DETAIL_ENTRIES,
     NEW_FACE_LOOKBACK_DAYS,
     NEW_GAME_LEADER_STATE_THRESHOLD,
     NEW_GAME_LEADER_WEEK_COMPARE_DAYS,
+    RETENTION_BAD_LIKE_RATIO,
+    RETENTION_BAD_PEAK_RATIO,
+    RETENTION_BAD_SESSION_MINUTES,
+    RETENTION_GOOD_PEAK_RATIO,
+    RETENTION_GOOD_SESSION_MINUTES,
     SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK,
     SPOTLIGHT_MAX_CONSIDERED_RANK,
     SPOTLIGHT_MAX_GAME_AGE_DAYS,
@@ -83,15 +60,8 @@ TOP_TRENDING_SHEET_KEY = "top_trending_v4"
 
 # 增长证据的类别：在线涨幅、晋榜、收入榜上升。
 EvidenceKind = Literal["ccu", "board_entry", "earning"]
-LongTermSignalKind = Literal[
-    "ccu_trend",
-    "peak_hold",
-    "board_streak",
-    "session",
-    "rating",
-    "rating_trend",
-    "earning",
-]
+# 留存结论：留得住、待观察、留不住。
+RetentionTier = Literal["good", "watch", "bad"]
 # 头部新游的势头：较上周同日上升、平稳、回落，或一周前还没上榜（新晋）。
 LeaderState = Literal["up", "flat", "down", "new"]
 
@@ -111,12 +81,18 @@ class EarningMovement:
 
 
 @dataclass(frozen=True)
-class SpotlightSignal:
-    """一条长线依据及其得分；得分可以为 0 或负数，理由照常展示。"""
+class RetentionVerdict:
+    """留存结论及支撑它的数据，回答“这款游戏能不能留住玩家”。
 
-    kind: LongTermSignalKind
-    score: int
-    reason: str
+    session_minutes 为估算单局时长，算不出或疑似挂机时为 None，原因见 session_note（"missing" / "afk"）；
+    peak_ratio 为当前在线占 14 日峰值的比例；like_ratio 为好评率，只在偏低时用于判定留不住。
+    """
+
+    tier: RetentionTier
+    session_minutes: float | None
+    session_note: Literal["missing", "afk"] | None
+    peak_ratio: float | None
+    like_ratio: float | None
 
 
 @dataclass(frozen=True)
@@ -147,7 +123,7 @@ class SpotlightEntry:
     """一个值得关注的游戏。
 
     evidence 为增长证据，新面孔没有；ccu_day_excess 为较昨天比大盘多涨的比例，无法计算时为 None。
-    long_term_signals 衡量能否长线，历史快照不足时为空。average_ccu、peak_ccu 来自一天多次采样，
+    retention 为留存结论，快照不足 3 天时为 None。average_ccu、peak_ccu 来自一天多次采样，
     采样不足时为 None。days_on_board 为从首次上榜算起的第几天，超出回看范围时为 None。
     growth_streak_days 为连续进入“增长快”的天数（含当天）。
     """
@@ -160,7 +136,7 @@ class SpotlightEntry:
     age_days: int | None = None
     evidence: tuple[GrowthEvidence, ...] = ()
     ccu_day_excess: float | None = None
-    long_term_signals: tuple[SpotlightSignal, ...] = ()
+    retention: RetentionVerdict | None = None
     earning: EarningMovement | None = None
     universe_id: int | None = None
     average_ccu: int | None = None
@@ -170,12 +146,6 @@ class SpotlightEntry:
     growth_streak_days: int = 0
     leader: LeaderStatus | None = None
 
-    @property
-    def long_term_score(self) -> int:
-        """长线分为各长线信号得分之和。"""
-
-        return sum(signal.score for signal in self.long_term_signals)
-
 
 @dataclass(frozen=True)
 class MarketSpotlight:
@@ -184,7 +154,7 @@ class MarketSpotlight:
     新面孔：最近若干天没上过榜的新游，按 CCU 排序；增长快：有增长证据的新游，按证据条数、在线涨幅排序。
     两栏各有一款“今日最突出”，其后是卡片上详细展示的条目；overflow 是排名靠后、卡片不展示的其余命中游戏，
     只写入明细产物，并参与命中历史（连续增长天数）。
-    long_term 为不在两栏里但长线分达标的新游；new_game_leaders 为在玩榜排名最高的几款新游及其势头，
+    long_term 为留得住、且没有在两栏卡片上展示的新游，按单局时长排序；new_game_leaders 为在玩榜排名最高的几款新游及其势头，
     不和其他栏去重，保证每天看的是同一批头部游戏。
     new_face_lookback_days 为实际能回看的天数（0 表示当天无法判断新面孔）；
     problems 为历史数据缺失导致的未判断项，由调用方写入“数据异常”。
@@ -373,11 +343,7 @@ def build_market_spotlight(
             long_term_recorded_days = max(long_term_recorded_days, metrics.recorded_days)
             entry = replace(
                 entry,
-                long_term_signals=(
-                    _collect_long_term_signals(metrics, earning)
-                    if metrics.recorded_days >= LONG_TERM_MIN_RECORDED_DAYS
-                    else ()
-                ),
+                retention=_judge_retention(metrics),
                 average_ccu=metrics.average_ccu,
                 peak_ccu=metrics.peak_ccu,
                 ccu_sample_count=metrics.ccu_sample_count,
@@ -406,10 +372,17 @@ def build_market_spotlight(
 
     new_faces.sort(key=lambda entry: (-entry.ccu, entry.name.casefold()))
     growth.sort(key=_growth_sort_key)
-    # 长线潜力只放两栏之外的游戏；长线分达到门槛才入选，没有就不硬凑。
+    new_face_shown = new_faces[:NEW_FACE_DETAIL_ENTRIES]
+    growth_shown = growth[:GROWTH_DETAIL_ENTRIES]
+    shown_place_ids = {entry.place_id for entry in (*new_face_shown, *growth_shown)}
+    # 长线潜力：留得住、且卡片上还没展示的新游；排名靠后没上卡片的增长快游戏也可以在这里露面。没有就不硬凑。
     long_term = sorted(
-        (entry for entry in steady if entry.long_term_signals and entry.long_term_score >= LONG_TERM_MIN_SCORE),
-        key=lambda entry: (-entry.long_term_score, _earning_sort_rank(entry), -entry.ccu, entry.name.casefold()),
+        (
+            entry
+            for entry in (*new_faces, *growth, *steady)
+            if entry.place_id not in shown_place_ids and entry.retention is not None and entry.retention.tier == "good"
+        ),
+        key=lambda entry: (-(entry.retention.session_minutes or 0), -entry.ccu, entry.name.casefold()),
     )[:LONG_TERM_MAX_ENTRIES]
     # 头部新游趋势固定取在玩榜排名最高的几款新游，不和其他栏去重，名单才不会时有时无。
     leaders = sorted(leader_candidates, key=lambda entry: entry.leader.rank)[:SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES]
@@ -750,128 +723,44 @@ def _build_earning_movement(
     )
 
 
-def _format_earning_week(earning: EarningMovement) -> str:
-    """一周走势的文字；一周前不在榜时写明从榜外升上来，而不是给出按末位推算的名次差。"""
+def _judge_retention(metrics: GameTrendMetrics) -> RetentionVerdict | None:
+    """留存结论：任一项明显偏低即留不住；单局时长与守住峰值都达标才算留得住；其余待观察。
 
-    label = SHEET_LABELS[TOP_EARNING_SHEET_KEY]
-    if earning.entered_this_week:
-        return f"{label}一周内从 {SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK} 名外升至 #{earning.rank}"
-    assert earning.week_change is not None
-    arrow = "↑" if earning.week_change >= 0 else "↓"
-    return f"{label} #{earning.rank}（一周 {arrow}{abs(earning.week_change)}）"
+    快照不足若干天时不判断。单局时长算不出（采样不足）或疑似挂机时不能判留得住，
+    但守住峰值或好评率偏低仍判留不住。好评率可以用奖励引导，所以只在偏低时扣分、偏高不加分。
+    """
 
-
-def _earning_sort_rank(entry: SpotlightEntry) -> int:
-    """排序用的收入榜名次；不在收入榜的排在最后。"""
-
-    return entry.earning.rank if entry.earning is not None else SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK + 1
-
-
-def _collect_long_term_signals(
-    metrics: GameTrendMetrics,
-    earning: EarningMovement | None,
-) -> tuple[SpotlightSignal, ...]:
-    """按长线规则逐项打分；能算出的指标都展示理由，得分为 0 的也保留，方便判断依据。"""
-
-    signals: list[SpotlightSignal] = []
-    if metrics.ccu_change_ratio is not None:
-        signals.append(
-            SpotlightSignal(
-                "ccu_trend",
-                _ccu_trend_score(metrics.ccu_change_ratio),
-                f"在线较前 {LONG_TERM_TREND_COMPARE_DAYS} 日 {_format_percent_change(metrics.ccu_change_ratio)}",
-            )
-        )
-
-    if metrics.peak_ratio is not None:
-        if metrics.peak_ratio >= LONG_TERM_PEAK_HOLD_RATIO:
-            peak_score = LONG_TERM_PEAK_HOLD_SCORE
-        elif metrics.peak_ratio < LONG_TERM_PEAK_COLLAPSE_RATIO:
-            peak_score = LONG_TERM_PEAK_COLLAPSE_SCORE
-        else:
-            peak_score = 0
-        peak_reason = (
-            f"处于 {LONG_TERM_PEAK_WINDOW_DAYS} 日峰值"
-            if metrics.peak_ratio >= 1
-            else f"较 {LONG_TERM_PEAK_WINDOW_DAYS} 日峰值 {_format_percent_change(metrics.peak_ratio - 1)}"
-        )
-        signals.append(SpotlightSignal("peak_hold", peak_score, peak_reason))
-
-    if metrics.board_streak_days >= LONG_TERM_BOARD_STREAK_DAYS:
-        signals.append(
-            SpotlightSignal("board_streak", LONG_TERM_BOARD_STREAK_SCORE, f"连续在榜 {metrics.board_streak_days} 天")
-        )
-
-    if metrics.session_minutes is not None:
-        if metrics.session_minutes > LONG_TERM_SESSION_AFK_MINUTES:
-            signals.append(SpotlightSignal("session", 0, "疑似挂机，时长不计分"))
-        else:
-            if metrics.session_minutes >= LONG_TERM_SESSION_LONG_MINUTES:
-                session_score = LONG_TERM_SESSION_LONG_SCORE
-            elif metrics.session_minutes < LONG_TERM_SESSION_SHORT_MINUTES:
-                session_score = LONG_TERM_SESSION_SHORT_SCORE
-            else:
-                session_score = 0
-            signals.append(
-                SpotlightSignal("session", session_score, f"估算时长 {metrics.session_minutes:.0f} 分钟")
-            )
-    elif metrics.session_samples_missing:
-        signals.append(SpotlightSignal("session", 0, "时长样本不足"))
-
-    if metrics.like_ratio is not None:
-        if metrics.like_ratio >= LONG_TERM_RATING_HIGH:
-            rating_score = LONG_TERM_RATING_HIGH_SCORE
-        elif metrics.like_ratio < LONG_TERM_RATING_LOW:
-            rating_score = LONG_TERM_RATING_LOW_SCORE
-        else:
-            rating_score = 0
-        label = "新增好评" if metrics.like_ratio_is_recent else "好评"
-        signals.append(SpotlightSignal("rating", rating_score, f"{label} {metrics.like_ratio:.0%}"))
-
-    if metrics.like_ratio_change is not None and metrics.like_ratio_change >= LONG_TERM_RATING_TREND_MIN_POINTS:
-        signals.append(
-            SpotlightSignal(
-                "rating_trend",
-                LONG_TERM_RATING_TREND_SCORE,
-                f"好评率较 {LONG_TERM_RATING_TREND_DAYS} 日前 +{metrics.like_ratio_change * 100:.1f} 个点",
-            )
-        )
-
-    earning_signal = _build_long_term_earning_signal(earning)
-    if earning_signal is not None:
-        signals.append(earning_signal)
-    return tuple(signals)
-
-
-def _build_long_term_earning_signal(earning: EarningMovement | None) -> SpotlightSignal | None:
-    """变现看收入榜一周走势：明显上升加分、明显下滑扣分（付费在消退），平稳但在前列时加基础分。"""
-
-    if earning is None:
+    if metrics.recorded_days < LONG_TERM_MIN_RECORDED_DAYS:
         return None
-    week_change = earning.week_change
-    if week_change is not None and week_change >= LONG_TERM_EARNING_WEEK_RISE_STEP:
-        return SpotlightSignal("earning", LONG_TERM_EARNING_WEEK_RISE_SCORE, _format_earning_week(earning))
-    if week_change is not None and week_change <= -LONG_TERM_EARNING_WEEK_FALL_STEP:
-        return SpotlightSignal("earning", LONG_TERM_EARNING_WEEK_FALL_SCORE, _format_earning_week(earning))
-    if earning.rank <= LONG_TERM_EARNING_RANK_LIMIT:
-        return SpotlightSignal("earning", LONG_TERM_EARNING_SCORE, f"{SHEET_LABELS[TOP_EARNING_SHEET_KEY]} #{earning.rank}")
-    return None
-
-
-def _ccu_trend_score(change_ratio: float) -> int:
-    """按分档匹配在线涨跌得分；涨跌都没达到最低一档时为平稳，不加不减。"""
-
-    for threshold, score in LONG_TERM_TREND_RISE_TIERS:
-        if change_ratio >= threshold:
-            return score
-    for threshold, score in LONG_TERM_TREND_FALL_TIERS:
-        if change_ratio <= threshold:
-            return score
-    return 0
-
-
-def _format_percent_change(ratio: float) -> str:
-    return f"{ratio * 100:+.0f}%"
+    session = metrics.session_minutes
+    session_note: Literal["missing", "afk"] | None = None
+    if session is not None and session > LONG_TERM_SESSION_AFK_MINUTES:
+        session, session_note = None, "afk"
+    elif session is None:
+        session_note = "missing"
+    peak, like = metrics.peak_ratio, metrics.like_ratio
+    if (
+        (session is not None and session < RETENTION_BAD_SESSION_MINUTES)
+        or (peak is not None and peak < RETENTION_BAD_PEAK_RATIO)
+        or (like is not None and like < RETENTION_BAD_LIKE_RATIO)
+    ):
+        tier: RetentionTier = "bad"
+    elif (
+        session is not None
+        and session >= RETENTION_GOOD_SESSION_MINUTES
+        and peak is not None
+        and peak >= RETENTION_GOOD_PEAK_RATIO
+    ):
+        tier = "good"
+    else:
+        tier = "watch"
+    return RetentionVerdict(
+        tier=tier,
+        session_minutes=session,
+        session_note=session_note,
+        peak_ratio=peak,
+        like_ratio=like,
+    )
 
 
 def _most_common_genre(genres: Iterable[str]) -> tuple[str, int] | None:

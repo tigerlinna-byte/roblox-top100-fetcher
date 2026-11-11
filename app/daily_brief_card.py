@@ -6,12 +6,13 @@ from .config import Config
 from .daily_brief_models import DailyBriefContent, MarketSection, ProjectBriefEntry, RevenueBriefEntry
 from .daily_brief_rules import (
     LONG_TERM_MIN_RECORDED_DAYS,
-    LONG_TERM_MIN_SCORE,
+    LONG_TERM_PEAK_WINDOW_DAYS,
     MARKET_PULSE_BROAD_SIZE,
     MARKET_PULSE_HEAD_SIZE,
     NEW_FACE_LOOKBACK_DAYS,
     PROJECT_TITLE_SUFFIXES_TO_STRIP,
     PROJECT_TREND_BASELINE_DAYS,
+    RETENTION_BAD_LIKE_RATIO,
     SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK,
     SPOTLIGHT_MAX_GAME_AGE_DAYS,
     SPOTLIGHT_MIN_CCU,
@@ -23,6 +24,8 @@ from .market_spotlight import (
     LeaderState,
     LeaderStatus,
     MarketSpotlight,
+    RetentionTier,
+    RetentionVerdict,
     SpotlightEntry,
 )
 from .metric_baseline import MetricAlert
@@ -43,27 +46,33 @@ SECONDARY_COLOR = "grey"
 HEADER_TEMPLATE = "blue"
 HEADER_TEMPLATE_WITH_FAILURES = "orange"
 STANDOUT_MARK = "🔥"
-# 值得关注项目的标识：新面孔、增长快、长线潜力、头部新游各用一个固定表情。
-# 标识文字不加粗，并用飞书颜色枚举里浅一档的色阶（-400），让每行唯一加粗的蓝色游戏名最醒目。
-# 色阶写法见飞书卡片“颜色枚举值”文档；1.0 卡片 markdown 是否支持文档未写明，2026-11-11 上线时待实测。
+# 栏目标题的表情：每栏只出现一次，起分段作用。
 NEW_FACE_MARK = "🆕"
-NEW_FACE_COLOR = "orange-400"
 GROWTH_MARK = "📈"
 LONG_TERM_MARK = "🌱"
-LONG_TERM_COLOR = "green-400"
 NEW_GAME_LEADER_MARK = "👑"
-# 增长证据的表情与颜色：在线涨幅、晋榜、收入榜上升。收入不用蓝色，避免与蓝色的游戏名混在一起。
-EVIDENCE_STYLES: dict[EvidenceKind, tuple[str, str]] = {
-    "ccu": ("📈", "red-400"),
-    "board_entry": ("🆙", "orange-400"),
-    "earning": ("💰", "purple-400"),
+# 条目里的标识不用彩色表情（表情跟文字一样大，会盖过游戏名），只用普通符号和浅色文字，不加粗，
+# 让每行唯一加粗的蓝色游戏名最醒目。色阶（-400）写法见飞书卡片“颜色枚举值”文档；
+# 1.0 卡片 markdown 是否支持文档未写明，2026-11-11 上线时待实测，不生效时改回 orange、red 等默认色。
+NEW_FACE_COLOR = "orange-400"
+# 增长证据的颜色：在线涨幅、晋榜、收入榜上升。收入不用蓝色，避免与蓝色的游戏名混在一起。
+EVIDENCE_COLORS: dict[EvidenceKind, str] = {
+    "ccu": "red-400",
+    "board_entry": "orange-400",
+    "earning": "purple-400",
 }
-# 头部新游趋势的结论：表情、文字、颜色。涨红跌绿与其他涨跌一致，同样不加粗、用浅一档的色阶。
+# 头部新游趋势的结论：符号、文字、颜色。涨红跌绿与其他涨跌一致。
 LEADER_STATE_TEXTS: dict[LeaderState, tuple[str, str, str]] = {
-    "up": ("🔺", "上升", "red-400"),
-    "flat": ("➖", "平稳", "grey"),
-    "down": ("🔻", "回落", "green-400"),
-    "new": ("✨", "新晋", "orange-400"),
+    "up": ("▲", "上升", "red-400"),
+    "flat": ("–", "平稳", "grey"),
+    "down": ("▼", "回落", "green-400"),
+    "new": ("＋", "新晋", "orange-400"),
+}
+# 留存结论：符号、文字、颜色。
+RETENTION_TEXTS: dict[RetentionTier, tuple[str, str, str]] = {
+    "good": ("●", "留得住", "green-400"),
+    "watch": ("◐", "待观察", "grey"),
+    "bad": ("○", "留不住", "red-400"),
 }
 # 条目第二行起的缩进，用全角空格，飞书不会折叠。
 SUB_LINE_INDENT = "　"
@@ -235,7 +244,7 @@ def _build_spotlight_elements(spotlight: MarketSpotlight) -> list[CardElement]:
 
 
 def _build_standout_panel(group_label: str, standout: SpotlightEntry, *, is_new_face: bool) -> CardElement:
-    """“今日最突出”放进灰底面板，与其余条目拉开层级；长线依据全部列出，便于判断能否留住人。"""
+    """“今日最突出”放进灰底面板，与其余条目拉开层级；留存结论总是写出，便于判断是不是昙花一现。"""
 
     # 栏目说明用灰色不加粗，只让游戏名加粗突出。
     lines = [
@@ -243,8 +252,10 @@ def _build_standout_panel(group_label: str, standout: SpotlightEntry, *, is_new_
         _format_entry_basics(standout),
         _format_badge_line(standout, is_new_face=is_new_face),
     ]
-    if standout.long_term_signals:
-        lines.append(_format_long_term_badge(standout))
+    if standout.retention is not None:
+        lines.append(_format_retention(standout.retention))
+    else:
+        lines.append(_color("留存数据积累中", SECONDARY_COLOR))
     return _panel([_column([_markdown("\n".join(lines))])], flex_mode="none")
 
 
@@ -303,14 +314,14 @@ def _build_new_game_leaders_element(leaders: tuple[SpotlightEntry, ...]) -> Card
 
 
 def _format_entry_item(entry: SpotlightEntry, *, is_new_face: bool) -> str:
-    """列表里的一款游戏：第一行名字与基本信息，第二行标识，长线分达标时再加一行。"""
+    """列表里的一款游戏：第一行名字与基本信息，第二行标识；留不住时再加一行提醒是昙花一现。"""
 
     lines = [
         f"- {_format_entry_name(entry)} {_format_entry_basics(entry)}",
         f"{SUB_LINE_INDENT}{_format_badge_line(entry, is_new_face=is_new_face)}",
     ]
-    if entry.long_term_signals and entry.long_term_score >= LONG_TERM_MIN_SCORE:
-        lines.append(f"{SUB_LINE_INDENT}{_format_long_term_badge(entry)}")
+    if entry.retention is not None and entry.retention.tier == "bad":
+        lines.append(f"{SUB_LINE_INDENT}{_format_retention(entry.retention)}")
     return "\n".join(lines)
 
 
@@ -344,7 +355,7 @@ def _format_entry_ccu(entry: SpotlightEntry) -> str:
 def _format_badge_line(entry: SpotlightEntry, *, is_new_face: bool) -> str:
     """标识行：新面孔或各条增长证据，后面跟榜单位置、上榜天数和收入榜情况。"""
 
-    badge = _badge(NEW_FACE_MARK, NEW_FACE_COLOR, text="新面孔") if is_new_face else _format_evidence_badges(entry)
+    badge = _color("新面孔", NEW_FACE_COLOR) if is_new_face else _format_evidence_badges(entry)
     notes = [_format_sheet_ranks(entry)]
     # 新面孔当天一定是上榜第 1 天，不必再写。
     if not is_new_face and entry.days_on_board is not None:
@@ -356,44 +367,51 @@ def _format_badge_line(entry: SpotlightEntry, *, is_new_face: bool) -> str:
 
 
 def _format_evidence_badges(entry: SpotlightEntry) -> str:
-    return SUB_LINE_INDENT.join(_badge(*EVIDENCE_STYLES[item.kind], text=item.text) for item in entry.evidence)
+    """各条增长证据用浅色文字列出，不加粗、不带表情，避免抢过游戏名。"""
+
+    return SUB_LINE_INDENT.join(_color(item.text, EVIDENCE_COLORS[item.kind]) for item in entry.evidence)
 
 
-def _format_long_term_badge(entry: SpotlightEntry) -> str:
-    badge = _badge(LONG_TERM_MARK, LONG_TERM_COLOR, text=f"长线 {entry.long_term_score} 分")
-    return f"{badge} {_color(_format_long_term_reasons(entry), SECONDARY_COLOR)}"
+def _format_retention(retention: RetentionVerdict) -> str:
+    """结论在前，后面是推出它的数据，例如“● 留得住｜单局约 33 分钟 · 在线守住 14 日峰值的 100%”。
 
+    单局时长是用公开的在线人数和访问量估算的，所以写“约”；好评率高不代表留得住，只在偏低时作为警告写出。
+    """
 
-def _badge(mark: str, color: str, *, text: str) -> str:
-    """标识：表情加浅色文字，不加粗，避免抢过游戏名。"""
-
-    return f"{mark} {_color(text, color)}"
+    mark, label, color = RETENTION_TEXTS[retention.tier]
+    facts: list[str] = []
+    if retention.session_minutes is not None:
+        facts.append(f"单局约 {retention.session_minutes:.0f} 分钟")
+    elif retention.session_note == "afk":
+        facts.append("疑似挂机，单局时长不参与判断")
+    else:
+        facts.append("单局时长暂无（采样不足）")
+    if retention.peak_ratio is not None:
+        facts.append(f"在线守住 {LONG_TERM_PEAK_WINDOW_DAYS} 日峰值的 {min(retention.peak_ratio, 1):.0%}")
+    if retention.like_ratio is not None and retention.like_ratio < RETENTION_BAD_LIKE_RATIO:
+        # 向下取整：74.8% 四舍五入成 75% 会和“低于 75% 才算偏低”自相矛盾。
+        facts.append(f"好评仅 {int(round(retention.like_ratio * 100, 6))}%")
+    return f"{_color(f'{mark} {label}', color)}｜{' · '.join(facts)}"
 
 
 def _build_long_term_element(spotlight: MarketSpotlight) -> CardElement:
-    """长线潜力：不在新面孔和增长快里、但长线分达标的新游；历史快照不足时提示还要积累几天。"""
+    """长线潜力：留得住、且新面孔和增长快卡片上没展示的新游；历史快照不足时提示还要积累几天。"""
 
     title = f"**{LONG_TERM_MARK} 长线潜力**"
     if spotlight.long_term:
         lines = [title]
-        for entry in spotlight.long_term:
-            name = _format_entry_name(entry)
-            details = _color(f"｜{entry.genre or '-'}｜{_format_entry_ccu(entry)}", SECONDARY_COLOR)
-            lines.append(
-                f"- {name}：长线 {entry.long_term_score} 分｜{_format_long_term_reasons(entry)} "
-                f"{details}{_format_earning_detail(entry)}"
-            )
+        lines.extend(
+            f"- {_format_entry_name(entry)}：{_format_retention(entry.retention)}"
+            for entry in spotlight.long_term
+            if entry.retention is not None
+        )
         return _markdown("\n".join(lines))
     if spotlight.long_term_recorded_days < LONG_TERM_MIN_RECORDED_DAYS:
         remaining_days = LONG_TERM_MIN_RECORDED_DAYS - spotlight.long_term_recorded_days
         hint = f"数据积累中（已记录 {spotlight.long_term_recorded_days} 天，还需 {remaining_days} 天）"
     else:
-        hint = "今天没有长线分达到门槛的其他项目。"
+        hint = "今天没有其他留得住的新游。"
     return _markdown(f"{title}\n{_color(hint, SECONDARY_COLOR)}")
-
-
-def _format_long_term_reasons(entry: SpotlightEntry) -> str:
-    return "，".join(signal.reason for signal in entry.long_term_signals)
 
 
 def _format_sheet_ranks(entry: SpotlightEntry) -> str:
@@ -428,12 +446,12 @@ def _format_earning_detail(entry: SpotlightEntry, *, show_missing: bool = False)
 
 
 def _format_leader_status(leader: LeaderStatus) -> str:
-    """结论在前，后面是解释它的数据，例如“🔺 上升｜在线 7.7 万 → 19.5 万（较上周同日 +153%）”。"""
+    """结论在前，后面是解释它的数据，例如“▲ 上升｜在线 7.7 万 → 19.5 万（较上周同日 +153%）”。"""
 
     if leader.state is None:
         return _color(f"在线 {_format_ccu(leader.ccu)}｜缺少上周同日数据，今天不判断", SECONDARY_COLOR)
-    mark, text, color = LEADER_STATE_TEXTS[leader.state]
-    conclusion = f"{mark} {_color(text, color)}"
+    mark, label, color = LEADER_STATE_TEXTS[leader.state]
+    conclusion = _color(f"{mark} {label}", color)
     if leader.ccu_week_ago is None or leader.week_change is None:
         return f"{conclusion}｜在线 {_format_ccu(leader.ccu)}（一周前未上榜）"
     return (

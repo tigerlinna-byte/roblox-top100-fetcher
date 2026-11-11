@@ -356,90 +356,117 @@ class MissingHistoryTests(unittest.TestCase):
 
 
 class LongTermAndLeaderTests(unittest.TestCase):
-    def test_long_term_lists_steady_games_with_reasons(self) -> None:
-        records = {
-            "top_trending_v4": [_record(1, 1, playing=90000), _record(10, 2, playing=26000)],
-            "top_earning": [_record(50, 2, playing=26000)],
-        }
-        snapshots = {
-            1: _snapshot(_day(0), 90000, 50_000_000, 1000, 500, average_ccu=60000),
-            2: _snapshot(_day(0), 26000, 10_000_000, 9700, 300, average_ccu=23000),
-        }
-        history = {
-            1: [_snapshot(_day(1), 30000, 20_000_000, 600, 300), _snapshot(_day(2), 3000, 1_000_000, 50, 20)],
-            2: [
-                _snapshot(_day(1), 20000, 9_000_000, 9000, 280),
-                _snapshot(_day(2), 22000, 8_000_000, 8000, 260),
-                _snapshot(_day(3), 28000, 7_000_000, 6000, 500),
-            ],
-        }
+    def _retention_history(
+        self,
+        place_id: int,
+        *,
+        ccu: int,
+        past_ccu: int,
+        average_ccu: int | None,
+        daily_visits: int,
+        new_up: int = 95,
+        new_down: int = 5,
+    ) -> tuple[GameDailySnapshot, list[GameDailySnapshot]]:
+        """当天快照与前两天快照：单局时长 = 日均 CCU × 1440 ÷ 日新增访问，好评率取新增投票。"""
 
-        spotlight = _build(
+        today = _snapshot(_day(0), ccu, 10_000_000, 1000 + new_up, 100 + new_down, average_ccu=average_ccu)
+        history = [
+            _snapshot(_day(1), past_ccu, 10_000_000 - daily_visits, 1000, 100),
+            _snapshot(_day(2), past_ccu, 10_000_000 - 2 * daily_visits, 900, 90),
+        ]
+        return today, history
+
+    def _build_steady(self, games: dict[int, dict]) -> MarketSpotlight:
+        """这些游戏都新进热门榜（增长快），在线变化不大，只看留存结论。"""
+
+        records = {
+            "top_trending_v4": [
+                _record(index + 1, place_id, playing=params["ccu"]) for index, (place_id, params) in enumerate(games.items())
+            ]
+        }
+        snapshots: dict[int, GameDailySnapshot] = {}
+        history: GameTrendHistory = {FILLER_PLACE_ID: [_snapshot(_day(1), 1)]}
+        for place_id, params in games.items():
+            snapshots[place_id], history[place_id] = self._retention_history(place_id, **params)
+        return _build(
             records,
             history,
-            previous_ranks={"top_earning": {2: 50}},
-            recent_place_ids={"top_trending_v4": {1, 2}, "top_earning": {2}},
+            recent_place_ids={"top_trending_v4": {99}},
             snapshots=snapshots,
         )
 
-        self.assertEqual([1], _ids(spotlight.all_growth))
-        self.assertEqual([2], _ids(spotlight.long_term))
-        long_term = spotlight.long_term[0]
-        self.assertEqual(
-            [
-                "在线较前 3 日 +11%",
-                "较 14 日峰值 -7%",
-                "估算时长 33 分钟",
-                "新增好评 97%",
-                "好评率较 3 日前 +4.7 个点",
-                "收入榜 #50",
-            ],
-            [signal.reason for signal in long_term.long_term_signals],
+    def test_retention_tiers_follow_session_peak_and_rating(self) -> None:
+        # 日新增访问 1,000,000 时，日均 CCU 20,000 约 29 分钟，4,000 约 6 分钟，100,000 为 144 分钟（疑似挂机）。
+        spotlight = self._build_steady(
+            {
+                1: {"ccu": 26000, "past_ccu": 28000, "average_ccu": 20000, "daily_visits": 1_000_000},
+                2: {"ccu": 26000, "past_ccu": 28000, "average_ccu": 20000, "daily_visits": 720_000},
+                3: {"ccu": 26000, "past_ccu": 28000, "average_ccu": 4000, "daily_visits": 1_000_000},
+                4: {"ccu": 9000, "past_ccu": 30000, "average_ccu": 20000, "daily_visits": 1_000_000},
+                5: {"ccu": 26000, "past_ccu": 28000, "average_ccu": 20000, "daily_visits": 1_000_000, "new_up": 70, "new_down": 30},
+                6: {"ccu": 26000, "past_ccu": 28000, "average_ccu": 10000, "daily_visits": 1_000_000},
+                7: {"ccu": 26000, "past_ccu": 28000, "average_ccu": 100_000, "daily_visits": 1_000_000},
+                8: {"ccu": 9000, "past_ccu": 30000, "average_ccu": None, "daily_visits": 1_000_000},
+            }
         )
-        # 趋势 1 + 峰值 2 + 时长 2 + 好评 1 + 好评走势 1 + 收入榜 1
-        self.assertEqual(8, long_term.long_term_score)
-        self.assertEqual(4, spotlight.long_term_recorded_days)
-        self.assertEqual(
-            (1002, 23000, 46000, 4),
-            (long_term.universe_id, long_term.average_ccu, long_term.peak_ccu, long_term.ccu_sample_count),
-        )
-        # 增长快的游戏同样附带长线依据，用来区分昙花一现：单局只有约 3 分钟。
-        growth_reasons = [signal.reason for signal in spotlight.growth_standout.long_term_signals]
-        self.assertIn("估算时长 3 分钟", growth_reasons)
 
-    def test_long_term_requires_enough_recorded_days(self) -> None:
+        retention = _retention_by_place(spotlight, self, range(1, 9))
+        self.assertEqual(
+            {1: "good", 2: "good", 3: "bad", 4: "bad", 5: "bad", 6: "watch", 7: "watch", 8: "bad"},
+            {place_id: verdict.tier for place_id, verdict in retention.items()},
+        )
+        # 好评率高不加分，只在偏低时判留不住。
+        self.assertAlmostEqual(0.7, retention[5].like_ratio)
+        self.assertEqual((None, "afk"), (retention[7].session_minutes, retention[7].session_note))
+        self.assertEqual((None, "missing"), (retention[8].session_minutes, retention[8].session_note))
+        self.assertAlmostEqual(40.0, retention[2].session_minutes)
+        self.assertAlmostEqual(26000 / 28000, retention[1].peak_ratio)
+
+    def test_long_term_skips_games_shown_on_card_but_keeps_hidden_growth(self) -> None:
+        # 9 款都新进热门榜、在线持平、留得住；增长快只展示前 8 款，第 9 款可以出现在长线潜力栏。
+        # 长线潜力按单局时长排序的情况见 test_long_term_sorts_by_session_minutes。
+        games = range(1, 10)
+        records = {"top_trending_v4": [_record(place_id, place_id, playing=30000 - place_id * 100) for place_id in games]}
+        snapshots: dict[int, GameDailySnapshot] = {}
+        history: GameTrendHistory = {}
+        for place_id in games:
+            ccu = 30000 - place_id * 100
+            snapshots[place_id], history[place_id] = self._retention_history(
+                place_id, ccu=ccu, past_ccu=ccu, average_ccu=20000, daily_visits=1_000_000
+            )
+
+        spotlight = _build(records, history, recent_place_ids={"top_trending_v4": {99}}, snapshots=snapshots)
+
+        self.assertEqual([9], _ids(spotlight.growth_overflow))
+        self.assertEqual([9], _ids(spotlight.long_term))
+
+    def test_long_term_sorts_by_session_minutes(self) -> None:
+        # 两款都已在榜、在线持平、没有增长证据，只能出现在长线潜力栏。
+        records = {"top_trending_v4": [_record(1, 1, playing=26000), _record(2, 2, playing=25000)]}
+        snapshots: dict[int, GameDailySnapshot] = {}
+        history: GameTrendHistory = {}
+        for place_id, daily_visits in ((1, 1_000_000), (2, 720_000)):
+            ccu = records["top_trending_v4"][place_id - 1].playing
+            snapshots[place_id], history[place_id] = self._retention_history(
+                place_id, ccu=ccu, past_ccu=ccu, average_ccu=20000, daily_visits=daily_visits
+            )
+
+        spotlight = _build(records, history, recent_place_ids={"top_trending_v4": {1, 2}}, snapshots=snapshots)
+
+        self.assertEqual((), spotlight.all_growth)
+        self.assertEqual([2, 1], _ids(spotlight.long_term))
+        self.assertAlmostEqual(40.0, spotlight.long_term[0].retention.session_minutes)
+
+    def test_retention_requires_enough_recorded_days(self) -> None:
         records = {"top_trending_v4": [_record(3, 5, playing=8000)]}
 
         spotlight = _build(records, _history({5: {1: 7000}}), recent_place_ids={"top_trending_v4": {5}})
 
         self.assertEqual((), spotlight.long_term)
         self.assertEqual(2, spotlight.long_term_recorded_days)
+        self.assertIsNone(spotlight.new_game_leaders[0].retention if spotlight.new_game_leaders else None)
 
-    def test_missing_samples_and_afk_sessions_do_not_score(self) -> None:
-        records = {"top_trending_v4": [_record(3, 6, playing=4000), _record(4, 7, playing=8000)]}
-        snapshots = {
-            6: _snapshot(_day(0), 4000, 1_010_000, 0, 0, average_ccu=7000),
-            7: _snapshot(_day(0), 8000, 2_000_000),
-        }
-        history = {
-            6: [_snapshot(_day(1), 10000, 1_000_000), _snapshot(_day(2), 12000, 990_000)],
-            7: [_snapshot(_day(1), 8000, 1_000_000), _snapshot(_day(2), 8000, 500_000)],
-        }
-
-        spotlight = _build(records, history, recent_place_ids={"top_trending_v4": {8}}, snapshots=snapshots)
-
-        signals_by_place = {
-            entry.place_id: {signal.kind: signal for signal in entry.long_term_signals}
-            for entry in spotlight.all_growth
-        }
-        collapsing = signals_by_place[6]
-        self.assertEqual((-3, "在线较前 3 日 -64%"), (collapsing["ccu_trend"].score, collapsing["ccu_trend"].reason))
-        self.assertEqual(-2, collapsing["peak_hold"].score)
-        self.assertEqual((0, "疑似挂机，时长不计分"), (collapsing["session"].score, collapsing["session"].reason))
-        unsampled = signals_by_place[7]["session"]
-        self.assertEqual((0, "时长样本不足"), (unsampled.score, unsampled.reason))
-
-    def test_long_term_earning_follows_weekly_trend(self) -> None:
+    def test_earning_movement_tracks_previous_and_week_ranks(self) -> None:
         records = {"top_earning": [_record(149, 50)]}
 
         spotlight = _build(
@@ -450,15 +477,8 @@ class LongTermAndLeaderTests(unittest.TestCase):
             oldest_ranks={"top_earning": {50: 75}},
         )
 
-        earning_signal = next(
-            signal for signal in spotlight.growth_standout.long_term_signals if signal.kind == "earning"
-        )
-        self.assertEqual((-1, "收入榜 #149（一周 ↓74）"), (earning_signal.score, earning_signal.reason))
-        self.assertEqual((21, -74, False), (
-            spotlight.growth_standout.earning.change,
-            spotlight.growth_standout.earning.week_change,
-            spotlight.growth_standout.earning.entered_this_week,
-        ))
+        earning = spotlight.growth_standout.earning
+        self.assertEqual((149, 21, -74, False), (earning.rank, earning.change, earning.week_change, earning.entered_this_week))
 
     def test_leaders_are_top_new_games_on_playing_board_with_week_trend(self) -> None:
         records = {
@@ -618,6 +638,23 @@ def _pulse(
         day_before=snapshot("2026-10-26", day_before),
         week_before=snapshot("2026-10-20", week_before),
     )
+
+
+def _retention_by_place(spotlight: MarketSpotlight, test: unittest.TestCase, place_ids) -> dict:
+    """从各栏里找出指定游戏的留存结论；这些游戏都应能找到。"""
+
+    entries = {
+        entry.place_id: entry
+        for entry in (
+            *spotlight.all_new_faces,
+            *spotlight.all_growth,
+            *spotlight.long_term,
+            *spotlight.new_game_leaders,
+        )
+    }
+    missing = [place_id for place_id in place_ids if place_id not in entries]
+    test.assertFalse(missing, f"找不到这些游戏：{missing}")
+    return {place_id: entries[place_id].retention for place_id in place_ids}
 
 
 if __name__ == "__main__":

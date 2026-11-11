@@ -25,7 +25,7 @@ from app.market_spotlight import (
     LeaderStatus,
     MarketSpotlight,
     SpotlightEntry,
-    SpotlightSignal,
+    RetentionVerdict,
 )
 from app.metric_baseline import MetricAlert
 from app.models import GameRecord
@@ -148,7 +148,7 @@ class DailyBriefCardTests(unittest.TestCase):
                 GrowthEvidence("ccu", "在线比大盘多涨 161%（较 3 天前）"),
                 GrowthEvidence("earning", "新进收入榜"),
             ),
-            long_term_signals=(SpotlightSignal("rating", 1, "新增好评 93%"), SpotlightSignal("peak_hold", 2, "处于 14 日峰值")),
+            retention=RetentionVerdict("watch", 15.2, None, 0.95, 0.93),
             earning=EarningMovement(rank=233, change=None, week_change=68, entered_this_week=True),
             average_ccu=12000,
             peak_ccu=19000,
@@ -161,7 +161,7 @@ class DailyBriefCardTests(unittest.TestCase):
             place_id=3,
             name="Pixel Lineage",
             evidence=(GrowthEvidence("board_entry", "新进热门榜"),),
-            long_term_signals=(SpotlightSignal("rating", 1, "新增好评 91%"),),
+            retention=RetentionVerdict("bad", 6.4, None, 0.85, 0.689),
             earning=EarningMovement(rank=149, change=-37, week_change=-74, entered_this_week=False),
             growth_streak_days=1,
         )
@@ -172,6 +172,15 @@ class DailyBriefCardTests(unittest.TestCase):
             growth_standout=growing,
             growth=(listed_growth,),
             growth_overflow=(replace(growing, place_id=6, name="Net a Fish", evidence=growing.evidence[1:]),),
+            long_term=(
+                replace(
+                    new_face,
+                    place_id=7,
+                    universe_id=1007,
+                    name="Gun Forge",
+                    retention=RetentionVerdict("good", 33.0, None, 1.04, 0.92),
+                ),
+            ),
             long_term_recorded_days=10,
             new_face_lookback_days=10,
         )
@@ -181,7 +190,7 @@ class DailyBriefCardTests(unittest.TestCase):
         self.assertIn("🔥 <font color='grey'>今日最突出 · 新面孔：</font>**<font color='blue'>Barber Simulator</font>**", text)
         self.assertIn("<font color='grey'>Simulation｜当次 CCU 4,359｜上线 28 天</font>", text)
         self.assertIn(
-            "🆕 <font color='orange-400'>新面孔</font> <font color='grey'>新秀榜 #15</font>"
+            "<font color='orange-400'>新面孔</font> <font color='grey'>新秀榜 #15</font>"
             "<font color='grey'>｜收入榜：未进前 300</font>",
             text,
         )
@@ -193,37 +202,62 @@ class DailyBriefCardTests(unittest.TestCase):
 
         self.assertIn("🔥 <font color='grey'>今日最突出 · 增长快：</font>**<font color='blue'>13 Days to Escape</font>**", text)
         self.assertIn(
-            "📈 <font color='red-400'>在线比大盘多涨 161%（较 3 天前）</font>　"
-            "💰 <font color='purple-400'>新进收入榜</font> "
+            "<font color='red-400'>在线比大盘多涨 161%（较 3 天前）</font>　"
+            "<font color='purple-400'>新进收入榜</font> "
             "<font color='grey'>热门榜 #16、在玩榜 #69｜上榜第 5 天｜连续第 4 天增长</font>"
             "｜收入榜 #233（一周前不在榜）",
             text,
         )
         self.assertIn("日均 CCU 12,000｜近似峰值 19,000", text)
-        self.assertIn("🌱 <font color='green-400'>长线 3 分</font> <font color='grey'>新增好评 93%，处于 14 日峰值</font>", text)
-        self.assertIn("🆙 <font color='orange-400'>新进热门榜</font>", text)
+        # 今日最突出总是写出留存结论；好评率正常时不写。
+        self.assertIn("<font color='grey'>◐ 待观察</font>｜单局约 15 分钟 · 在线守住 14 日峰值的 95%", text)
+        self.assertIn("<font color='grey'>留存数据积累中</font>", text)
+        self.assertIn("　<font color='orange-400'>新进热门榜</font>", text)
+        # 列表里只有留不住的才加一行，偏低的好评作为警告写出。
+        self.assertIn(
+            "　<font color='red-400'>○ 留不住</font>｜单局约 6 分钟 · 在线守住 14 日峰值的 85% · 好评仅 68%", text
+        )
+        # 长线潜力栏：结论加两项关键数据，守住峰值超过 100% 时按 100% 写。
+        self.assertIn(
+            "**<font color='blue'>Gun Forge</font>** [Rotrends](https://www.rotrends.com/game/1007)："
+            "<font color='green-400'>● 留得住</font>｜单局约 33 分钟 · 在线守住 14 日峰值的 100%",
+            text,
+        )
+        self.assertNotIn("好评 92%", text)
+        # 条目里不再有彩色表情，栏目标题的表情保留。
+        for emoji in ("🆙", "💰", "🔺", "🔻", "✨", "🍂", "⚠️"):
+            self.assertNotIn(emoji, text)
+        self.assertIn("🌱 长线潜力", text)
         self.assertIn(
             "｜收入榜 #149（较上次 <font color='green'>↓37</font>，一周 <font color='green'>↓74</font>）",
             text,
         )
-        # 列表里的游戏只有长线分达标才加一行长线依据。
-        self.assertNotIn("长线 1 分", text)
         # 游戏名是唯一加粗的彩色文字，标识不加粗。
         self.assertNotIn("**<font color='orange", text)
         self.assertNotIn("**<font color='red", text)
         self.assertIn("（共 3 款，展示前 2 款｜创建 90 天内、CCU ≥3,000）", text)
         self.assertNotIn("Net a Fish", text)
-        self.assertIn("今天没有长线分达到门槛的其他项目。", text)
 
     def test_section_count_omits_shown_note_when_everything_is_listed(self) -> None:
         entry = SpotlightEntry(place_id=1, name="Game", genre="RPG", ccu=5000, sheet_ranks=(("新秀榜", 50),), age_days=10)
 
         text = self._market_text(
-            MarketSpotlight(new_face_standout=entry, new_faces=(replace(entry, place_id=2),), new_face_lookback_days=14)
+            MarketSpotlight(
+                new_face_standout=replace(entry, retention=RetentionVerdict("watch", None, "missing", 0.9, 0.9)),
+                new_faces=(replace(entry, place_id=2),),
+                growth_standout=replace(
+                    entry, place_id=3, name="Idle", retention=RetentionVerdict("watch", None, "afk", 0.82, 0.95)
+                ),
+                new_face_lookback_days=14,
+                long_term_recorded_days=5,
+            )
         )
 
         self.assertIn("（共 2 款｜近 14 天没上过榜", text)
-        self.assertIn("（共 0 款｜创建 90 天内", text)
+        self.assertIn("（共 1 款｜创建 90 天内", text)
+        self.assertIn("<font color='grey'>◐ 待观察</font>｜单局时长暂无（采样不足） · 在线守住 14 日峰值的 90%", text)
+        self.assertIn("<font color='grey'>◐ 待观察</font>｜疑似挂机，单局时长不参与判断 · 在线守住 14 日峰值的 82%", text)
+        self.assertIn("今天没有其他留得住的新游。", text)
         self.assertNotIn("展示前", text)
 
     def test_leader_trend_lines_show_conclusion_and_week_ccu(self) -> None:
@@ -272,12 +306,12 @@ class DailyBriefCardTests(unittest.TestCase):
         self.assertIn("👑 头部新游趋势** <font color='grey'>（在玩榜排名最高的新游，在线较上周同日）</font>", text)
         self.assertIn(
             "**<font color='blue'>Throw Food For Animals</font>** [Rotrends](https://www.rotrends.com/game/1001)："
-            "🔺 <font color='red-400'>上升</font>｜在线 7.7 万 → 19.5 万（较上周同日 +153%）",
+            "<font color='red-400'>▲ 上升</font>｜在线 7.7 万 → 19.5 万（较上周同日 +153%）",
             text,
         )
-        self.assertIn("：🔻 <font color='green-400'>回落</font>｜在线 8.1 万 → 5.7 万（较上周同日 -29%）", text)
-        self.assertIn("：➖ <font color='grey'>平稳</font>｜在线 9,000 → 9,500（较上周同日 +6%）", text)
-        self.assertIn("：✨ <font color='orange-400'>新晋</font>｜在线 2.9 万（一周前未上榜）", text)
+        self.assertIn("：<font color='green-400'>▼ 回落</font>｜在线 8.1 万 → 5.7 万（较上周同日 -29%）", text)
+        self.assertIn("：<font color='grey'>– 平稳</font>｜在线 9,000 → 9,500（较上周同日 +6%）", text)
+        self.assertIn("：<font color='orange-400'>＋ 新晋</font>｜在线 2.9 万（一周前未上榜）", text)
         self.assertIn("：<font color='grey'>在线 1.2 万｜缺少上周同日数据，今天不判断</font>", text)
         # 每行只有结论和在线人数，不再列品类、上线天数、收入榜、连续在榜等。
         self.assertNotIn("Tycoon", text)
