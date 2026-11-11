@@ -37,7 +37,7 @@
    - 负责统一注入运行环境变量
    - 负责执行 `python -m app.main`
    - 负责上传 artifacts
-   - AI 代码审核使用独立工作流 [`/.github/workflows/ai_code_review.yml`](../.github/workflows/ai_code_review.yml)，不参与 Roblox 数据同步链路
+   - 仓库曾有一个 push 到 `main` 后调用 OpenAI 的 AI 代码审核工作流（`ai_code_review.yml`）。因一直未配置 `OPENAI_API_KEY`、每次运行都失败，2026-10-27 停用，2026-11-11 连同脚本、测试和说明文档一并删除；需要时可从删除前的提交恢复
 
 3. Python 主程序
    - 文件：[`app/main.py`](../app/main.py)
@@ -499,7 +499,7 @@ Top Trending 主流程不再调用旧表格同步函数，不再写缩略图、�
   - 读写使用 `GH_TOKEN`（fine-grained token `roblox-top100-vars`），需要 **Contents: Read and write** 权限；2026-10-30 已添加
   - 只有定时任务写入，手动运行只读；同一天只保留第一次写入的快照，与大盘历史口径一致
   - 读取失败时当天不写入，避免用只有当天的数据覆盖历史；写入失败只记日志（提示检查 Contents 权限和分支是否存在），早报照常发送
-  - 该分支只放数据文件，不含代码；AI 代码审核只监听 `main`，向数据分支提交不会触发审核
+  - 该分支只放数据文件，不含代码
 - 至少有 3 天快照（含当天）才计算长线分；不足时卡片显示“数据积累中（已记录 N 天，还需 M 天）”
 - 估算单局时长 = 全天平均 CCU × 1440 ÷ 日均新增访问；超过 120 分钟视为挂机类，不计分。全天平均 CCU 来自一天多次采样，规则见下文“CCU 采样规则”。采样不足时显示“时长样本不足”且不计分，不用单次 CCU 代替
 - “在线趋势”“较峰值”和大盘涨跌仍比较每天同一时刻（09:10）的 CCU：同一时刻对比，时段影响基本抵消
@@ -658,14 +658,12 @@ Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作�
 - `FEISHU_APP_SECRET`
 - `FEISHU_BOT_WEBHOOK`
 - `GH_TOKEN`
-- `OPENAI_API_KEY`（仅 AI 自动代码审核工作流需要）
 
 说明：
 
 - `GH_TOKEN` 在工作流里会映射成 Python 侧的 `GITHUB_VARIABLES_TOKEN`
 - 它的职责不是 dispatch workflow，而是给 Python 更新 GitHub Variables，以及读写数据分支 `data-history` 上的长线潜力快照文件
 - 当前对应 fine-grained token `roblox-top100-vars`，只授权本仓库，权限为 Metadata 只读、Variables 读写、Contents 读写；更换 token 时三项缺一不可
-- `OPENAI_API_KEY` 只供 [`/.github/workflows/ai_code_review.yml`](../.github/workflows/ai_code_review.yml) 调用 OpenAI Responses API，不应在业务同步工作流中注入
 
 ### 5.2 GitHub Actions Variables
 
@@ -726,16 +724,6 @@ Worker 触发项目日报时，会把 `ROBLOX_MONEY_TEST_CHAT_IDS` 传入工作�
 
 - `ROBLOX_MONEY_START_DATE`，默认 `2026-05-01`
 - `ROBLOX_MONEY_USD_PER_100K_ROBUX`，必填，用于 Robux 到美元换算
-
-### AI 自动代码审核相关
-
-- `OPENAI_REVIEW_MODEL`，可选，默认 `gpt-5.4-mini`
-- `AI_REVIEW_MAX_DIFF_CHARS`，可选，默认 `120000`
-- `AI_REVIEW_MAX_CONTEXT_CHARS`，可选，默认 `24000`
-- `AI_REVIEW_MAX_OUTPUT_TOKENS`，可选，默认 `4000`
-- `AI_REVIEW_FEISHU_CHAT_ID`，可选但建议配置，用于把审核结果发送到飞书 Test 对话窗
-
-AI 审核配置说明见 [`docs/ai-code-review.zh-CN.md`](./ai-code-review.zh-CN.md)。
 
 ### 5.3 Cloudflare Worker Secrets / 环境变量
 
@@ -957,11 +945,6 @@ Worker 事件去重默认使用 Cloudflare KV：
 - [`app/github_client.py`](../app/github_client.py)
   - GitHub Variables 持久化
 
-- [`scripts/ai_code_review.py`](../scripts/ai_code_review.py)
-  - GitHub push 后自动代码审核
-  - 读取 commit range diff、项目规范与维护上下文
-  - 调用 OpenAI Responses API，并把结果写入 Actions Summary 与飞书 Test 对话窗
-
 ### 部署与桥接
 
 - [`/.github/workflows/roblox_rank_sync.yml`](../.github/workflows/roblox_rank_sync.yml)
@@ -1036,19 +1019,6 @@ Worker 事件去重默认使用 Cloudflare KV：
 
 如果忘了这一步，Worker 很可能无法在新环境里正确部署或正确去重。
 
-### 8.6 启用 AI 自动代码审核
-
-AI 自动代码审核不需要修改 Cloudflare Worker 或飞书配置。
-
-启用步骤：
-
-1. 在 GitHub Actions Secrets 中配置 `OPENAI_API_KEY`
-2. 按需在 GitHub Actions Variables 中配置 `OPENAI_REVIEW_MODEL`
-3. 在 GitHub Actions Variables 中配置 `AI_REVIEW_FEISHU_CHAT_ID`，建议填当前 Test 对话窗 `chat_id`
-4. 向 `main` 分支 push 后，等待 `AI Code Review` 工作流在 Actions Summary 和飞书 Test 对话窗写入审核结果
-
-该工作流不再绑定 Pull Request，也不再写 PR 评论。AI 审核发现风险只做通知，不作为提交阻断门禁。
-
 ## 9. 常见排查路径
 
 ### 9.1 飞书里发命令没有任何反应
@@ -1112,7 +1082,7 @@ AI 自动代码审核不需要修改 Cloudflare Worker 或飞书配置。
 - Cloudflare cron 变化
 - Worker 环境变量变化
 - GitHub Secrets / Variables 归属变化
-- AI 代码审核工作流、模型、提示词或输入上下文变化
+- 新增或删除 GitHub Actions 工作流
 - 表格列结构变化
 - Top Trending 今日关注或历史排名规则变化
 - 项目日报指标口径变化

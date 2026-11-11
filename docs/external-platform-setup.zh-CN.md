@@ -58,14 +58,12 @@
 - `FEISHU_APP_SECRET`
 - `FEISHU_BOT_WEBHOOK`
 - `GH_TOKEN`
-- `OPENAI_API_KEY`（仅启用 AI 自动代码审核时需要）
 
 说明：
 
 - `ROBLOX_CREATOR_COOKIE`：填 `.ROBLOSECURITY`
 - `FEISHU_BOT_WEBHOOK`：可选，用作消息兜底
 - `GH_TOKEN`：给 Python 更新 GitHub Variables 用
-- `OPENAI_API_KEY`：给 push 后 AI 自动代码审核工作流调用 OpenAI Responses API 用，不参与 Roblox 数据同步
 
 ### 3.3 配置 GitHub Variables
 
@@ -96,14 +94,6 @@ Top Trending 当前不再创建或更新飞书表格，只会回写历史排名�
 - 可选：`ROBLOX_MONEY_START_DATE`，默认 `2026-05-01`
 - 收入日报默认按顺序发送第一项目、`Troll ur friends`（`10170801715`）、`Soccer RNG`（`10304101434`）和 `soccer大亨版`（`10403337696`）；未配置的项目槽位会自动跳过
 
-如果你要启用 AI 自动代码审核，可以按需配置：
-
-- `OPENAI_REVIEW_MODEL`，默认 `gpt-5.4-mini`
-- `AI_REVIEW_MAX_DIFF_CHARS`，默认 `120000`
-- `AI_REVIEW_MAX_CONTEXT_CHARS`，默认 `24000`
-- `AI_REVIEW_MAX_OUTPUT_TOKENS`，默认 `4000`
-- `AI_REVIEW_FEISHU_CHAT_ID`，建议填当前 Test 对话窗 `chat_id`
-
 项目日报飞书表格 token / sheet id 可以留空，首次运行后由程序自动创建并回写。
 
 ### 3.4 手动跑一次工作流
@@ -123,26 +113,6 @@ Top Trending 当前不再创建或更新飞书表格，只会回写历史排名�
 - 如果是 `top_trending_sheet`，能收到 `今日关注` 卡片
 
 如果这一步没通，不要继续配置 Worker。
-
-### 3.5 验证 AI 自动代码审核
-
-AI 自动代码审核入口是：
-
-- [`/.github/workflows/ai_code_review.yml`](../.github/workflows/ai_code_review.yml)
-
-启用后，向 `main` 分支 push 会触发 `AI Code Review` 工作流。工作流会读取 commit range diff 和项目规范文档，调用 OpenAI API，并把审核结果写入 Actions Summary 和飞书 Test 对话窗。
-
-安全边界：
-
-- 工作流不再绑定 Pull Request
-- 审核输入来自 GitHub Compare API 返回的 diff 和文件列表
-- 审核发现风险只做通知，不阻断提交
-
-如果要手动重跑，进入：
-
-`Actions -> AI Code Review -> Run workflow`
-
-传入 `base_sha` 和 `head_sha` 即可。
 
 ## 4. 配置 Cloudflare Worker
 
@@ -387,4 +357,3 @@ Worker 会按 [`worker/wrangler.toml`](../worker/wrangler.toml) 里的 cron 触�
 7. 飞书机器人是否已入群
 8. `ALLOWED_CHAT_IDS` / `ALLOWED_OPEN_IDS` 是否误填
 9. `SCHEDULE_CHAT_IDS` 是否为空
-10. 如果 AI 自动代码审核失败，检查 `OPENAI_API_KEY` 是否已配置、`base_sha/head_sha` 是否有效、`AI_REVIEW_FEISHU_CHAT_ID` 是否已配置到目标 Test 对话窗
