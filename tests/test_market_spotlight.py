@@ -163,7 +163,6 @@ class NewFaceTests(unittest.TestCase):
         spotlight = _build(records, _history({}))
 
         self.assertEqual([31], _ids(spotlight.all_new_faces))
-        self.assertEqual((), spotlight.veteran_earners)
 
     def test_small_or_undated_games_are_excluded(self) -> None:
         records = {
@@ -178,7 +177,6 @@ class NewFaceTests(unittest.TestCase):
 
         self.assertEqual((), spotlight.all_new_faces)
         self.assertEqual((), spotlight.all_growth)
-        self.assertEqual((), spotlight.veteran_earners)
 
 
 class GrowthTests(unittest.TestCase):
@@ -292,24 +290,18 @@ class GrowthTests(unittest.TestCase):
         self.assertEqual([2, 3, 4, 5, 6, 7, 8], _ids(spotlight.growth))
         self.assertEqual([9, 10], _ids(spotlight.growth_overflow))
 
-    def test_old_games_with_earning_evidence_are_listed_separately(self) -> None:
-        records = {
-            "top_earning": [
-                _record(31, 1, created_at=OLD, playing=31000),
-                _record(60, 2, created_at=OLD, playing=50000),
-            ]
-        }
+    def test_old_games_are_ignored_even_when_climbing_earning_board(self) -> None:
+        records = {"top_earning": [_record(31, 1, created_at=OLD, playing=31000)]}
 
         spotlight = _build(
             records,
             _history({}),
-            previous_ranks={"top_earning": {1: 212, 2: 61}},
-            recent_place_ids={"top_earning": {1, 2}},
+            previous_ranks={"top_earning": {1: 212}},
+            recent_place_ids={"top_earning": {1}},
         )
 
-        self.assertEqual([1], _ids(spotlight.veteran_earners))
-        self.assertEqual(["收入榜 ↑181"], _evidence(spotlight.veteran_earners[0]))
         self.assertEqual((), spotlight.all_growth)
+        self.assertEqual((), spotlight.all_new_faces)
 
 
 class MissingHistoryTests(unittest.TestCase):

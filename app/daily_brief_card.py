@@ -16,7 +16,6 @@ from .daily_brief_rules import (
     SPOTLIGHT_MAX_GAME_AGE_DAYS,
     SPOTLIGHT_MIN_CCU,
     SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY,
-    SPOTLIGHT_OVERFLOW_MAX_ENTRIES,
 )
 from .market_pulse import MarketChange, MarketPulse
 from .market_spotlight import (
@@ -45,14 +44,13 @@ SECONDARY_COLOR = "grey"
 HEADER_TEMPLATE = "blue"
 HEADER_TEMPLATE_WITH_FAILURES = "orange"
 STANDOUT_MARK = "🔥"
-# 值得关注项目的标识：新面孔、增长快、长线潜力、头部新游、老游戏收入异动各用一个固定表情。
+# 值得关注项目的标识：新面孔、增长快、长线潜力、头部新游各用一个固定表情。
 NEW_FACE_MARK = "🆕"
 NEW_FACE_COLOR = "orange"
 GROWTH_MARK = "📈"
 LONG_TERM_MARK = "🌱"
 LONG_TERM_COLOR = "green"
 NEW_GAME_LEADER_MARK = "👑"
-VETERAN_EARNER_MARK = "💰"
 # 增长证据的表情与颜色：在线涨幅、晋榜、收入榜上升。收入不用蓝色，避免与蓝色的游戏名混在一起。
 EVIDENCE_STYLES: dict[EvidenceKind, tuple[str, str]] = {
     "ccu": ("📈", "red"),
@@ -219,7 +217,7 @@ def _format_market_change(change: MarketChange) -> str:
 
 
 def _build_spotlight_elements(spotlight: MarketSpotlight) -> list[CardElement]:
-    """值得关注项目：两个今日最突出，其后依次是新面孔、增长快、长线潜力、头部新游、老游戏收入异动。"""
+    """值得关注项目：两个今日最突出，其后依次是新面孔、增长快、长线潜力、头部新游。"""
 
     elements: list[CardElement] = []
     if spotlight.new_face_standout is not None:
@@ -231,8 +229,6 @@ def _build_spotlight_elements(spotlight: MarketSpotlight) -> list[CardElement]:
     elements.append(_build_long_term_element(spotlight))
     if spotlight.new_game_leaders:
         elements.append(_build_new_game_leaders_element(spotlight.new_game_leaders))
-    if spotlight.veteran_earners:
-        elements.append(_build_veteran_earners_element(spotlight.veteran_earners))
     return elements
 
 
@@ -251,7 +247,7 @@ def _build_standout_panel(group_label: str, standout: SpotlightEntry, *, is_new_
 
 
 def _build_new_face_element(spotlight: MarketSpotlight) -> CardElement:
-    """新面孔：最近若干天没上过榜的新游，按 CCU 排列；超出详细条数的只列一行。"""
+    """新面孔：最近若干天没上过榜的新游，按 CCU 排列；排名靠后的不展示，标题写明总数。"""
 
     title = f"**{NEW_FACE_MARK} 新面孔**"
     if spotlight.new_face_lookback_days == 0:
@@ -259,28 +255,32 @@ def _build_new_face_element(spotlight: MarketSpotlight) -> CardElement:
     # 历史不足回看天数时如实写出实际回看了几天。
     lookback_days = min(spotlight.new_face_lookback_days, NEW_FACE_LOOKBACK_DAYS)
     total = len(spotlight.all_new_faces)
-    scope = f"（{total} 款｜近 {lookback_days} 天没上过榜、{_format_scope()}）"
+    scope = f"（{_format_shown_count(total, spotlight.new_face_overflow)}｜近 {lookback_days} 天没上过榜、{_format_scope()}）"
     lines = [f"{title} {_color(scope, SECONDARY_COLOR)}"]
     if total == 0:
         lines.append(_color("今天没有新面孔。", SECONDARY_COLOR))
     lines.extend(_format_entry_item(entry, is_new_face=True) for entry in spotlight.new_faces)
-    if spotlight.new_face_overflow:
-        lines.append(_format_overflow_line(spotlight.new_face_overflow, is_new_face=True))
     return _markdown("\n".join(lines))
 
 
 def _build_growth_element(spotlight: MarketSpotlight) -> CardElement:
-    """增长快：在线、晋榜、收入任一类证据成立的新游，证据多的在前；超出详细条数的只列一行。"""
+    """增长快：在线、晋榜、收入任一类证据成立的新游，证据多的在前；排名靠后的不展示，标题写明总数。"""
 
     total = len(spotlight.all_growth)
-    scope = f"（{total} 款｜{_format_scope()}）"
+    scope = f"（{_format_shown_count(total, spotlight.growth_overflow)}｜{_format_scope()}）"
     lines = [f"**{GROWTH_MARK} 增长快** {_color(scope, SECONDARY_COLOR)}"]
     if total == 0:
         lines.append(_color("今天没有增长明显的新游。", SECONDARY_COLOR))
     lines.extend(_format_entry_item(entry, is_new_face=False) for entry in spotlight.growth)
-    if spotlight.growth_overflow:
-        lines.append(_format_overflow_line(spotlight.growth_overflow, is_new_face=False))
     return _markdown("\n".join(lines))
+
+
+def _format_shown_count(total: int, hidden: tuple[SpotlightEntry, ...]) -> str:
+    """栏目总数；有没展示的游戏时写明展示了前几款（含今日最突出），完整名单在明细产物里。"""
+
+    if not hidden:
+        return f"共 {total} 款"
+    return f"共 {total} 款，展示前 {total - len(hidden)} 款"
 
 
 def _format_scope() -> str:
@@ -298,19 +298,6 @@ def _build_new_game_leaders_element(leaders: tuple[SpotlightEntry, ...]) -> Card
     return _markdown("\n".join(lines))
 
 
-def _build_veteran_earners_element(veterans: tuple[SpotlightEntry, ...]) -> CardElement:
-    """老游戏收入异动：通常是大更新带来的，有参考价值但不占新游的位置。"""
-
-    scope = f"（创建超过 {SPOTLIGHT_MAX_GAME_AGE_DAYS} 天）"
-    lines = [f"**{VETERAN_EARNER_MARK} 老游戏收入异动** {_color(scope, SECONDARY_COLOR)}"]
-    for entry in veterans:
-        details = _color(f"｜{entry.genre or '-'}｜{_format_entry_ccu(entry)}", SECONDARY_COLOR)
-        lines.append(
-            f"- {_format_entry_name(entry)}：{_format_evidence_badges(entry)} {details}{_format_earning_detail(entry)}"
-        )
-    return _markdown("\n".join(lines))
-
-
 def _format_entry_item(entry: SpotlightEntry, *, is_new_face: bool) -> str:
     """列表里的一款游戏：第一行名字与基本信息，第二行标识，长线分达标时再加一行。"""
 
@@ -321,23 +308,6 @@ def _format_entry_item(entry: SpotlightEntry, *, is_new_face: bool) -> str:
     if entry.long_term_signals and entry.long_term_score >= LONG_TERM_MIN_SCORE:
         lines.append(f"{SUB_LINE_INDENT}{_format_long_term_badge(entry)}")
     return "\n".join(lines)
-
-
-def _format_overflow_line(entries: tuple[SpotlightEntry, ...], *, is_new_face: bool) -> str:
-    """没有详细展示的命中游戏：只列名字、CCU 和上榜位置或增长证据，保证一款都不漏。"""
-
-    parts: list[str] = []
-    for entry in entries[:SPOTLIGHT_OVERFLOW_MAX_ENTRIES]:
-        reasons = [_format_all_sheet_ranks(entry)] if is_new_face else [item.text for item in entry.evidence]
-        if entry.growth_streak_days >= 2:
-            reasons.append(f"连续第 {entry.growth_streak_days} 天")
-        parts.append(f"{entry.name} {entry.ccu:,}（{'、'.join(reasons)}）")
-    hidden = len(entries) - len(parts)
-    if hidden > 0:
-        # 飞书卡片有体积上限，极端情况下截断并写明还有多少款，完整名单在明细产物里。
-        parts.append(f"另有 {hidden} 款未列出，见明细产物")
-    prefix = _color(f"其余 {len(entries)} 款：", SECONDARY_COLOR)
-    return f"- {prefix}{'；'.join(parts)}"
 
 
 def _format_entry_name(entry: SpotlightEntry) -> str:
@@ -428,10 +398,6 @@ def _format_sheet_ranks(entry: SpotlightEntry) -> str:
     return "、".join(
         f"{label} #{rank}" for label, rank in entry.sheet_ranks if label != SHEET_LABELS[TOP_EARNING_SHEET_KEY]
     )
-
-
-def _format_all_sheet_ranks(entry: SpotlightEntry) -> str:
-    return "、".join(f"{label} #{rank}" for label, rank in entry.sheet_ranks)
 
 
 def _format_earning_detail(entry: SpotlightEntry, *, show_missing: bool = False) -> str:

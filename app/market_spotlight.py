@@ -63,7 +63,6 @@ from .daily_brief_rules import (
     SPOTLIGHT_MIN_CCU,
     SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES,
     SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY,
-    VETERAN_EARNER_MAX_ENTRIES,
 )
 from .game_trend_history import GameDailySnapshot, GameTrendHistory, GameTrendMetrics, build_game_trend_metrics
 from .market_pulse import MarketPulse, build_genre_ccu_permille
@@ -185,9 +184,9 @@ class MarketSpotlight:
     """早报中的值得关注项目，各栏互不重复。
 
     新面孔：最近若干天没上过榜的新游，按 CCU 排序；增长快：有增长证据的新游，按证据条数、在线涨幅排序。
-    两栏各有一款“今日最突出”，其后是详细展示的条目，overflow 是只列一行简报的其余命中游戏。
-    long_term 为不在两栏里但长线分达标的新游；new_game_leaders 为不在以上各栏的在玩榜头部新游；
-    veteran_earners 为老游戏的收入榜异动。
+    两栏各有一款“今日最突出”，其后是卡片上详细展示的条目；overflow 是排名靠后、卡片不展示的其余命中游戏，
+    只写入明细产物，并参与命中历史（连续增长天数）。
+    long_term 为不在两栏里但长线分达标的新游；new_game_leaders 为不在以上各栏的在玩榜头部新游。
     new_face_lookback_days 为实际能回看的天数（0 表示当天无法判断新面孔）；
     problems 为历史数据缺失导致的未判断项，由调用方写入“数据异常”。
     """
@@ -201,20 +200,19 @@ class MarketSpotlight:
     long_term: tuple[SpotlightEntry, ...] = ()
     long_term_recorded_days: int = 0
     new_game_leaders: tuple[SpotlightEntry, ...] = ()
-    veteran_earners: tuple[SpotlightEntry, ...] = ()
     new_face_lookback_days: int = 0
     problems: tuple[str, ...] = ()
 
     @property
     def all_new_faces(self) -> tuple[SpotlightEntry, ...]:
-        """当天全部新面孔，含最突出与只列简报的。"""
+        """当天全部新面孔，含最突出与卡片不展示的。"""
 
         standout = (self.new_face_standout,) if self.new_face_standout is not None else ()
         return (*standout, *self.new_faces, *self.new_face_overflow)
 
     @property
     def all_growth(self) -> tuple[SpotlightEntry, ...]:
-        """当天全部增长快的游戏，含最突出与只列简报的。"""
+        """当天全部增长快的游戏，含最突出与卡片不展示的。"""
 
         standout = (self.growth_standout,) if self.growth_standout is not None else ()
         return (*standout, *self.growth, *self.growth_overflow)
@@ -351,12 +349,11 @@ def build_market_spotlight(
     new_faces: list[SpotlightEntry] = []
     growth: list[SpotlightEntry] = []
     steady: list[SpotlightEntry] = []
-    veterans: list[SpotlightEntry] = []
     long_term_recorded_days = 0
     for place_id, candidate in _collect_candidates(records_by_sheet, reference_date).items():
         age_days = _resolve_age_days(candidate.best_record, reference_date)
-        # 上线时间未知的游戏不算新游也不算老游戏，无法归类。
-        if age_days is None or candidate.ccu < SPOTLIGHT_MIN_CCU:
+        # 只看新游；上线时间未知的游戏无法判断是不是新游，同样跳过。
+        if age_days is None or age_days > SPOTLIGHT_MAX_GAME_AGE_DAYS or candidate.ccu < SPOTLIGHT_MIN_CCU:
             continue
         earning = _build_earning_movement(
             place_id,
@@ -364,12 +361,7 @@ def build_market_spotlight(
             previous_ranks_by_sheet,
             oldest_ranks.get(TOP_EARNING_SHEET_KEY, {}),
         )
-        earning_evidence = _build_earning_evidence(place_id, earning, previous_ranks_by_sheet, recent_place_ids_by_sheet)
         entry = _build_entry(place_id, candidate, age_days, earning)
-        if age_days > SPOTLIGHT_MAX_GAME_AGE_DAYS:
-            if earning_evidence:
-                veterans.append(replace(entry, evidence=earning_evidence))
-            continue
 
         metrics = _build_metrics(view, place_id)
         if metrics is not None:
@@ -395,7 +387,7 @@ def build_market_spotlight(
         evidence = (
             *ccu_evidence,
             *_build_board_entry_evidence(place_id, candidate, recent_place_ids_by_sheet),
-            *earning_evidence,
+            *_build_earning_evidence(place_id, earning, previous_ranks_by_sheet, recent_place_ids_by_sheet),
         )
         entry = replace(
             entry,
@@ -426,7 +418,6 @@ def build_market_spotlight(
         ),
         key=lambda entry: dict(entry.sheet_ranks)[leader_label],
     )[:SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES]
-    veterans.sort(key=lambda entry: (-(entry.earning.change or 0) if entry.earning else 0, _earning_sort_rank(entry)))
 
     return MarketSpotlight(
         new_face_standout=new_faces[0] if new_faces else None,
@@ -438,7 +429,6 @@ def build_market_spotlight(
         long_term=tuple(long_term),
         long_term_recorded_days=long_term_recorded_days,
         new_game_leaders=tuple(leaders),
-        veteran_earners=tuple(veterans[:VETERAN_EARNER_MAX_ENTRIES]),
         new_face_lookback_days=view.lookback_days,
         problems=_describe_trend_problems(view),
     )

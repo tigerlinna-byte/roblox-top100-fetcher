@@ -185,9 +185,11 @@ class DailyBriefCardTests(unittest.TestCase):
             "<font color='grey'>｜收入榜：未进前 300</font>",
             text,
         )
-        self.assertIn("（3 款｜近 10 天没上过榜、创建 90 天内、CCU ≥3,000）", text)
-        self.assertIn("其余 1 款：</font>Voxel Wars 4,070（新秀榜 #15）", text)
+        self.assertIn("（共 3 款，展示前 2 款｜近 10 天没上过榜、创建 90 天内、CCU ≥3,000）", text)
         self.assertEqual(1, text.count("[Rotrends](https://www.rotrends.com/game/1001)"))
+        # 排名靠后的游戏不在卡片上列出，只体现在总数里。
+        self.assertNotIn("Voxel Wars", text)
+        self.assertNotIn("其余", text)
 
         self.assertIn("🔥 **今日最突出 · 增长快：<font color='blue'>13 Days to Escape</font>**", text)
         self.assertIn(
@@ -206,10 +208,22 @@ class DailyBriefCardTests(unittest.TestCase):
         )
         # 列表里的游戏只有长线分达标才加一行长线依据。
         self.assertNotIn("长线 1 分", text)
-        self.assertIn("其余 1 款：</font>Net a Fish 16,007（新进收入榜、连续第 4 天）", text)
+        self.assertIn("（共 3 款，展示前 2 款｜创建 90 天内、CCU ≥3,000）", text)
+        self.assertNotIn("Net a Fish", text)
         self.assertIn("今天没有长线分达到门槛的其他项目。", text)
 
-    def test_leaders_and_veterans_are_described_and_missing_history_is_stated(self) -> None:
+    def test_section_count_omits_shown_note_when_everything_is_listed(self) -> None:
+        entry = SpotlightEntry(place_id=1, name="Game", genre="RPG", ccu=5000, sheet_ranks=(("新秀榜", 50),), age_days=10)
+
+        text = self._market_text(
+            MarketSpotlight(new_face_standout=entry, new_faces=(replace(entry, place_id=2),), new_face_lookback_days=14)
+        )
+
+        self.assertIn("（共 2 款｜近 14 天没上过榜", text)
+        self.assertIn("（共 0 款｜创建 90 天内", text)
+        self.assertNotIn("展示前", text)
+
+    def test_leaders_are_described_and_missing_history_is_stated(self) -> None:
         leader = SpotlightEntry(
             place_id=1,
             universe_id=1001,
@@ -238,18 +252,8 @@ class DailyBriefCardTests(unittest.TestCase):
             earning=None,
             leader=LeaderStatus(38, None, None, None, None, 1, False, None),
         )
-        veteran = SpotlightEntry(
-            place_id=3,
-            name="King Legacy",
-            genre="RPG",
-            ccu=31123,
-            sheet_ranks=(("收入榜", 31),),
-            age_days=1500,
-            evidence=(GrowthEvidence("earning", "收入榜 ↑181"),),
-            earning=EarningMovement(rank=31, change=181, week_change=194, entered_this_week=False),
-        )
 
-        text = self._market_text(MarketSpotlight(new_game_leaders=(leader, newcomer), veteran_earners=(veteran,)))
+        text = self._market_text(MarketSpotlight(new_game_leaders=(leader, newcomer)))
 
         self.assertIn(
             "[Rotrends](https://www.rotrends.com/game/1001)：在玩榜 #20"
@@ -259,23 +263,10 @@ class DailyBriefCardTests(unittest.TestCase):
             text,
         )
         self.assertIn("**<font color='blue'>No History</font>**：在玩榜 #38｜<font color='grey'>Runner", text)
-        self.assertIn("💰 老游戏收入异动", text)
-        self.assertIn("💰 **<font color='purple'>收入榜 ↑181</font>**", text)
         self.assertIn("历史快照不可用，今天无法判断，详见下方数据异常。", text)
         self.assertIn("今天没有增长明显的新游。", text)
         self.assertNotIn("今日最突出", text)
-
-    def test_overflow_line_is_capped_and_states_how_many_are_hidden(self) -> None:
-        entry = SpotlightEntry(place_id=1, name="Game", genre="RPG", ccu=5000, sheet_ranks=(("新秀榜", 50),), age_days=10)
-        overflow = tuple(replace(entry, place_id=index, name=f"Game {index}") for index in range(45))
-
-        text = self._market_text(
-            MarketSpotlight(new_face_standout=entry, new_face_overflow=overflow, new_face_lookback_days=14)
-        )
-
-        self.assertIn("其余 45 款：", text)
-        self.assertIn("Game 39 5,000（新秀榜 #50）；另有 5 款未列出，见明细产物", text)
-        self.assertNotIn("Game 40 ", text)
+        self.assertNotIn("老游戏", text)
 
     def test_strip_project_title_removes_sheet_suffix(self) -> None:
         self.assertEqual("Shoot or Shot", strip_project_title("Shoot or Shot 每日数据"))
@@ -532,7 +523,7 @@ class DailyBriefFlowTests(unittest.TestCase):
         )
         limited_text = _card_text(self._sent_cards()[LIMITED_CHAT])
         self.assertIn("今日最突出 · 新面孔：<font color='blue'>Big</font>", limited_text)
-        self.assertIn("（1 款｜近 1 天没上过榜", limited_text)
+        self.assertIn("（共 1 款｜近 1 天没上过榜", limited_text)
         self.assertNotIn("还没有可用的历史快照", limited_text)
 
     def test_scheduled_run_applies_previous_samples_and_opens_next_window(self) -> None:

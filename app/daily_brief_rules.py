@@ -112,9 +112,9 @@ MARKET_CCU_HISTORY_KEEP_DAYS = 30
 
 # 常规考察范围：各榜单前 N 名。
 SPOTLIGHT_MAX_CONSIDERED_RANK = 100
-# 收入榜对新游放宽到前 N 名，用来发现刚开始变现的游戏；老游戏仍只看常规范围。
+# 收入榜对新游放宽到前 N 名，用来发现刚开始变现的游戏。
 SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK = 300
-# 新游范围：创建不超过该天数。统计 2026-11 上旬首次上榜的 128 款游戏，91% 在创建 60 天内，
+# 新游范围：创建不超过该天数，更老的游戏不参与值得关注项目。统计 2026-11 上旬首次上榜的 128 款游戏，91% 在创建 60 天内，
 # 但起量后还要观察几周（13 Days to Escape 创建 31 天、Throw Food For Animals 创建 39 天才起量）。
 SPOTLIGHT_MAX_GAME_AGE_DAYS = 90
 # 最低体量：CCU 低于该值的游戏不进名单。Barber Simulator 首次上榜时 4,359，取 5,000 会漏掉它。
@@ -122,7 +122,7 @@ SPOTLIGHT_MIN_CCU = 3000
 
 # 新面孔：最近 N 天（不含当天）没在四个榜单的考察范围内出现过，依据游戏每日快照判断。
 NEW_FACE_LOOKBACK_DAYS = 14
-# 新面孔详细展示条数（含“今日最突出”），其余只列一行简报。
+# 新面孔在卡片上展示的条数（含“今日最突出”）；其余不展示，只写入明细产物。
 NEW_FACE_DETAIL_ENTRIES = 6
 
 # 增长快：以下三类证据任一成立即入选，证据条数越多排得越前。
@@ -137,12 +137,8 @@ GROWTH_BOARD_ENTRY_SHEET_KEYS: tuple[str, ...] = ("top_trending_v4", "top_playin
 # 收入：收入榜较上次运行上升达到该名次，或从前 N 名以外冲进前 N 名。
 GROWTH_EARNING_RISE_MIN_STEP = 20
 GROWTH_EARNING_TOP_RANK_LIMIT = 100
-# 增长快详细展示条数（含“今日最突出”），其余只列一行简报。
+# 增长快在卡片上展示的条数（含“今日最突出”）；其余不展示，只写入明细产物。
 GROWTH_DETAIL_ENTRIES = 8
-
-# 每栏简报行最多列出的游戏数。近十天实际最多 33 款；设上限只为保证卡片不超过飞书的体积限制，
-# 超出时卡片写明还有多少款，完整名单在明细产物里。
-SPOTLIGHT_OVERFLOW_MAX_ENTRIES = 40
 
 # 头部新游：排名稳定的头部新游没有变化事件，新面孔和增长快都不会命中，所以按在玩榜排名单列。
 SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY = "top_playing_now"
@@ -151,9 +147,6 @@ SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES = 3
 NEW_GAME_LEADER_WEEK_COMPARE_DAYS = 7
 # 状态词：在线变化超过该比例为“上升/回落”，否则为“平稳”。
 NEW_GAME_LEADER_STATE_THRESHOLD = 0.10
-
-# 老游戏收入异动：创建超过新游范围的游戏命中收入证据时单列一行，最多 N 款。
-VETERAN_EARNER_MAX_ENTRIES = 3
 
 # 命中历史保留天数，用来标注“连续第 N 天增长”。
 SPOTLIGHT_HIT_HISTORY_KEEP_DAYS = 14
