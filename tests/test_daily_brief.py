@@ -226,46 +226,67 @@ class DailyBriefCardTests(unittest.TestCase):
         self.assertIn("（共 0 款｜创建 90 天内", text)
         self.assertNotIn("展示前", text)
 
-    def test_leaders_are_described_and_missing_history_is_stated(self) -> None:
-        leader = SpotlightEntry(
+    def test_leader_trend_lines_show_conclusion_and_week_ccu(self) -> None:
+        base = SpotlightEntry(
             place_id=1,
             universe_id=1001,
-            name="DONT SPLASH",
-            genre="Runner",
-            ccu=57164,
-            sheet_ranks=(("在玩榜", 20), ("收入榜", 53)),
-            age_days=25,
-            earning=EarningMovement(rank=53, change=-4, week_change=-9, entered_this_week=False),
-            leader=LeaderStatus(
-                rank=20,
-                rank_day_change=-2,
-                rank_week_change=-8,
-                ccu_day_change=-0.07,
-                ccu_week_change=-0.29,
-                board_streak_days=14,
-                board_streak_capped=True,
-                state="down",
-            ),
+            name="Throw Food For Animals",
+            genre="Tycoon",
+            ccu=194900,
+            sheet_ranks=(("在玩榜", 6), ("收入榜", 10)),
+            age_days=54,
+            earning=EarningMovement(rank=10, change=2, week_change=28, entered_this_week=False),
+            leader=LeaderStatus(rank=6, ccu=194900, ccu_week_ago=77000, week_change=1.531, state="up"),
         )
-        newcomer = replace(
-            leader,
+        falling = replace(
+            base,
             place_id=2,
             universe_id=None,
+            name="DONT SPLASH",
+            leader=LeaderStatus(rank=20, ccu=57164, ccu_week_ago=80500, week_change=-0.29, state="down"),
+        )
+        steady = replace(
+            base,
+            place_id=3,
+            universe_id=None,
+            name="Steady",
+            leader=LeaderStatus(rank=25, ccu=9500, ccu_week_ago=9000, week_change=0.056, state="flat"),
+        )
+        newcomer = replace(
+            base,
+            place_id=4,
+            universe_id=None,
+            name="Bloody Ragdoll",
+            leader=LeaderStatus(rank=30, ccu=29050, ccu_week_ago=None, week_change=None, state="new"),
+        )
+        unknown = replace(
+            base,
+            place_id=5,
+            universe_id=None,
             name="No History",
-            earning=None,
-            leader=LeaderStatus(38, None, None, None, None, 1, False, None),
+            leader=LeaderStatus(rank=38, ccu=12000, ccu_week_ago=None, week_change=None, state=None),
         )
 
-        text = self._market_text(MarketSpotlight(new_game_leaders=(leader, newcomer)))
+        text = self._market_text(MarketSpotlight(new_game_leaders=(base, falling, steady, newcomer, unknown)))
 
+        self.assertIn("👑 头部新游趋势** <font color='grey'>（在玩榜排名最高的新游，在线较上周同日）</font>", text)
         self.assertIn(
-            "[Rotrends](https://www.rotrends.com/game/1001)：在玩榜 #20"
-            "（较上次 <font color='green'>↓2</font>，一周 <font color='green'>↓8</font>）"
-            "｜在线较昨天 -7%，较上周同日 -29%｜连续在榜 14 天以上｜<font color='green-400'>回落</font>"
-            "｜<font color='grey'>Runner｜当次 CCU 57,164｜上线 25 天</font>｜收入榜 #53",
+            "**<font color='blue'>Throw Food For Animals</font>** [Rotrends](https://www.rotrends.com/game/1001)："
+            "🔺 <font color='red-400'>上升</font>｜在线 7.7 万 → 19.5 万（较上周同日 +153%）",
             text,
         )
-        self.assertIn("**<font color='blue'>No History</font>**：在玩榜 #38｜<font color='grey'>Runner", text)
+        self.assertIn("：🔻 <font color='green-400'>回落</font>｜在线 8.1 万 → 5.7 万（较上周同日 -29%）", text)
+        self.assertIn("：➖ <font color='grey'>平稳</font>｜在线 9,000 → 9,500（较上周同日 +6%）", text)
+        self.assertIn("：✨ <font color='orange-400'>新晋</font>｜在线 2.9 万（一周前未上榜）", text)
+        self.assertIn("：<font color='grey'>在线 1.2 万｜缺少上周同日数据，今天不判断</font>", text)
+        # 每行只有结论和在线人数，不再列品类、上线天数、收入榜、连续在榜等。
+        self.assertNotIn("Tycoon", text)
+        self.assertNotIn("收入榜 #10", text)
+        self.assertNotIn("连续在榜", text)
+
+    def test_missing_history_is_stated(self) -> None:
+        text = self._market_text(MarketSpotlight())
+
         self.assertIn("历史快照不可用，今天无法判断，详见下方数据异常。", text)
         self.assertIn("今天没有增长明显的新游。", text)
         self.assertNotIn("今日最突出", text)

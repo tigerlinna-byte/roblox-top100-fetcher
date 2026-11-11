@@ -15,7 +15,6 @@ from .daily_brief_rules import (
     SPOTLIGHT_EARNING_MAX_CONSIDERED_RANK,
     SPOTLIGHT_MAX_GAME_AGE_DAYS,
     SPOTLIGHT_MIN_CCU,
-    SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY,
 )
 from .market_pulse import MarketChange, MarketPulse
 from .market_spotlight import (
@@ -59,11 +58,12 @@ EVIDENCE_STYLES: dict[EvidenceKind, tuple[str, str]] = {
     "board_entry": ("🆙", "orange-400"),
     "earning": ("💰", "purple-400"),
 }
-# 头部新游的状态词及颜色，涨红跌绿与其他涨跌一致，同样不加粗、用浅一档的色阶。
-LEADER_STATE_TEXTS: dict[LeaderState, tuple[str, str]] = {
-    "up": ("上升", "red-400"),
-    "flat": ("平稳", "grey"),
-    "down": ("回落", "green-400"),
+# 头部新游趋势的结论：表情、文字、颜色。涨红跌绿与其他涨跌一致，同样不加粗、用浅一档的色阶。
+LEADER_STATE_TEXTS: dict[LeaderState, tuple[str, str, str]] = {
+    "up": ("🔺", "上升", "red-400"),
+    "flat": ("➖", "平稳", "grey"),
+    "down": ("🔻", "回落", "green-400"),
+    "new": ("✨", "新晋", "orange-400"),
 }
 # 条目第二行起的缩进，用全角空格，飞书不会折叠。
 SUB_LINE_INDENT = "　"
@@ -290,13 +290,15 @@ def _format_scope() -> str:
 
 
 def _build_new_game_leaders_element(leaders: tuple[SpotlightEntry, ...]) -> CardElement:
-    """头部新游：没有变化事件、但已经站上在玩榜前列的新游；每天写明名次与在线的变化，避免天天一样。"""
+    """头部新游趋势：在玩榜排名最高的几款新游，每款只写势头结论和解释它的两个在线人数。"""
 
-    lines = [f"**{NEW_GAME_LEADER_MARK} 头部新游**"]
-    for entry in leaders:
-        parts = [_format_leader_status(entry.leader)] if entry.leader is not None else []
-        parts.append(_format_entry_basics(entry))
-        lines.append(f"- {_format_entry_name(entry)}：{'｜'.join(parts)}{_format_earning_detail(entry)}")
+    scope = "（在玩榜排名最高的新游，在线较上周同日）"
+    lines = [f"**{NEW_GAME_LEADER_MARK} 头部新游趋势** {_color(scope, SECONDARY_COLOR)}"]
+    lines.extend(
+        f"- {_format_entry_name(entry)}：{_format_leader_status(entry.leader)}"
+        for entry in leaders
+        if entry.leader is not None
+    )
     return _markdown("\n".join(lines))
 
 
@@ -426,30 +428,18 @@ def _format_earning_detail(entry: SpotlightEntry, *, show_missing: bool = False)
 
 
 def _format_leader_status(leader: LeaderStatus) -> str:
-    """头部新游的近况：在玩榜名次与变化、在线变化、连续在榜天数、状态词。"""
+    """结论在前，后面是解释它的数据，例如“🔺 上升｜在线 7.7 万 → 19.5 万（较上周同日 +153%）”。"""
 
-    label = SHEET_LABELS[SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY]
-    rank_changes: list[str] = []
-    if leader.rank_day_change:
-        rank_changes.append(f"较上次 {_format_rank_change(leader.rank_day_change)}")
-    if leader.rank_week_change:
-        rank_changes.append(f"一周 {_format_rank_change(leader.rank_week_change)}")
-    parts = [f"{label} #{leader.rank}" + (f"（{'，'.join(rank_changes)}）" if rank_changes else "")]
-
-    ccu_changes: list[str] = []
-    if leader.ccu_day_change is not None:
-        ccu_changes.append(f"较昨天 {_format_ratio(leader.ccu_day_change)}")
-    if leader.ccu_week_change is not None:
-        ccu_changes.append(f"较上周同日 {_format_ratio(leader.ccu_week_change)}")
-    if ccu_changes:
-        parts.append(f"在线{'，'.join(ccu_changes)}")
-    if leader.board_streak_days >= 2:
-        suffix = "以上" if leader.board_streak_capped else ""
-        parts.append(f"连续在榜 {leader.board_streak_days} 天{suffix}")
-    if leader.state is not None:
-        state_text, state_color = LEADER_STATE_TEXTS[leader.state]
-        parts.append(_color(state_text, state_color))
-    return "｜".join(parts)
+    if leader.state is None:
+        return _color(f"在线 {_format_ccu(leader.ccu)}｜缺少上周同日数据，今天不判断", SECONDARY_COLOR)
+    mark, text, color = LEADER_STATE_TEXTS[leader.state]
+    conclusion = f"{mark} {_color(text, color)}"
+    if leader.ccu_week_ago is None or leader.week_change is None:
+        return f"{conclusion}｜在线 {_format_ccu(leader.ccu)}（一周前未上榜）"
+    return (
+        f"{conclusion}｜在线 {_format_ccu(leader.ccu_week_ago)} → {_format_ccu(leader.ccu)}"
+        f"（较上周同日 {_format_ratio(leader.week_change)}）"
+    )
 
 
 def _format_rank_change(change: int) -> str:

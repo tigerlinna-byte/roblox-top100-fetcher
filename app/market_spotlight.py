@@ -92,7 +92,8 @@ LongTermSignalKind = Literal[
     "rating_trend",
     "earning",
 ]
-LeaderState = Literal["up", "flat", "down"]
+# 头部新游的势头：较上周同日上升、平稳、回落，或一周前还没上榜（新晋）。
+LeaderState = Literal["up", "flat", "down", "new"]
 
 
 @dataclass(frozen=True)
@@ -128,19 +129,16 @@ class GrowthEvidence:
 
 @dataclass(frozen=True)
 class LeaderStatus:
-    """头部新游的近况，让同一款游戏连续出现时每天的描述都不同。
+    """头部新游的势头：今天与上周同日（都取每天早报那一次抓取）的在线人数。
 
-    名次变化为正表示上升；在线变化是未扣除大盘的原始比例。缺少对比数据的项为 None。
-    board_streak_capped 表示连续在榜天数已超出能回看的范围，只能说“N 天以上”。
+    week_change 为原始变化比例；一周前未上榜时 ccu_week_ago、week_change 为 None，state 为 "new"。
+    上周同日整天没有快照（早报没跑或快照读取失败）时 state 为 None，表示今天不判断，不用其他日期代替。
     """
 
     rank: int
-    rank_day_change: int | None
-    rank_week_change: int | None
-    ccu_day_change: float | None
-    ccu_week_change: float | None
-    board_streak_days: int
-    board_streak_capped: bool
+    ccu: int
+    ccu_week_ago: int | None
+    week_change: float | None
     state: LeaderState | None
 
 
@@ -186,7 +184,8 @@ class MarketSpotlight:
     新面孔：最近若干天没上过榜的新游，按 CCU 排序；增长快：有增长证据的新游，按证据条数、在线涨幅排序。
     两栏各有一款“今日最突出”，其后是卡片上详细展示的条目；overflow 是排名靠后、卡片不展示的其余命中游戏，
     只写入明细产物，并参与命中历史（连续增长天数）。
-    long_term 为不在两栏里但长线分达标的新游；new_game_leaders 为不在以上各栏的在玩榜头部新游。
+    long_term 为不在两栏里但长线分达标的新游；new_game_leaders 为在玩榜排名最高的几款新游及其势头，
+    不和其他栏去重，保证每天看的是同一批头部游戏。
     new_face_lookback_days 为实际能回看的天数（0 表示当天无法判断新面孔）；
     problems 为历史数据缺失导致的未判断项，由调用方写入“数据异常”。
     """
@@ -290,6 +289,11 @@ class _TrendView:
             return self._snapshots[place_id].ccu
         return None
 
+    def has_snapshot_day(self, days_ago: int) -> bool:
+        """那一天是否有游戏快照（任何一款都算）；没有说明当天早报没跑或数据缺失。"""
+
+        return self._date(days_ago) in self._recorded_dates
+
     def has_comparison(self, days_ago: int) -> bool:
         """对比日是否同时有游戏快照和大盘快照。"""
 
@@ -349,6 +353,7 @@ def build_market_spotlight(
     new_faces: list[SpotlightEntry] = []
     growth: list[SpotlightEntry] = []
     steady: list[SpotlightEntry] = []
+    leader_candidates: list[SpotlightEntry] = []
     long_term_recorded_days = 0
     for place_id, candidate in _collect_candidates(records_by_sheet, reference_date).items():
         age_days = _resolve_age_days(candidate.best_record, reference_date)
@@ -379,6 +384,9 @@ def build_market_spotlight(
             )
         if can_judge_new_faces:
             entry = replace(entry, days_on_board=view.days_on_board(place_id))
+        leader = _build_leader_status(view, place_id, candidate)
+        if leader is not None:
+            leader_candidates.append(replace(entry, leader=leader))
 
         if can_judge_new_faces and view.is_new_face(place_id):
             new_faces.append(entry)
@@ -389,12 +397,7 @@ def build_market_spotlight(
             *_build_board_entry_evidence(place_id, candidate, recent_place_ids_by_sheet),
             *_build_earning_evidence(place_id, earning, previous_ranks_by_sheet, recent_place_ids_by_sheet),
         )
-        entry = replace(
-            entry,
-            evidence=evidence,
-            ccu_day_excess=day_excess,
-            leader=_build_leader_status(view, place_id, candidate, metrics, previous_ranks_by_sheet, oldest_ranks),
-        )
+        entry = replace(entry, evidence=evidence, ccu_day_excess=day_excess)
         if evidence:
             streak = count_previous_growth_days(hit_history or {}, place_id, today) + 1
             growth.append(replace(entry, growth_streak_days=streak))
@@ -408,16 +411,13 @@ def build_market_spotlight(
         (entry for entry in steady if entry.long_term_signals and entry.long_term_score >= LONG_TERM_MIN_SCORE),
         key=lambda entry: (-entry.long_term_score, _earning_sort_rank(entry), -entry.ccu, entry.name.casefold()),
     )[:LONG_TERM_MAX_ENTRIES]
-    long_term_place_ids = {entry.place_id for entry in long_term}
-    leader_label = SHEET_LABELS[SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY]
-    leaders = sorted(
-        (
-            entry
-            for entry in steady
-            if entry.place_id not in long_term_place_ids and entry.leader is not None
-        ),
-        key=lambda entry: dict(entry.sheet_ranks)[leader_label],
-    )[:SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES]
+    # 头部新游趋势固定取在玩榜排名最高的几款新游，不和其他栏去重，名单才不会时有时无。
+    leaders = sorted(leader_candidates, key=lambda entry: entry.leader.rank)[:SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES]
+    problems = _describe_trend_problems(view)
+    if view.history is not None and any(entry.leader.state is None for entry in leaders):
+        problems += (
+            f"缺少 {NEW_GAME_LEADER_WEEK_COMPARE_DAYS} 天前（上周同日）的快照，今天不判断头部新游趋势",
+        )
 
     return MarketSpotlight(
         new_face_standout=new_faces[0] if new_faces else None,
@@ -430,7 +430,7 @@ def build_market_spotlight(
         long_term_recorded_days=long_term_recorded_days,
         new_game_leaders=tuple(leaders),
         new_face_lookback_days=view.lookback_days,
-        problems=_describe_trend_problems(view),
+        problems=problems,
     )
 
 
@@ -697,47 +697,30 @@ def _growth_sort_key(entry: SpotlightEntry) -> tuple[int, float, int, str]:
     return (-len(entry.evidence), -excess, -entry.ccu, entry.name.casefold())
 
 
-def _build_leader_status(
-    view: _TrendView,
-    place_id: int,
-    candidate: _CandidateGame,
-    metrics: GameTrendMetrics | None,
-    previous_ranks_by_sheet: dict[str, dict[int, int]],
-    oldest_ranks_by_sheet: dict[str, dict[int, int]],
-) -> LeaderStatus | None:
-    """在玩榜前列的新游近况；不在在玩榜常规范围内时为 None。"""
+def _build_leader_status(view: _TrendView, place_id: int, candidate: _CandidateGame) -> LeaderStatus | None:
+    """在玩榜前列新游的势头：在线较上周同日的变化；不在在玩榜常规范围内时为 None。
 
-    sheet_key = SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY
-    rank = candidate.ranks_by_sheet.get(sheet_key)
+    同一个星期几相比，周末效应自然抵消。上周同日有快照但没有这款游戏，说明它一周前还不在各榜前列，
+    记为“新晋”；上周同日整天没有快照时不判断，不用其他日期代替。
+    """
+
+    rank = candidate.ranks_by_sheet.get(SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY)
     if rank is None or rank > SPOTLIGHT_MAX_CONSIDERED_RANK:
         return None
-    previous_rank = previous_ranks_by_sheet.get(sheet_key, {}).get(place_id)
-    oldest_rank = oldest_ranks_by_sheet.get(sheet_key, {}).get(place_id)
-    week_change = view.change(place_id, NEW_GAME_LEADER_WEEK_COMPARE_DAYS)
-    streak = metrics.board_streak_days if metrics is not None else 0
-    return LeaderStatus(
-        rank=rank,
-        rank_day_change=previous_rank - rank if previous_rank is not None else None,
-        rank_week_change=oldest_rank - rank if oldest_rank is not None else None,
-        ccu_day_change=view.change(place_id, GROWTH_CCU_DAY_COMPARE_DAYS),
-        ccu_week_change=week_change,
-        board_streak_days=min(streak, NEW_FACE_LOOKBACK_DAYS),
-        board_streak_capped=streak > NEW_FACE_LOOKBACK_DAYS,
-        state=_resolve_leader_state(week_change, view.excess(place_id, GROWTH_CCU_DAY_COMPARE_DAYS)),
-    )
-
-
-def _resolve_leader_state(week_change: float | None, day_excess: float | None) -> LeaderState | None:
-    """状态词优先看较上周同日（抵消周末效应），没有时看较昨天比大盘多涨多少；都没有时不给结论。"""
-
-    change = week_change if week_change is not None else day_excess
-    if change is None:
-        return None
-    if change >= NEW_GAME_LEADER_STATE_THRESHOLD:
-        return "up"
-    if change <= -NEW_GAME_LEADER_STATE_THRESHOLD:
-        return "down"
-    return "flat"
+    ccu = view.ccu(place_id) or candidate.ccu
+    if view.history is None or not view.has_snapshot_day(NEW_GAME_LEADER_WEEK_COMPARE_DAYS):
+        return LeaderStatus(rank=rank, ccu=ccu, ccu_week_ago=None, week_change=None, state=None)
+    ccu_week_ago = view.ccu(place_id, NEW_GAME_LEADER_WEEK_COMPARE_DAYS)
+    if not ccu_week_ago:
+        return LeaderStatus(rank=rank, ccu=ccu, ccu_week_ago=None, week_change=None, state="new")
+    week_change = ccu / ccu_week_ago - 1
+    if week_change >= NEW_GAME_LEADER_STATE_THRESHOLD:
+        state: LeaderState = "up"
+    elif week_change <= -NEW_GAME_LEADER_STATE_THRESHOLD:
+        state = "down"
+    else:
+        state = "flat"
+    return LeaderStatus(rank=rank, ccu=ccu, ccu_week_ago=ccu_week_ago, week_change=week_change, state=state)
 
 
 def _build_earning_movement(

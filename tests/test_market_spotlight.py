@@ -460,7 +460,7 @@ class LongTermAndLeaderTests(unittest.TestCase):
             spotlight.growth_standout.earning.entered_this_week,
         ))
 
-    def test_leaders_are_steady_new_games_on_playing_board_with_status(self) -> None:
+    def test_leaders_are_top_new_games_on_playing_board_with_week_trend(self) -> None:
         records = {
             "top_playing_now": [
                 _record(9, 1, playing=57000),
@@ -469,46 +469,61 @@ class LongTermAndLeaderTests(unittest.TestCase):
                 _record(40, 4, playing=20000),
                 _record(1, 5, created_at=OLD, playing=900000),
             ],
-            # 有增长证据的游戏归增长快，不重复出现在头部新游。
-            "top_trending_v4": [_record(5, 6, playing=25000)],
+            # 1 当天新进热门榜，属于增长快；头部新游趋势不和其他栏去重，照样列出。
+            "top_trending_v4": [_record(5, 1, playing=57000)],
         }
         history = _history(
             {
-                # 6 天前有过更高的峰值，长线分不达标，所以不会被归到长线潜力栏。
-                1: {**{offset: 60000 for offset in range(1, 6)}, 6: 80000, 7: 50000},
-                2: {1: 40000},
-                3: {1: 30000},
-                4: {1: 20000},
-                6: {1: 25000},
+                1: {1: 55000, 7: 50000},
+                2: {1: 42000, 7: 50000},
+                4: {1: 20000, 7: 19500},
             }
         )
 
         spotlight = _build(
             records,
             history,
-            previous_ranks={"top_playing_now": {1: 8, 2: 12}},
-            recent_place_ids={"top_playing_now": {1, 2, 3, 4, 5}, "top_trending_v4": {7}},
-            oldest_ranks={"top_playing_now": {1: 13}},
+            recent_place_ids={"top_playing_now": {1, 2, 3, 4, 5}, "top_trending_v4": {9}},
         )
 
-        self.assertEqual([6], _ids(spotlight.all_growth))
+        self.assertEqual([1], _ids(spotlight.all_growth))
+        # 3 近 14 天没上过榜，同时是新面孔。
+        self.assertEqual([3], _ids(spotlight.all_new_faces))
         self.assertEqual([1, 2, 3], _ids(spotlight.new_game_leaders))
-        leader = spotlight.new_game_leaders[0].leader
-        self.assertEqual((9, -1, 4), (leader.rank, leader.rank_day_change, leader.rank_week_change))
-        self.assertAlmostEqual(-0.05, leader.ccu_day_change)
-        self.assertAlmostEqual(0.14, leader.ccu_week_change)
-        self.assertEqual((8, False, "up"), (leader.board_streak_days, leader.board_streak_capped, leader.state))
-        # 没有上周同日的快照时，状态词看较昨天比大盘多涨多少。
-        self.assertEqual("flat", spotlight.new_game_leaders[1].leader.state)
+        statuses = [entry.leader for entry in spotlight.new_game_leaders]
+        self.assertEqual([9, 12, 30], [status.rank for status in statuses])
+        self.assertEqual(["up", "down", "new"], [status.state for status in statuses])
+        self.assertEqual((57000, 50000), (statuses[0].ccu, statuses[0].ccu_week_ago))
+        self.assertAlmostEqual(0.14, statuses[0].week_change)
+        self.assertAlmostEqual(-0.2, statuses[1].week_change)
+        self.assertEqual((30000, None, None), (statuses[2].ccu, statuses[2].ccu_week_ago, statuses[2].week_change))
+        self.assertFalse([problem for problem in spotlight.problems if "头部新游" in problem])
 
-    def test_leader_streak_is_capped_at_lookback_window(self) -> None:
+    def test_leader_trend_within_ten_percent_is_flat(self) -> None:
+        records = {"top_playing_now": [_record(9, 1, playing=54000)]}
+
+        spotlight = _build(records, _history({1: {1: 54000, 7: 50000}}), recent_place_ids={"top_playing_now": {1}})
+
+        self.assertEqual("flat", spotlight.new_game_leaders[0].leader.state)
+
+    def test_missing_week_ago_day_skips_leader_trend_and_reports_problem(self) -> None:
         records = {"top_playing_now": [_record(9, 1, playing=57000)]}
-        history = _history({1: {**{offset: 57000 for offset in range(1, 15)}, 10: 90000}})
+        # 只有昨天和 6 天前的快照，上周同日（7 天前）整天没有：不改用 6 天前顶替。
+        history = _history({1: {1: 55000, 6: 30000}})
 
         spotlight = _build(records, history, recent_place_ids={"top_playing_now": {1}})
 
-        leader = spotlight.new_game_leaders[0].leader
-        self.assertEqual((14, True), (leader.board_streak_days, leader.board_streak_capped))
+        status = spotlight.new_game_leaders[0].leader
+        self.assertEqual((None, None, None), (status.state, status.ccu_week_ago, status.week_change))
+        self.assertIn("缺少 7 天前（上周同日）的快照，今天不判断头部新游趋势", spotlight.problems)
+
+    def test_unreadable_history_does_not_add_a_second_leader_problem(self) -> None:
+        records = {"top_playing_now": [_record(9, 1, playing=57000)]}
+
+        spotlight = _build(records, None, recent_place_ids={"top_playing_now": {1}})
+
+        self.assertIsNone(spotlight.new_game_leaders[0].leader.state)
+        self.assertEqual(("游戏每日快照读取失败，今天不判断新面孔、在线涨幅和长线潜力",), spotlight.problems)
 
 
 class GenreWindTests(unittest.TestCase):

@@ -140,12 +140,12 @@ GROWTH_EARNING_TOP_RANK_LIMIT = 100
 # 增长快在卡片上展示的条数（含“今日最突出”）；其余不展示，只写入明细产物。
 GROWTH_DETAIL_ENTRIES = 8
 
-# 头部新游：排名稳定的头部新游没有变化事件，新面孔和增长快都不会命中，所以按在玩榜排名单列。
+# 头部新游趋势：固定取在玩榜排名最高的 N 款新游，不和其他栏去重，回答“最大的几款新游在涨还是在掉”。
 SPOTLIGHT_NEW_GAME_LEADER_SHEET_KEY = "top_playing_now"
 SPOTLIGHT_NEW_GAME_LEADER_MAX_ENTRIES = 3
-# 头部新游的在线对比：较上周同日（抵消周末效应），没有时改看较昨天比大盘多涨多少。
+# 势头只看在线较上周同日（同一个星期几相比，抵消周末效应）；上周同日没有数据时不判断，不改用其他日期。
 NEW_GAME_LEADER_WEEK_COMPARE_DAYS = 7
-# 状态词：在线变化超过该比例为“上升/回落”，否则为“平稳”。
+# 结论：在线变化超过该比例为“上升/回落”，否则为“平稳”。
 NEW_GAME_LEADER_STATE_THRESHOLD = 0.10
 
 # 命中历史保留天数，用来标注“连续第 N 天增长”。
