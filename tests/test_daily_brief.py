@@ -232,7 +232,12 @@ class DailyBriefCardTests(unittest.TestCase):
         # 条目里不再有彩色表情，栏目标题的表情保留。
         for emoji in ("🆙", "💰", "🔺", "🔻", "✨", "🍂", "⚠️"):
             self.assertNotIn(emoji, text)
-        self.assertIn("🌱 长线潜力", text)
+        # 长线潜力有游戏时，标题后用灰色小字说明单局时长的估算方法。
+        self.assertIn(
+            "**🌱 长线潜力** <font color='grey'>（单局时长为估算：全天平均在线 × 24 小时 ÷ 每天新增访问；"
+            "平均在线取一天 4 次采样，超过 120 分钟视为挂机）</font>",
+            text,
+        )
         self.assertIn(
             "｜收入榜 #149（较上次 <font color='green'>↓37</font>，一周 <font color='green'>↓74</font>）",
             text,
@@ -307,6 +312,8 @@ class DailyBriefCardTests(unittest.TestCase):
         self.assertIn("<font color='grey'>◐ 待观察</font>｜单局时长暂无（采样不足） · 在线守住 14 日峰值的 90%", text)
         self.assertIn("<font color='grey'>◐ 待观察</font>｜疑似挂机，单局时长不参与判断 · 在线守住 14 日峰值的 82%", text)
         self.assertIn("今天没有其他留得住的新游。", text)
+        # 长线潜力没有游戏时不加估算说明。
+        self.assertNotIn("单局时长为估算", text)
         self.assertNotIn("展示前", text)
 
     def test_leader_trend_lines_show_conclusion_and_week_ccu(self) -> None:

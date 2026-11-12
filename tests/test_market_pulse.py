@@ -30,25 +30,32 @@ class MarketPulseTests(unittest.TestCase):
         self.assertEqual(sum(rank * 100 for rank in range(1, 13)), snapshot.broad_ccu)
         self.assertEqual(12, snapshot.game_count)
 
-    def test_snapshot_keeps_new_game_genre_share_above_minimum(self) -> None:
+    def test_snapshot_keeps_every_new_game_genre_count(self) -> None:
         playing = [GameRecord(rank=1, name="P", playing=100)]
 
-        snapshot = build_market_ccu_snapshot(playing, date(2026, 11, 12), {"Tycoon": 700, "Obby": 295, "RPG": 5})
+        snapshot = build_market_ccu_snapshot(playing, date(2026, 11, 12), {"Tycoon": 28, "Obby": 5, "RPG": 1}, 40)
 
-        self.assertEqual({"Tycoon": 700, "Obby": 295}, snapshot.new_game_genre_permille)
+        # 只有一款的品类也保留，否则历史里会被当成 0 款。
+        self.assertEqual({"Tycoon": 28, "Obby": 5, "RPG": 1}, snapshot.new_game_genre_counts)
+        self.assertEqual(40, snapshot.new_game_count)
 
-    def test_genre_share_round_trips_and_old_trending_share_is_ignored(self) -> None:
-        snapshot = MarketCcuSnapshot("2026-11-12", 1, 2, 3, new_game_genre_permille={"Tycoon": 180})
+    def test_genre_counts_round_trip_and_old_ccu_shares_are_ignored(self) -> None:
+        snapshot = MarketCcuSnapshot("2026-11-13", 1, 2, 3, new_game_genre_counts={"Tycoon": 28}, new_game_count=159)
         raw = serialize_market_ccu_history([snapshot])
-        # 2026-11-12 之前存的是热门榜全部游戏的品类占比，口径不同，直接忽略。
+        # 旧字段按 CCU 算占比，口径不同，直接忽略：11-12 的新游品类 CCU 占比、更早的热门榜品类 CCU 占比。
         legacy = (
-            '{"history":[{"snapshot_date":"2026-11-11","head_ccu":1,"broad_ccu":2,"game_count":3,'
+            '{"history":[{"snapshot_date":"2026-11-12","head_ccu":1,"broad_ccu":2,"game_count":3,'
+            '"new_game_genre_permille":{"Tycoon":235}},'
+            '{"snapshot_date":"2026-11-11","head_ccu":1,"broad_ccu":2,"game_count":3,'
             '"trending_genre_permille":{"Action RPG":190}}]}'
         )
 
         self.assertEqual([snapshot], parse_market_ccu_history(raw))
-        self.assertEqual({}, parse_market_ccu_history(legacy)[0].new_game_genre_permille)
-        self.assertNotIn("trending_genre_permille", serialize_market_ccu_history(parse_market_ccu_history(legacy)))
+        parsed = parse_market_ccu_history(legacy)
+        self.assertEqual([({}, 0), ({}, 0)], [(item.new_game_genre_counts, item.new_game_count) for item in parsed])
+        rewritten = serialize_market_ccu_history(parsed)
+        self.assertNotIn("trending_genre_permille", rewritten)
+        self.assertNotIn("new_game_genre_permille", rewritten)
 
     def test_pulse_exposes_day_and_week_compare_snapshots(self) -> None:
         history = [_snapshot("2026-10-26", 100, 1000), _snapshot("2026-10-20", 100, 1000)]

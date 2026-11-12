@@ -5,8 +5,10 @@ from __future__ import annotations
 from .config import SCHEDULED_TRIGGER_SOURCE, Config
 from .daily_brief_models import DailyBriefContent, MarketSection, ProjectBriefEntry, RevenueBriefEntry
 from .daily_brief_rules import (
+    CCU_SAMPLE_EXPECTED_COUNT,
     LONG_TERM_MIN_RECORDED_DAYS,
     LONG_TERM_PEAK_WINDOW_DAYS,
+    LONG_TERM_SESSION_AFK_MINUTES,
     MARKET_PULSE_BROAD_SIZE,
     NEW_FACE_LOOKBACK_DAYS,
     PROJECT_TITLE_SUFFIXES_TO_STRIP,
@@ -390,7 +392,12 @@ def _build_long_term_element(spotlight: MarketSpotlight) -> CardElement:
 
     title = f"**{LONG_TERM_MARK} 长线潜力**"
     if spotlight.long_term:
-        lines = [title]
+        # 只在有游戏时说明单局时长怎么来的；数字取规则常量，改门槛时不会与说明对不上。
+        note = (
+            "（单局时长为估算：全天平均在线 × 24 小时 ÷ 每天新增访问；"
+            f"平均在线取一天 {CCU_SAMPLE_EXPECTED_COUNT} 次采样，超过 {LONG_TERM_SESSION_AFK_MINUTES} 分钟视为挂机）"
+        )
+        lines = [f"{title} {_color(note, SECONDARY_COLOR)}"]
         lines.extend(
             f"- {_format_entry_name(entry)}：{_format_retention(entry.retention)}"
             for entry in spotlight.long_term

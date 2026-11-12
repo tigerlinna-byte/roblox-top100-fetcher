@@ -418,69 +418,62 @@ def build_market_spotlight(
     )
 
 
-def build_new_game_genre_permille(records_by_sheet: dict[str, list[GameRecord]]) -> dict[str, int]:
-    """新游各品类的 CCU 占比（千分比），范围与值得关注项目一致；分母含未标品类的游戏，总 CCU 为 0 时为空。"""
+@dataclass(frozen=True)
+class NewGameGenreCounts:
+    """新游各品类款数与新游总款数；总款数含未标品类的游戏，是品类占比的分母。"""
+
+    counts: dict[str, int]
+    total: int
+
+
+def build_new_game_genre_counts(records_by_sheet: dict[str, list[GameRecord]]) -> NewGameGenreCounts:
+    """新游各品类的款数，范围与值得关注项目一致；榜单没有抓取日期时为空。"""
 
     reference_date = resolve_reference_date(records_by_sheet)
     if reference_date is None:
-        return {}
-    return _genre_permille(_collect_new_games(records_by_sheet, reference_date))
+        return NewGameGenreCounts({}, 0)
+    genres = _collect_new_game_genres(records_by_sheet, reference_date)
+    return NewGameGenreCounts(dict(Counter(genre for genre in genres if genre)), len(genres))
 
 
 def build_genre_wind_lines(
     records_by_sheet: dict[str, list[GameRecord]],
     new_face_genres: Iterable[str] | None,
     pulse: MarketPulse | None = None,
-    trend_history: GameTrendHistory | None = None,
 ) -> tuple[str, ...]:
-    """品类风向：新面孔明显集中的品类；新游各品类 CCU 占比的明显变化，并说明主要是哪款游戏带来的。
+    """品类风向：新面孔明显集中的品类；新游各品类款数占比与自身历史（昨天、上周同日）的比较。
 
     new_face_genres 为当天全部新面孔的品类，与新面孔栏口径一致；None 表示当天无法判断新面孔。
-    trend_history 为游戏每日快照，用来找出对比日到今天在线变化最大的游戏；读取失败时为 None，只写变化不写原因。
     """
 
     lines: list[str] = []
     cluster = _new_face_genre_cluster(list(new_face_genres or ()))
     if cluster:
         lines.append(cluster)
-    reference_date = resolve_reference_date(records_by_sheet)
-    if reference_date is not None:
-        share_line = _build_genre_share_line(_collect_new_games(records_by_sheet, reference_date), pulse, trend_history)
-        if share_line:
-            lines.append(share_line)
+    share_line = _build_genre_share_line(build_new_game_genre_counts(records_by_sheet), pulse)
+    if share_line:
+        lines.append(share_line)
     return tuple(lines)
 
 
-@dataclass(frozen=True)
-class _NewGame:
-    place_id: int
-    name: str
-    genre: str
-    ccu: int
+def _collect_new_game_genres(records_by_sheet: dict[str, list[GameRecord]], reference_date: date) -> list[str]:
+    """值得关注项目范围内每款新游的品类（未标品类为空串）：四个榜单考察范围内、创建不超过上限天数、CCU 达到下限。"""
 
-
-def _collect_new_games(records_by_sheet: dict[str, list[GameRecord]], reference_date: date) -> list[_NewGame]:
-    """值得关注项目范围内的新游：四个榜单考察范围内、创建不超过上限天数、CCU 达到下限。"""
-
-    games: list[_NewGame] = []
-    for place_id, candidate in _collect_candidates(records_by_sheet, reference_date).items():
+    genres: list[str] = []
+    for candidate in _collect_candidates(records_by_sheet, reference_date).values():
         age_days = _resolve_age_days(candidate.best_record, reference_date)
         if age_days is None or age_days > SPOTLIGHT_MAX_GAME_AGE_DAYS or candidate.ccu < SPOTLIGHT_MIN_CCU:
             continue
-        record = candidate.best_record
-        games.append(_NewGame(place_id, record.name.strip(), record.genre.strip(), candidate.ccu))
-    return games
+        genres.append(candidate.best_record.genre.strip())
+    return genres
 
 
-def _genre_permille(games: list[_NewGame]) -> dict[str, int]:
-    total_ccu = sum(game.ccu for game in games)
-    if total_ccu <= 0:
+def _genre_permille(counts: dict[str, int], total: int) -> dict[str, int]:
+    """各品类款数占比（千分比）；总款数为 0 时为空。"""
+
+    if total <= 0:
         return {}
-    ccu_by_genre: dict[str, int] = {}
-    for game in games:
-        if game.genre:
-            ccu_by_genre[game.genre] = ccu_by_genre.get(game.genre, 0) + game.ccu
-    return {genre: round(ccu * 1000 / total_ccu) for genre, ccu in ccu_by_genre.items()}
+    return {genre: round(count * 1000 / total) for genre, count in counts.items() if count > 0}
 
 
 def _new_face_genre_cluster(genres: list[str]) -> str:
@@ -495,26 +488,27 @@ def _new_face_genre_cluster(genres: list[str]) -> str:
     return f"今日新面孔 {len(genres)} 款中 {count} 款是 {genre}"
 
 
-def _build_genre_share_line(
-    games: list[_NewGame],
-    pulse: MarketPulse | None,
-    trend_history: GameTrendHistory | None,
-) -> str:
-    """新游各品类 CCU 占比：优先写较昨天的明显变化，其次较上周同日，都没有时写占比前几名。"""
+def _build_genre_share_line(current_counts: NewGameGenreCounts, pulse: MarketPulse | None) -> str:
+    """新游各品类款数占比与自身历史比较。
 
-    current = _genre_permille(games)
+    先看较昨天、再看较上周同日，占比变化达到门槛的品类写出变化；都没有明显变化时列占比前几名，
+    各附上历史占比作参照（优先上周同日）；完全没有历史时如实写“历史数据积累中”，不拿其他数据当参照。
+    按款数而不是 CCU 算，一款游戏在线暴涨或掉出榜单最多只影响一款的占比。
+    """
+
+    current = _genre_permille(current_counts.counts, current_counts.total)
     if not current:
         return ""
     compare_snapshots = (
-        ("较昨天", pulse.day_before if pulse else None),
-        ("较上周同日", pulse.week_before if pulse else None),
+        ("昨天", pulse.day_before if pulse else None),
+        ("上周同日", pulse.week_before if pulse else None),
     )
-    has_comparison = False
+    references: list[tuple[str, dict[str, int]]] = []
     for compare_label, compare_snapshot in compare_snapshots:
-        if compare_snapshot is None or not compare_snapshot.new_game_genre_permille:
+        if compare_snapshot is None or compare_snapshot.new_game_count <= 0:
             continue
-        has_comparison = True
-        previous = compare_snapshot.new_game_genre_permille
+        previous = _genre_permille(compare_snapshot.new_game_genre_counts, compare_snapshot.new_game_count)
+        references.append((compare_label, previous))
         changes = sorted(
             ((genre, previous.get(genre, 0), current.get(genre, 0)) for genre in set(current) | set(previous)),
             # 幅度相同时上升的品类在前，更值得关注。
@@ -525,65 +519,33 @@ def _build_genre_share_line(
         ][:GENRE_SHARE_MAX_CHANGES]
         if significant:
             parts = [
-                _format_genre_share_change(
-                    genre,
-                    before,
-                    after,
-                    _main_contributor(genre, after > before, games, trend_history, compare_snapshot.snapshot_date),
-                )
+                _format_genre_share_change(genre, before, after, current_counts.counts.get(genre, 0))
                 for genre, before, after in significant
             ]
-            return f"新游 CCU 占比{compare_label}变化：" + "、".join(parts)
+            return f"新游款数占比较{compare_label}变化：" + "、".join(parts)
 
-    top_genres = sorted(current.items(), key=lambda item: (-item[1], item[0]))[:GENRE_SHARE_STABLE_TOP]
-    prefix = "新游格局稳定，" if has_comparison else "新游 "
-    return f"{prefix}CCU 占比前 {len(top_genres)}：" + "、".join(
-        f"{genre} {_format_permille(permille)}" for genre, permille in top_genres
+    top_genres = sorted(
+        current_counts.counts.items(), key=lambda item: (-item[1], item[0])
+    )[:GENRE_SHARE_STABLE_TOP]
+    if not references:
+        return f"新游款数占比前 {len(top_genres)}：" + "、".join(
+            f"{genre} {count} 款 {_format_permille(current[genre])}" for genre, count in top_genres
+        ) + "（历史数据积累中，暂不判断多少）"
+    # 有上周同日时用上周同日作参照（同一个星期几，抵消周末效应），否则用昨天。
+    reference_label, reference = references[-1]
+    return f"新游格局稳定，款数占比前 {len(top_genres)}：" + "、".join(
+        f"{genre} {count} 款 {_format_permille(current[genre])}"
+        f"（{reference_label} {_format_permille(reference.get(genre, 0))}）"
+        for genre, count in top_genres
     )
 
 
-def _main_contributor(
-    genre: str,
-    rising: bool,
-    games: list[_NewGame],
-    trend_history: GameTrendHistory | None,
-    compare_date: str,
-) -> str:
-    """对比日到今天该品类在线变化最大的新游。
-
-    上升时取在线增加最多的（对比日不在榜按 0 计，即新进榜）；下降时只能在今天仍在榜的游戏里找在线减少最多的。
-    下降如果是因为某款游戏掉出了榜单，今天的数据里已经没有它，也不知道它的品类，这时不写原因。
-    """
-
-    if trend_history is None:
-        return ""
-    best_name, best_delta = "", 0
-    for game in games:
-        if game.genre != genre:
-            continue
-        before = next(
-            (item.ccu for item in trend_history.get(game.place_id, []) if item.snapshot_date == compare_date),
-            None,
-        )
-        if before is None and not rising:
-            continue
-        delta = game.ccu - (before or 0)
-        if (rising and delta > best_delta) or (not rising and delta < best_delta):
-            best_name, best_delta = game.name, delta
-    if not best_name:
-        return ""
-    return best_name if rising else f"{best_name} 下降"
-
-
-def _format_genre_share_change(genre: str, before: int, after: int, contributor: str) -> str:
-    """例如“Physics Sim 8% → 15%（+7 个百分点，主要是 Hyper Realistic Ragdoll）”。"""
+def _format_genre_share_change(genre: str, before: int, after: int, count_now: int) -> str:
+    """例如“Tycoon 12% → 18%（+6 个百分点，现 28 款）”。"""
 
     # 用展示出来的两个百分比相减，避免“3% → 24%（+20）”这类分别取整造成的对不上。
     delta_points = round(after / 10) - round(before / 10)
-    detail = f"{delta_points:+d} 个百分点"
-    if contributor:
-        detail += f"，主要是 {contributor}"
-    return f"{genre} {_format_permille(before)} → {_format_permille(after)}（{detail}）"
+    return f"{genre} {_format_permille(before)} → {_format_permille(after)}（{delta_points:+d} 个百分点，现 {count_now} 款）"
 
 
 def _format_permille(permille: int) -> str:

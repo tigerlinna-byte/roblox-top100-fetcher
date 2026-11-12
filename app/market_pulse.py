@@ -1,4 +1,4 @@
-"""大盘涨跌：在玩榜总 CCU 与新游品类占比的每日快照、历史维护与对比。"""
+"""大盘涨跌：在玩榜总 CCU 与新游各品类款数的每日快照、历史维护与对比。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from datetime import date, timedelta
 from typing import Literal
 
 from .daily_brief_rules import (
-    GENRE_SHARE_MIN_STORED,
     MARKET_CCU_HISTORY_KEEP_DAYS,
     MARKET_PULSE_BROAD_SIZE,
     MARKET_PULSE_CHANGE_THRESHOLD,
@@ -28,17 +27,20 @@ MarketTrend = Literal["up", "down", "flat"]
 
 @dataclass(frozen=True)
 class MarketCcuSnapshot:
-    """某一天在玩榜的 CCU 合计快照，附带新游各品类的 CCU 占比（千分比）。
+    """某一天在玩榜的 CCU 合计快照，附带新游各品类的款数与新游总款数，供品类风向和历史比较。
 
-    2026-11-12 起改存新游品类占比；之前的快照存的是热门榜全部游戏的品类占比（trending_genre_permille），
-    口径不同，读取时直接忽略，新字段为空时品类风向不做对比。
+    品类风向按款数算占比：按 CCU 算会被单款游戏的在线涨跌带偏。总款数含未标品类的游戏，是占比的分母；
+    为 0 表示这一天没有记录款数，品类风向不拿它对比。旧字段口径不同，读取时直接忽略、下次写入时自然被去掉：
+    2026-11-12 当天存过新游各品类的 CCU 占比（new_game_genre_permille），2026-11-03～11-11 存的是
+    热门榜全部游戏的品类 CCU 占比（trending_genre_permille）。
     """
 
     snapshot_date: str
     head_ccu: int
     broad_ccu: int
     game_count: int
-    new_game_genre_permille: dict[str, int] = field(default_factory=dict)
+    new_game_genre_counts: dict[str, int] = field(default_factory=dict)
+    new_game_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -70,11 +72,13 @@ class MarketPulse:
 def build_market_ccu_snapshot(
     records: list[GameRecord],
     snapshot_date: date,
-    new_game_genre_permille: dict[str, int] | None = None,
+    new_game_genre_counts: dict[str, int] | None = None,
+    new_game_count: int = 0,
 ) -> MarketCcuSnapshot:
     """按排名汇总头部与大盘 CCU；榜单不足 N 名时按实际条数汇总并记录条数。
 
-    新游品类占比由调用方按值得关注项目的范围算好传入，这里只保留占比达到下限的品类，控制变量体积。
+    新游各品类款数与总款数由调用方按值得关注项目的范围算好传入；全部品类都存（约 0.8KB/天），
+    只有一款的品类也保留，否则历史里会被当成 0 款。
     """
 
     ranked = sorted(records, key=lambda record: record.rank)
@@ -85,11 +89,8 @@ def build_market_ccu_snapshot(
         head_ccu=sum(record.playing for record in head_records),
         broad_ccu=sum(record.playing for record in broad_records),
         game_count=len(broad_records),
-        new_game_genre_permille={
-            genre: permille
-            for genre, permille in (new_game_genre_permille or {}).items()
-            if permille >= GENRE_SHARE_MIN_STORED * 1000
-        },
+        new_game_genre_counts=dict(new_game_genre_counts or {}),
+        new_game_count=new_game_count,
     )
 
 
@@ -210,19 +211,27 @@ def _parse_snapshot(entry: object) -> MarketCcuSnapshot | None:
             head_ccu=int(entry["head_ccu"]),
             broad_ccu=int(entry["broad_ccu"]),
             game_count=int(entry["game_count"]),
-            new_game_genre_permille=_parse_genre_permille(entry.get("new_game_genre_permille")),
+            new_game_genre_counts=_parse_genre_counts(entry.get("new_game_genre_counts")),
+            new_game_count=_parse_count(entry.get("new_game_count")),
         )
     except (KeyError, TypeError, ValueError):
         return None
 
 
-def _parse_genre_permille(raw: object) -> dict[str, int]:
+def _parse_genre_counts(raw: object) -> dict[str, int]:
     if not isinstance(raw, dict):
         return {}
     result: dict[str, int] = {}
-    for genre, permille in raw.items():
+    for genre, count in raw.items():
         try:
-            result[str(genre)] = int(permille)
+            result[str(genre)] = int(count)
         except (TypeError, ValueError):
             continue
     return result
+
+
+def _parse_count(raw: object) -> int:
+    try:
+        return max(int(raw), 0)
+    except (TypeError, ValueError):
+        return 0

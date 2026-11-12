@@ -55,7 +55,7 @@ from .market_spotlight import (
     MarketSpotlight,
     build_genre_wind_lines,
     build_market_spotlight,
-    build_new_game_genre_permille,
+    build_new_game_genre_counts,
 )
 from .metric_baseline import (
     MetricAlert,
@@ -862,7 +862,6 @@ def _build_market_section(
             # 当天无法判断新面孔时不写“新面孔集中品类”，而不是写成 0 款。
             [entry.genre for entry in spotlight.all_new_faces] if spotlight.new_face_lookback_days else None,
             pulse,
-            trend_history,
         ),
     )
     # 明细含全部命中的游戏（不只是卡片上详细展示的），便于事后核对漏报和调门槛。
@@ -1025,11 +1024,8 @@ def _build_market_pulse(
     if not playing_records:
         return None
 
-    snapshot = build_market_ccu_snapshot(
-        playing_records,
-        brief_date,
-        build_new_game_genre_permille(records_by_sheet),
-    )
+    genre_counts = build_new_game_genre_counts(records_by_sheet)
+    snapshot = build_market_ccu_snapshot(playing_records, brief_date, genre_counts.counts, genre_counts.total)
     history = parse_market_ccu_history(cfg.market_ccu_history)
     if cfg.run_trigger_source == SCHEDULED_TRIGGER_SOURCE:
         history = merge_market_ccu_history(history, snapshot)

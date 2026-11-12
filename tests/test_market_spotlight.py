@@ -9,7 +9,7 @@ from app.market_spotlight import (
     MarketSpotlight,
     build_genre_wind_lines,
     build_market_spotlight,
-    build_new_game_genre_permille,
+    build_new_game_genre_counts,
 )
 from app.models import GameRecord
 
@@ -584,21 +584,42 @@ class LongTermAndLeaderTests(unittest.TestCase):
 
 
 class GenreWindTests(unittest.TestCase):
-    def test_new_game_genre_share_ignores_old_and_small_games(self) -> None:
+    def test_new_game_genre_counts_ignore_old_and_small_games(self) -> None:
         records_by_sheet = {
             "top_trending_v4": [
                 _record(1, 11, genre="Simulation", playing=6000),
                 _record(2, 12, genre="Obby", playing=4000),
+                _record(3, 15, genre="Simulation", playing=900000),
+                # 未标品类的新游计入总款数（占比的分母），但不算任何品类。
+                _record(4, 16, genre="", playing=5000),
                 # 老牌大作和体量不够的新游都不算。
-                _record(3, 13, created_at=OLD, genre="Action RPG", playing=250000),
-                _record(4, 14, genre="RPG", playing=2000),
+                _record(5, 13, created_at=OLD, genre="Action RPG", playing=250000),
+                _record(6, 14, genre="RPG", playing=2000),
+            ],
+            # 同一款游戏出现在多个榜单只算一款。
+            "top_playing_now": [_record(1, 15, genre="Simulation", playing=900000)],
+        }
+
+        counts = build_new_game_genre_counts(records_by_sheet)
+
+        self.assertEqual(({"Simulation": 2, "Obby": 1}, 4), (counts.counts, counts.total))
+
+    def test_share_counts_games_not_ccu(self) -> None:
+        # 一款 90 万在线的大作只算一款：Simulation 2 款、Obby 2 款，各占 50%。
+        records_by_sheet = {
+            "top_trending_v4": [
+                _record(1, 11, genre="Simulation", playing=900000),
+                _record(2, 12, genre="Simulation", playing=4000),
+                _record(3, 13, genre="Obby", playing=4000),
+                _record(4, 14, genre="Obby", playing=4000),
             ],
         }
 
-        self.assertEqual({"Simulation": 600, "Obby": 400}, build_new_game_genre_permille(records_by_sheet))
+        lines = build_genre_wind_lines(records_by_sheet, None)
+
         self.assertEqual(
-            ("新游 CCU 占比前 2：Simulation 60%、Obby 40%",),
-            build_genre_wind_lines(records_by_sheet, None),
+            ("新游款数占比前 2：Obby 2 款 50%、Simulation 2 款 50%（历史数据积累中，暂不判断多少）",),
+            lines,
         )
 
     def test_new_face_cluster_needs_three_games_and_thirty_percent(self) -> None:
@@ -612,77 +633,88 @@ class GenreWindTests(unittest.TestCase):
         self.assertEqual(1, len(too_few))
         self.assertEqual(1, len(too_spread))
 
-    def test_share_changes_name_the_game_behind_rise_and_fall(self) -> None:
-        records_by_sheet = {
-            "top_trending_v4": [
-                _record(1, 31, genre="Physics Sim", playing=24000),
-                _record(2, 32, genre="Tycoon", playing=13000),
-                _record(3, 33, genre="Obby", playing=63000),
-            ],
-        }
-        pulse = _pulse(day_before={"Physics Sim": 90, "Tycoon": 230, "Obby": 610})
-        history = {
-            31: [_snapshot(_day(1), 9000)],
-            32: [_snapshot(_day(1), 23000)],
-        }
+    def test_share_changes_against_yesterday(self) -> None:
+        records_by_sheet = {"top_trending_v4": _genre_records(Tycoon=6, Obby=3, RPG=1)}
+        # 昨天 20 款：Tycoon 4 款 20%、Obby 12 款 60%、RPG 4 款 20%。
+        pulse = _pulse(day_before=({"Tycoon": 4, "Obby": 12, "RPG": 4}, 20))
 
-        lines = build_genre_wind_lines(records_by_sheet, None, pulse, history)
+        lines = build_genre_wind_lines(records_by_sheet, None, pulse)
 
         self.assertEqual(
             (
-                "新游 CCU 占比较昨天变化：Physics Sim 9% → 24%（+15 个百分点，主要是 Game 31）、"
-                "Tycoon 23% → 13%（-10 个百分点，主要是 Game 32 下降）",
+                "新游款数占比较昨天变化：Tycoon 20% → 60%（+40 个百分点，现 6 款）、"
+                "Obby 60% → 30%（-30 个百分点，现 3 款）",
             ),
             lines,
         )
 
-    def test_fall_caused_by_games_leaving_boards_has_no_named_cause(self) -> None:
-        records_by_sheet = {
-            "top_trending_v4": [_record(1, 41, genre="Tycoon", playing=6000), _record(2, 42, genre="Obby", playing=4000)],
-        }
-        # Obby 昨天占比高是因为另一款游戏，今天它已经掉出榜单，无法知道是谁；Obby 里仍在榜的游戏在线没降。
-        history = {41: [_snapshot(_day(1), 3000)], 42: [_snapshot(_day(1), 4000)]}
+    def test_share_changes_fall_back_to_week(self) -> None:
+        records_by_sheet = {"top_trending_v4": _genre_records(Tycoon=6, Obby=4)}
 
-        lines = build_genre_wind_lines(records_by_sheet, None, _pulse(day_before={"Tycoon": 300, "Obby": 700}), history)
+        lines = build_genre_wind_lines(
+            records_by_sheet,
+            None,
+            _pulse(day_before=({"Tycoon": 59, "Obby": 41}, 100), week_before=({"Tycoon": 4, "Obby": 6}, 10)),
+        )
 
         self.assertEqual(
-            # 幅度相同时上升的品类排在前面。
-            ("新游 CCU 占比较昨天变化：Tycoon 30% → 60%（+30 个百分点，主要是 Game 41）、Obby 70% → 40%（-30 个百分点）",),
+            ("新游款数占比较上周同日变化：Tycoon 40% → 60%（+20 个百分点，现 6 款）、Obby 60% → 40%（-20 个百分点，现 4 款）",),
             lines,
         )
 
-    def test_genre_wind_falls_back_to_week_then_stable_top(self) -> None:
-        records_by_sheet = {
-            "top_trending_v4": [
-                _record(1, 41, genre="Tycoon", playing=6000),
-                _record(2, 42, genre="Obby", playing=4000),
-            ],
-        }
-
-        week_lines = build_genre_wind_lines(
-            records_by_sheet,
-            None,
-            _pulse(day_before={"Tycoon": 590, "Obby": 410}, week_before={"Tycoon": 400, "Obby": 600}),
+    def test_stable_shares_show_history_reference_preferring_week(self) -> None:
+        records_by_sheet = {"top_trending_v4": _genre_records(Tycoon=6, Obby=3, RPG=1)}
+        day_only = _pulse(day_before=({"Tycoon": 58, "Obby": 32, "RPG": 10}, 100))
+        with_week = _pulse(
+            day_before=({"Tycoon": 58, "Obby": 32, "RPG": 10}, 100),
+            week_before=({"Tycoon": 57, "Obby": 34, "RPG": 9}, 100),
         )
-        stable_lines = build_genre_wind_lines(records_by_sheet, None, _pulse(day_before={"Tycoon": 590, "Obby": 410}))
 
-        # 没有快照历史时只写变化，不写原因。
         self.assertEqual(
-            ("新游 CCU 占比较上周同日变化：Tycoon 40% → 60%（+20 个百分点）、Obby 60% → 40%（-20 个百分点）",),
-            week_lines,
+            ("新游格局稳定，款数占比前 3：Tycoon 6 款 60%（昨天 58%）、Obby 3 款 30%（昨天 32%）、RPG 1 款 10%（昨天 10%）",),
+            build_genre_wind_lines(records_by_sheet, None, day_only),
         )
-        self.assertEqual(("新游格局稳定，CCU 占比前 2：Tycoon 60%、Obby 40%",), stable_lines)
+        # 有上周同日时用上周同日作参照。
+        self.assertEqual(
+            (
+                "新游格局稳定，款数占比前 3：Tycoon 6 款 60%（上周同日 57%）、Obby 3 款 30%（上周同日 34%）、"
+                "RPG 1 款 10%（上周同日 9%）",
+            ),
+            build_genre_wind_lines(records_by_sheet, None, with_week),
+        )
+
+    def test_snapshots_without_counts_are_not_used_as_history(self) -> None:
+        records_by_sheet = {"top_trending_v4": _genre_records(Tycoon=6, Obby=4)}
+        # 只有旧口径（按 CCU）的快照解析后没有款数，不能拿来比。
+        pulse = _pulse(day_before=({}, 0))
+
+        lines = build_genre_wind_lines(records_by_sheet, None, pulse)
+
+        self.assertEqual(("新游款数占比前 2：Tycoon 6 款 60%、Obby 4 款 40%（历史数据积累中，暂不判断多少）",), lines)
+
+
+def _genre_records(**count_by_genre: int) -> list[GameRecord]:
+    """按“品类=款数”构造新游，place_id 与排名依次递增。"""
+
+    records: list[GameRecord] = []
+    for genre, count in count_by_genre.items():
+        for _ in range(count):
+            index = len(records) + 1
+            records.append(_record(index, 100 + index, genre=genre))
+    return records
 
 
 def _pulse(
     *,
-    day_before: dict[str, int] | None = None,
-    week_before: dict[str, int] | None = None,
+    day_before: tuple[dict[str, int], int] | None = None,
+    week_before: tuple[dict[str, int], int] | None = None,
 ) -> MarketPulse:
-    def snapshot(day: str, permille: dict[str, int] | None) -> MarketCcuSnapshot | None:
-        if permille is None:
+    """day_before / week_before 为（各品类款数, 新游总款数）。"""
+
+    def snapshot(day: str, counts: tuple[dict[str, int], int] | None) -> MarketCcuSnapshot | None:
+        if counts is None:
             return None
-        return MarketCcuSnapshot(day, 0, 0, 0, new_game_genre_permille=permille)
+        return MarketCcuSnapshot(day, 0, 0, 0, new_game_genre_counts=counts[0], new_game_count=counts[1])
 
     current = MarketCcuSnapshot(_day(0), 0, 0, 0)
     return MarketPulse(
